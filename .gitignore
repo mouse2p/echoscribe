@@ -1,0 +1,33 @@
+# Byte-compiled and cache output
+__pycache__/
+*.py[cod]
+*.egg-info/
+.eggs/
+
+# Build output
+build/
+dist/
+*.whl
+*.tar.gz
+
+# Local environments
+.venv/
+venv/
+
+# Tool caches
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+.coverage
+coverage.xml
+htmlcov/
+
+# Experiment scratch space (generated corpora, reports, sessions)
+runs/
+output/
+*.jsonl.tmp
+
+# Editors and OS noise
+.idea/
+.vscode/
+.DS_Store

@@ -1,0 +1,108 @@
+[build-system]
+requires = ["hatchling>=1.25"]
+build-backend = "hatchling.build"
+
+[project]
+name = "echoscribe"
+version = "0.1.0"
+description = "Offline workbench for streaming speech-recognition mechanics: transducer and CTC decoding, latency-budgeted chunk streaming, hotword biasing, endpointing, code-switch English-Chinese evaluation, and a synthetic acoustic laboratory with planted transcripts."
+readme = "README.md"
+requires-python = ">=3.11"
+license = { file = "LICENSE" }
+authors = [
+    { name = "Wang Yuanyi", email = "250376329+mouse2p@users.noreply.github.com" },
+]
+keywords = [
+    "speech-recognition",
+    "asr",
+    "streaming",
+    "transducer",
+    "ctc",
+    "code-switching",
+    "evaluation",
+]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Science/Research",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Topic :: Multimedia :: Sound/Audio :: Speech",
+    "Topic :: Scientific/Engineering :: Artificial Intelligence",
+]
+dependencies = ["numpy>=1.26"]
+
+[project.optional-dependencies]
+dev = [
+    "build>=1.2",
+    "hatchling>=1.25",
+    "mypy>=1.11",
+    "pytest>=8.0",
+    "ruff>=0.6",
+]
+torch = ["torch>=2.3"]
+
+[project.scripts]
+echoscribe = "echoscribe.cli:main"
+
+[project.urls]
+Documentation = "https://github.com/mouse2p/echoscribe/tree/main/docs"
+Source = "https://github.com/mouse2p/echoscribe"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/echoscribe"]
+
+[tool.hatch.build.targets.sdist]
+include = [
+    "CHANGELOG.md",
+    "LICENSE",
+    "Makefile",
+    "README.md",
+    "docs",
+    "examples",
+    "pyproject.toml",
+    "scripts",
+    "src",
+    "tests",
+]
+
+[[tool.uv.index]]
+name = "pytorch-cpu"
+url = "https://download.pytorch.org/whl/cpu"
+explicit = true
+
+[tool.uv.sources]
+torch = [{ index = "pytorch-cpu" }]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-ra"
+markers = [
+    "slow: long-running training or end-to-end integration check; excluded from `make test`",
+    "model: requires the optional `torch` extra and skips cleanly when it is absent",
+]
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+src = ["examples", "scripts", "src", "tests"]
+
+[tool.ruff.lint]
+select = ["B", "C4", "E", "F", "I", "UP", "W"]
+
+[tool.ruff.lint.isort]
+known-first-party = ["echoscribe"]
+
+[tool.mypy]
+files = ["src"]
+check_untyped_defs = true
+disallow_incomplete_defs = true
+disallow_untyped_defs = true
+no_implicit_optional = true
+warn_redundant_casts = true
+warn_unused_ignores = true
+
+[[tool.mypy.overrides]]
+module = ["torch.*"]
+ignore_missing_imports = true
