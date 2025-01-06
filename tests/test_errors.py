@@ -43,3 +43,27 @@ def test_message_is_passed_through_unchanged() -> None:
 def test_value_error_handler_catches_configuration_failures() -> None:
     with pytest.raises(ValueError):
         raise errors.AudioError("sample rate 0 is not supported")
+
+
+def test_all_lists_every_public_error_exactly_once() -> None:
+    assert len(errors.__all__) == len(set(errors.__all__))
+    declared = set(errors.__all__)
+    public = {
+        name
+        for name in vars(errors)
+        if isinstance(vars(errors)[name], type)
+        and issubclass(vars(errors)[name], Exception)
+        and name not in {"Exception", "ValueError", "RuntimeError"}
+    }
+    assert declared == public
+
+
+def test_errors_can_be_chained_without_losing_context() -> None:
+    try:
+        try:
+            raise KeyError("num_mel_bins")
+        except KeyError as missing:
+            raise errors.ConfigError("mel bins are not configured") from missing
+    except errors.ConfigError as wrapped:
+        assert isinstance(wrapped.__cause__, KeyError)
+        assert str(wrapped) == "mel bins are not configured"
