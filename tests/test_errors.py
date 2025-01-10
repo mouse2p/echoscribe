@@ -82,3 +82,43 @@ def test_later_error_types_follow_the_same_convention(name: str, builtin: type) 
     error = getattr(errors, name)
     assert issubclass(error, errors.EchoscribeError)
     assert issubclass(error, builtin)
+
+
+def test_require_is_silent_when_the_condition_holds() -> None:
+    assert errors.require(True, "unused") is None
+
+
+def test_require_raises_the_requested_error_type() -> None:
+    with pytest.raises(errors.AudioError, match="sample rate must be positive"):
+        errors.require(False, "sample rate must be positive", errors.AudioError)
+
+
+def test_require_positive_accepts_the_boundary_of_zero_exclusive() -> None:
+    assert errors.require_positive("chunk_ms", 0.5) == 0.5
+    with pytest.raises(errors.ConfigError, match="chunk_ms must be positive"):
+        errors.require_positive("chunk_ms", 0.0)
+    with pytest.raises(errors.ConfigError):
+        errors.require_positive("chunk_ms", -1.0)
+
+
+def test_require_non_negative_accepts_zero_but_not_below() -> None:
+    assert errors.require_non_negative("hangover_ms", 0) == 0
+    with pytest.raises(errors.ConfigError, match="hangover_ms must not be negative"):
+        errors.require_non_negative("hangover_ms", -0.001)
+
+
+def test_require_in_names_the_allowed_values() -> None:
+    assert errors.require_in("window", "povey", ["hamming", "povey"]) == "povey"
+    with pytest.raises(errors.ConfigError) as info:
+        errors.require_in("window", "blackman", ["hamming", "povey"])
+    assert "'hamming'" in str(info.value)
+    assert "'blackman'" in str(info.value)
+
+
+def test_require_range_is_closed_on_both_ends() -> None:
+    assert errors.require_range("beam", 4, 1, 8) == 4
+    assert errors.require_range("beam", 1, 1, 8) == 1
+    assert errors.require_range("beam", 8, 1, 8) == 8
+    for bad in (0, 9, -1):
+        with pytest.raises(errors.ConfigError):
+            errors.require_range("beam", bad, 1, 8)

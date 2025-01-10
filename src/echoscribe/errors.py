@@ -10,6 +10,8 @@ without knowing anything about echoscribe.
 
 from __future__ import annotations
 
+from collections.abc import Sequence
+
 
 class EchoscribeError(Exception):
     """Base class for every error raised by echoscribe."""
@@ -68,3 +70,55 @@ __all__ = [
     "StreamError",
     "TokenizerError",
 ]
+
+
+ErrorType = type[EchoscribeError]
+
+
+def require(condition: bool, message: str, error: ErrorType = ConfigError) -> None:
+    """Raise ``error(message)`` unless ``condition`` holds.
+
+    This is the toolkit-wide replacement for bare ``assert``: assertions are
+    stripped under ``python -O``, but input validation must survive that.
+    """
+    if not condition:
+        raise error(message)
+
+
+def require_positive(name: str, value: float, error: ErrorType = ConfigError) -> float:
+    """Return ``value`` when it is finite and strictly greater than zero."""
+    require(value > 0, f"{name} must be positive, got {value!r}", error)
+    return value
+
+
+def require_non_negative(name: str, value: float, error: ErrorType = ConfigError) -> float:
+    """Return ``value`` when it is finite and not below zero."""
+    require(value >= 0, f"{name} must not be negative, got {value!r}", error)
+    return value
+
+
+def require_in(
+    name: str,
+    value: object,
+    allowed: Sequence[object],
+    error: ErrorType = ConfigError,
+) -> object:
+    """Return ``value`` when it is one of ``allowed``, naming them in the message."""
+    require(
+        value in allowed,
+        f"{name} must be one of {tuple(allowed)!r}, got {value!r}",
+        error,
+    )
+    return value
+
+
+def require_range(
+    name: str,
+    value: float,
+    low: float,
+    high: float,
+    error: ErrorType = ConfigError,
+) -> float:
+    """Return ``value`` when ``low <= value <= high`` on a closed interval."""
+    require(low <= value <= high, f"{name} must lie in [{low}, {high}], got {value!r}", error)
+    return value
