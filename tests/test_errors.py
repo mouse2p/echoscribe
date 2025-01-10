@@ -122,3 +122,29 @@ def test_require_range_is_closed_on_both_ends() -> None:
     for bad in (0, 9, -1):
         with pytest.raises(errors.ConfigError):
             errors.require_range("beam", bad, 1, 8)
+
+
+@pytest.mark.parametrize(
+    "helper",
+    [
+        lambda: errors.require_positive("x", -1.0, errors.FeatureError),
+        lambda: errors.require_non_negative("x", -1.0, errors.FeatureError),
+        lambda: errors.require_range("x", 99.0, 0.0, 1.0, errors.FeatureError),
+        lambda: errors.require_in("x", 3, [1, 2], errors.FeatureError),
+        lambda: errors.require(False, "nope", errors.FeatureError),
+    ],
+)
+def test_helper_error_type_is_honoured(helper) -> None:
+    with pytest.raises(errors.FeatureError):
+        helper()
+
+
+def test_require_positive_accepts_infinity_and_rejects_nan() -> None:
+    # NaN compares false against everything, so it must never pass a bound.
+    assert errors.require_positive("gain", float("inf")) == float("inf")
+    with pytest.raises(errors.ConfigError):
+        errors.require_positive("gain", float("nan"))
+    with pytest.raises(errors.ConfigError):
+        errors.require_non_negative("gain", float("nan"))
+    with pytest.raises(errors.ConfigError):
+        errors.require_range("gain", float("nan"), 0.0, 1.0)
