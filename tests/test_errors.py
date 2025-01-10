@@ -67,3 +67,18 @@ def test_errors_can_be_chained_without_losing_context() -> None:
     except errors.ConfigError as wrapped:
         assert isinstance(wrapped.__cause__, KeyError)
         assert str(wrapped) == "mel bins are not configured"
+
+
+@pytest.mark.parametrize(
+    ("name", "builtin"),
+    [
+        ("SchemaError", ValueError),
+        ("CorpusError", ValueError),
+        ("TokenizerError", ValueError),
+        ("ModelError", RuntimeError),
+    ],
+)
+def test_later_error_types_follow_the_same_convention(name: str, builtin: type) -> None:
+    error = getattr(errors, name)
+    assert issubclass(error, errors.EchoscribeError)
+    assert issubclass(error, builtin)

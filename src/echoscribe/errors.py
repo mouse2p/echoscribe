@@ -39,12 +39,32 @@ class EvalError(EchoscribeError, ValueError):
     """Scoring received references or hypotheses it cannot align."""
 
 
+class SchemaError(EchoscribeError, ValueError):
+    """A serialized document does not match the schema version it claims."""
+
+
+class CorpusError(EchoscribeError, ValueError):
+    """A synthetic corpus manifest or rendered asset is inconsistent."""
+
+
+class TokenizerError(EchoscribeError, ValueError):
+    """Text could not be mapped onto the configured modelling units."""
+
+
+class ModelError(EchoscribeError, RuntimeError):
+    """A torch model bundle is missing, unsupported or structurally invalid."""
+
+
 __all__ = [
     "AudioError",
     "ConfigError",
+    "CorpusError",
     "DecodeError",
     "EchoscribeError",
     "EvalError",
     "FeatureError",
+    "ModelError",
+    "SchemaError",
     "StreamError",
+    "TokenizerError",
 ]
