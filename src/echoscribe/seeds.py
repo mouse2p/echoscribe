@@ -41,6 +41,20 @@ class Seed:
         """Return the full hex digest backing this seed (used in reports)."""
         return hashlib.sha256(self.label.encode("utf-8")).hexdigest() + ":" + str(self.value)
 
+    def fork(self, *parts: object) -> Seed:
+        """Derive an independent child seed for a sub-stage of the same run.
+
+        The child mixes the parent's *value* as well as its label path, so two
+        runs with different roots never share a derived stage seed even when the
+        stage labels are identical.
+        """
+        require(len(parts) > 0, "fork needs at least one label part")
+        rendered = "/".join(repr(part) for part in parts)
+        material = f"{self.value}\x00{self.label}\x00{rendered}"
+        digest = hashlib.sha256(material.encode("utf-8")).digest()
+        value = int.from_bytes(digest[:8], "big") % SEED_MODULUS
+        return Seed(value, f"{self.label}/{rendered}")
+
 
 def seed_of(*parts: object) -> Seed:
     """Build a seed from an arbitrary label path.

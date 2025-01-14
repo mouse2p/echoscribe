@@ -77,3 +77,39 @@ def test_seed_of_distribution_is_not_degenerate() -> None:
     # A 63-bit space sampled 512 times should spread over the whole range.
     assert max(values) > SEED_MODULUS // 2
     assert min(values) < SEED_MODULUS // 2
+
+
+def test_fork_changes_the_value_and_extends_the_label() -> None:
+    parent = Seed(11, "root")
+    child = parent.fork("noise")
+    assert child.value != parent.value
+    assert child.label == "root/'noise'"
+
+
+def test_fork_is_deterministic_for_the_same_path() -> None:
+    assert Seed(5, "root").fork("a", 2).value == Seed(5, "root").fork("a", 2).value
+
+
+def test_fork_is_order_sensitive() -> None:
+    parent = Seed(5, "root")
+    assert parent.fork("a", "b").value != parent.fork("b", "a").value
+
+
+def test_forks_of_the_same_parent_are_independent() -> None:
+    parent = Seed(5, "root")
+    values = {parent.fork(name).value for name in ("noise", "speed", "volume", "rir")}
+    assert len(values) == 4
+
+
+def test_the_same_stage_label_differs_across_roots() -> None:
+    assert Seed(1, "run").fork("noise").value != Seed(2, "run").fork("noise").value
+
+
+def test_fork_requires_a_label_part() -> None:
+    with pytest.raises(ValueError, match="at least one label part"):
+        Seed(3).fork()
+
+
+def test_nested_forks_build_a_readable_path() -> None:
+    seed = Seed(9, "run").fork("corpus").fork("utterance", 4)
+    assert seed.label == "run/'corpus'/'utterance'/4"
