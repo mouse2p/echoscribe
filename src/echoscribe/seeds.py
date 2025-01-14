@@ -40,3 +40,17 @@ class Seed:
     def digest(self) -> str:
         """Return the full hex digest backing this seed (used in reports)."""
         return hashlib.sha256(self.label.encode("utf-8")).hexdigest() + ":" + str(self.value)
+
+
+def seed_of(*parts: object) -> Seed:
+    """Build a seed from an arbitrary label path.
+
+    ``seed_of("corpus", 3, "noise")`` is stable across processes and Python
+    versions: parts are rendered with ``repr`` and hashed with SHA-256, then
+    reduced modulo :data:`SEED_MODULUS`.
+    """
+    require(len(parts) > 0, "seed_of needs at least one label part")
+    rendered = "/".join(repr(part) for part in parts)
+    digest = hashlib.sha256(rendered.encode("utf-8")).digest()
+    value = int.from_bytes(digest[:8], "big") % SEED_MODULUS
+    return Seed(value, rendered)
