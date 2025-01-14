@@ -69,3 +69,11 @@ def test_seed_of_golden_values() -> None:
     # Pinned so an accidental change to the derivation is caught deliberately.
     assert seed_of("echoscribe", "golden").value == 7850220504658308925
     assert seed_of("corpus", 3).value == 7689283219961177129
+
+
+def test_seed_of_distribution_is_not_degenerate() -> None:
+    values = [seed_of("spread", index).value for index in range(512)]
+    assert len(set(values)) == len(values)
+    # A 63-bit space sampled 512 times should spread over the whole range.
+    assert max(values) > SEED_MODULUS // 2
+    assert min(values) < SEED_MODULUS // 2
