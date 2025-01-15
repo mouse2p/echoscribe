@@ -3,8 +3,10 @@
 from __future__ import annotations
 
 import numpy as np
+import pytest
 
 from echoscribe import types
+from echoscribe.errors import FeatureError
 
 
 def test_dtypes_are_the_documented_numpy_kinds() -> None:
@@ -41,3 +43,45 @@ def test_aliases_and_dtypes_are_all_exported() -> None:
         "INDEX_DTYPE",
     ):
         assert name in types.__all__
+
+
+def test_as_samples_returns_a_contiguous_float32_copy() -> None:
+    source = np.array([0, 1, -1], dtype=np.int16)
+    result = types.as_samples(source)
+    assert result.dtype == np.float32
+    assert result.flags["C_CONTIGUOUS"]
+    result[0] = 99.0
+    assert source[0] == 0
+
+
+def test_as_samples_rejects_a_matrix() -> None:
+    with pytest.raises(FeatureError, match="must be 1-D"):
+        types.as_samples(np.zeros((2, 3), dtype=np.float32), name="batch")
+
+
+def test_as_samples_rejects_nan_and_infinity() -> None:
+    for bad in (float("nan"), float("inf"), float("-inf")):
+        with pytest.raises(FeatureError, match="must be finite"):
+            types.as_samples([0.0, bad, 0.1], name="clip")
+
+
+def test_as_features_upcasts_to_float64() -> None:
+    assert types.as_features(np.zeros((2, 3), dtype=np.float32)).dtype == np.float64
+
+
+def test_as_features_rejects_a_vector() -> None:
+    with pytest.raises(FeatureError, match="must be 2-D"):
+        types.as_features(np.zeros(5))
+
+
+def test_require_rank_reports_both_ranks() -> None:
+    array = np.zeros((2, 3, 4))
+    assert types.require_rank("cubes", array, 3) is array
+    with pytest.raises(FeatureError, match="must be 2-D, got 3-D"):
+        types.require_rank("cubes", array, 2)
+
+
+def test_require_non_empty_accepts_zero_valued_but_rejects_zero_sized() -> None:
+    assert types.require_non_empty("x", np.zeros(1)).size == 1
+    with pytest.raises(FeatureError, match="must not be empty"):
+        types.require_non_empty("x", np.zeros(0))
