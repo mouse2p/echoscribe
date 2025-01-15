@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import pytest
 
-from echoscribe.seeds import SEED_MODULUS, Seed, seed_of
+from echoscribe.seeds import DEFAULT_ROOT, SEED_MODULUS, Seed, new_rng, seed_of
 
 
 def test_seed_keeps_its_value_and_label() -> None:
@@ -113,3 +113,27 @@ def test_fork_requires_a_label_part() -> None:
 def test_nested_forks_build_a_readable_path() -> None:
     seed = Seed(9, "run").fork("corpus").fork("utterance", 4)
     assert seed.label == "run/'corpus'/'utterance'/4"
+
+
+def test_new_rng_replays_the_same_stream() -> None:
+    first = new_rng(Seed(4, "a")).standard_normal(8)
+    second = new_rng(Seed(4, "a")).standard_normal(8)
+    assert list(first) == list(second)
+
+
+def test_new_rng_accepts_a_bare_integer() -> None:
+    assert list(new_rng(7).random(3)) == list(new_rng(Seed(7, "int/7")).random(3))
+
+
+def test_new_rng_defaults_to_the_pinned_root() -> None:
+    assert list(new_rng().random(4)) == list(new_rng(DEFAULT_ROOT).random(4))
+
+
+def test_new_rng_streams_differ_across_forks() -> None:
+    root = Seed(4, "a")
+    assert list(new_rng(root.fork("x")).random(4)) != list(new_rng(root.fork("y")).random(4))
+
+
+def test_default_root_is_a_fixed_documented_seed() -> None:
+    assert DEFAULT_ROOT.value == 20250106
+    assert DEFAULT_ROOT.label == "echoscribe"

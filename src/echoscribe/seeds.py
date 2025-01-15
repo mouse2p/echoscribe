@@ -16,6 +16,8 @@ from __future__ import annotations
 import hashlib
 from dataclasses import dataclass
 
+import numpy as np
+
 from echoscribe.errors import ConfigError, require
 
 SEED_BITS = 63
@@ -68,3 +70,23 @@ def seed_of(*parts: object) -> Seed:
     digest = hashlib.sha256(rendered.encode("utf-8")).digest()
     value = int.from_bytes(digest[:8], "big") % SEED_MODULUS
     return Seed(value, rendered)
+
+
+#: Root seed used by examples and by the CLI when no seed is supplied.  Pinning
+#: it keeps published synthetic numbers reproducible from a single integer.
+DEFAULT_ROOT = Seed(20250106, "echoscribe")
+
+
+def new_rng(seed: int | Seed | None = None) -> np.random.Generator:
+    """Return a fresh ``numpy`` generator for ``seed``.
+
+    ``None`` means :data:`DEFAULT_ROOT`, *not* OS entropy: echoscribe never
+    produces an unreproducible run by accident.
+    """
+    if seed is None:
+        resolved = DEFAULT_ROOT
+    elif isinstance(seed, int):
+        resolved = Seed(seed, f"int/{seed}")
+    else:
+        resolved = seed
+    return np.random.default_rng(np.random.SeedSequence(resolved.value))
