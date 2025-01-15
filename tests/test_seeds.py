@@ -137,3 +137,25 @@ def test_new_rng_streams_differ_across_forks() -> None:
 def test_default_root_is_a_fixed_documented_seed() -> None:
     assert DEFAULT_ROOT.value == 20250106
     assert DEFAULT_ROOT.label == "echoscribe"
+
+
+def test_independent_generators_do_not_advance_each_other() -> None:
+    root = Seed(21, "run")
+    left = new_rng(root.fork("left"))
+    right = new_rng(root.fork("right"))
+    expected = list(new_rng(root.fork("right")).random(4))
+    left.random(64)
+    assert list(right.random(4)) == expected
+
+
+def test_seed_values_never_collide_for_a_stage_sweep() -> None:
+    root = Seed(101, "sweep")
+    values = [root.fork("utterance", index).value for index in range(256)]
+    assert len(set(values)) == 256
+
+
+def test_generators_produce_usable_noise_statistics() -> None:
+    # A sanity check that the seeded stream is a real generator, not a constant.
+    draws = new_rng(Seed(33, "stats")).standard_normal(4096)
+    assert abs(float(draws.mean())) < 0.1
+    assert 0.8 < float(draws.std()) < 1.2
