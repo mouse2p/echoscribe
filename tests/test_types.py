@@ -85,3 +85,35 @@ def test_require_non_empty_accepts_zero_valued_but_rejects_zero_sized() -> None:
     assert types.require_non_empty("x", np.zeros(1)).size == 1
     with pytest.raises(FeatureError, match="must not be empty"):
         types.require_non_empty("x", np.zeros(0))
+
+
+def test_as_samples_preserves_values_that_float32_can_hold() -> None:
+    values = np.linspace(-1.0, 1.0, 17, dtype=np.float64)
+    result = types.as_samples(values)
+    assert np.array_equal(result, values.astype(np.float32))
+
+
+def test_as_samples_accepts_a_python_list() -> None:
+    assert list(types.as_samples([0.5, -0.25])) == [0.5, -0.25]
+
+
+def test_as_samples_accepts_an_empty_buffer() -> None:
+    # Zero samples is legal: a trailing chunk may be empty.  Only non-finite
+    # data is rejected.
+    assert types.as_samples([]).shape == (0,)
+
+
+def test_require_finite_returns_the_same_object() -> None:
+    array = np.ones((2, 2))
+    assert types.require_finite("x", array) is array
+
+
+def test_require_finite_counts_the_bad_entries() -> None:
+    array = np.array([1.0, float("nan"), 2.0, float("inf")])
+    with pytest.raises(FeatureError, match="found 2 non-finite entries"):
+        types.require_finite("energy", array)
+
+
+def test_as_features_does_not_copy_an_already_correct_matrix() -> None:
+    source = np.zeros((3, 2), dtype=np.float64, order="C")
+    assert np.shares_memory(types.as_features(source), source)
