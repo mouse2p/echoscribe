@@ -4,9 +4,10 @@ from __future__ import annotations
 
 import math
 
+import numpy as np
 import pytest
 
-from echoscribe.numeric import NEGATIVE_INFINITY, log_add
+from echoscribe.numeric import NEGATIVE_INFINITY, log_add, logsumexp
 
 
 @pytest.mark.parametrize(
@@ -36,3 +37,47 @@ def test_log_add_does_not_overflow_on_very_negative_scores() -> None:
 
 def test_log_add_keeps_the_dominant_term_when_the_gap_is_huge() -> None:
     assert log_add(-1.0, -700.0) == pytest.approx(-1.0, abs=1e-12)
+
+
+def test_logsumexp_matches_the_naive_formula_for_moderate_values() -> None:
+    rng = np.random.default_rng(0)
+    values = rng.uniform(-5.0, 0.0, size=(6, 4))
+    expected = np.log(np.sum(np.exp(values), axis=1))
+    assert np.allclose(logsumexp(values, axis=1), expected, rtol=1e-12)
+
+
+def test_logsumexp_survives_a_large_common_offset() -> None:
+    values = np.array([-800.0, -810.0, -820.0])
+    expected = -800.0 + math.log1p(math.exp(-10.0) + math.exp(-20.0))
+    assert math.isclose(float(logsumexp(values)), expected, abs_tol=1e-9)
+
+
+def test_logsumexp_of_a_single_value_is_that_value() -> None:
+    assert float(logsumexp(np.array([-3.25]))) == -3.25
+
+
+def test_logsumexp_of_all_minus_infinity_is_minus_infinity() -> None:
+    result = logsumexp(np.full((2, 3), NEGATIVE_INFINITY), axis=1)
+    assert np.all(result == NEGATIVE_INFINITY)
+    assert not np.any(np.isnan(result))
+
+
+def test_logsumexp_keepdims_preserves_the_axis() -> None:
+    values = np.log(np.array([[0.5, 0.5], [0.25, 0.75]]))
+    result = logsumexp(values, axis=1, keepdims=True)
+    assert result.shape == (2, 1)
+    assert np.allclose(result, 0.0, atol=1e-12)
+
+
+def test_logsumexp_without_an_axis_reduces_everything() -> None:
+    values = np.log(np.full((3, 3), 1.0 / 9.0))
+    assert float(logsumexp(values)) == pytest.approx(0.0, abs=1e-12)
+
+
+def test_logsumexp_is_bounded_by_max_and_max_plus_log_n() -> None:
+    rng = np.random.default_rng(3)
+    values = rng.uniform(-12.0, -1.0, size=(20, 7))
+    result = logsumexp(values, axis=1)
+    maximum = values.max(axis=1)
+    assert np.all(result >= maximum - 1e-12)
+    assert np.all(result <= maximum + math.log(7) + 1e-12)
