@@ -55,8 +55,10 @@ def logsumexp(
     """
     array = np.asarray(values, dtype=FEATURE_DTYPE)
     maximum = np.max(array, axis=axis, keepdims=True)
-    total = np.sum(np.exp(array - maximum), axis=axis, keepdims=True)
     with np.errstate(divide="ignore", invalid="ignore"):
+        # A fully masked row makes `array - maximum` nan; the `masked` rewrite
+        # below replaces it, so the intermediate warning is expected, not a bug.
+        total = np.sum(np.exp(array - maximum), axis=axis, keepdims=True)
         result = np.log(total) + maximum
     masked = np.all(np.isneginf(array), axis=axis, keepdims=True)
     result = np.where(masked, NEGATIVE_INFINITY, result)

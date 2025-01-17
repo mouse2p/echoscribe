@@ -120,3 +120,13 @@ def test_softmax_normalises_along_the_requested_axis() -> None:
 def test_softmax_output_is_float64_even_for_float32_input() -> None:
     assert softmax(np.zeros((2, 2), dtype=np.float32)).dtype == np.float64
     assert log_softmax(np.zeros((2, 2), dtype=np.float32)).dtype == np.float64
+
+
+def test_masked_rows_do_not_emit_numpy_warnings() -> None:
+    import warnings
+
+    values = np.full((2, 3), NEGATIVE_INFINITY)
+    with warnings.catch_warnings():
+        warnings.simplefilter("error")
+        assert np.all(logsumexp(values, axis=1) == NEGATIVE_INFINITY)
+        assert np.all(log_softmax(values, axis=1) == NEGATIVE_INFINITY)
