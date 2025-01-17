@@ -19,11 +19,17 @@ import math
 
 import numpy as np
 
-from echoscribe.types import FEATURE_DTYPE
+from echoscribe.types import FEATURE_DTYPE, FloatArray
 
 NEGATIVE_INFINITY = float("-inf")
 
-__all__ = ["NEGATIVE_INFINITY", "log_add", "logsumexp"]
+__all__ = [
+    "NEGATIVE_INFINITY",
+    "log_add",
+    "log_softmax",
+    "logsumexp",
+    "softmax",
+]
 
 
 def log_add(left: float, right: float) -> float:
@@ -57,3 +63,23 @@ def logsumexp(
     if keepdims:
         return result
     return result.reshape(()) if axis is None else result.squeeze(axis=axis)
+
+
+def log_softmax(logits: np.ndarray, axis: int = -1) -> FloatArray:
+    """Return log-probabilities normalised along ``axis``.
+
+    Accepts raw logits and already-logarithmic scores alike: only differences
+    between entries matter, so both are handled correctly.
+    """
+    array = np.asarray(logits, dtype=FEATURE_DTYPE)
+    normaliser = logsumexp(array, axis=axis, keepdims=True)
+    with np.errstate(invalid="ignore"):
+        result = array - normaliser
+    # A fully masked row normalises to -inf, and -inf - -inf is nan.  Such a row
+    # carries no probability mass at all, so -inf is the honest answer.
+    return np.where(np.isnan(result), NEGATIVE_INFINITY, result)
+
+
+def softmax(logits: np.ndarray, axis: int = -1) -> FloatArray:
+    """Return probabilities normalised along ``axis``."""
+    return np.exp(log_softmax(logits, axis=axis))

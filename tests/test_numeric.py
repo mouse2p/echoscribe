@@ -7,7 +7,7 @@ import math
 import numpy as np
 import pytest
 
-from echoscribe.numeric import NEGATIVE_INFINITY, log_add, logsumexp
+from echoscribe.numeric import NEGATIVE_INFINITY, log_add, log_softmax, logsumexp, softmax
 
 
 @pytest.mark.parametrize(
@@ -81,3 +81,42 @@ def test_logsumexp_is_bounded_by_max_and_max_plus_log_n() -> None:
     maximum = values.max(axis=1)
     assert np.all(result >= maximum - 1e-12)
     assert np.all(result <= maximum + math.log(7) + 1e-12)
+
+
+def test_log_softmax_rows_normalise_to_one() -> None:
+    logits = np.array([[1.0, 2.0, 3.0], [0.0, 0.0, 0.0]])
+    result = np.exp(log_softmax(logits, axis=-1))
+    assert np.allclose(result.sum(axis=-1), 1.0, atol=1e-12)
+
+
+def test_softmax_is_log_softmax_exponentiated() -> None:
+    logits = np.array([[-4.0, 0.5, 2.0]])
+    assert np.allclose(softmax(logits), np.exp(log_softmax(logits)))
+
+
+def test_softmax_of_equal_logits_is_uniform() -> None:
+    assert np.allclose(softmax(np.zeros((2, 5))), 0.2)
+
+
+def test_softmax_preserves_the_order_of_the_logits() -> None:
+    logits = np.array([[3.0, -1.0, 0.5, 2.0]])
+    result = softmax(logits)[0]
+    assert list(np.argsort(-result)) == list(np.argsort(-logits[0]))
+
+
+def test_log_softmax_handles_a_fully_masked_row() -> None:
+    logits = np.array([[NEGATIVE_INFINITY, NEGATIVE_INFINITY], [0.0, -1.0]])
+    result = log_softmax(logits, axis=-1)
+    assert np.all(np.isneginf(result[0]))
+    assert not np.any(np.isnan(result))
+
+
+def test_softmax_normalises_along_the_requested_axis() -> None:
+    logits = np.arange(6, dtype=np.float64).reshape(2, 3)
+    assert np.allclose(softmax(logits, axis=0).sum(axis=0), 1.0)
+    assert np.allclose(softmax(logits, axis=1).sum(axis=1), 1.0)
+
+
+def test_softmax_output_is_float64_even_for_float32_input() -> None:
+    assert softmax(np.zeros((2, 2), dtype=np.float32)).dtype == np.float64
+    assert log_softmax(np.zeros((2, 2), dtype=np.float32)).dtype == np.float64
