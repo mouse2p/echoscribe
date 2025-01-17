@@ -7,7 +7,16 @@ import math
 import numpy as np
 import pytest
 
-from echoscribe.numeric import NEGATIVE_INFINITY, log_add, log_softmax, logsumexp, softmax
+from echoscribe.errors import FeatureError
+from echoscribe.numeric import (
+    NEGATIVE_INFINITY,
+    PROBABILITY_FLOOR,
+    log_add,
+    log_softmax,
+    logsumexp,
+    safe_log,
+    softmax,
+)
 
 
 @pytest.mark.parametrize(
@@ -130,3 +139,35 @@ def test_masked_rows_do_not_emit_numpy_warnings() -> None:
         warnings.simplefilter("error")
         assert np.all(logsumexp(values, axis=1) == NEGATIVE_INFINITY)
         assert np.all(log_softmax(values, axis=1) == NEGATIVE_INFINITY)
+
+
+def test_safe_log_of_one_is_zero() -> None:
+    assert float(safe_log(np.array([1.0]))[0]) == 0.0
+
+
+def test_safe_log_clamps_exact_zeros_to_the_floor() -> None:
+    result = safe_log(np.array([0.0]))
+    assert np.all(np.isfinite(result))
+    assert float(result[0]) == pytest.approx(math.log(PROBABILITY_FLOOR), rel=1e-12)
+
+
+def test_safe_log_passes_values_above_the_floor_through() -> None:
+    values = np.array([0.25, 0.5, 2.0])
+    assert np.allclose(safe_log(values), np.log(values))
+
+
+def test_safe_log_is_monotonic() -> None:
+    result = safe_log(np.linspace(0.0, 1.0, 32))
+    assert np.all(np.diff(result) >= 0.0)
+
+
+def test_safe_log_rejects_negative_input_and_a_bad_floor() -> None:
+    with pytest.raises(FeatureError, match="non-negative"):
+        safe_log(np.array([-1.0]))
+    with pytest.raises(ValueError, match="floor must be positive"):
+        safe_log(np.array([1.0]), floor=0.0)
+
+
+def test_safe_log_then_softmax_recovers_log_softmax() -> None:
+    logits = np.array([[2.0, -1.0, 0.0], [-5.0, 5.0, 0.0]])
+    assert np.allclose(safe_log(softmax(logits)), log_softmax(logits), atol=1e-12)

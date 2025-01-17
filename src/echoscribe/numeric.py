@@ -19,15 +19,18 @@ import math
 
 import numpy as np
 
+from echoscribe.errors import FeatureError, require, require_positive
 from echoscribe.types import FEATURE_DTYPE, FloatArray
 
 NEGATIVE_INFINITY = float("-inf")
 
 __all__ = [
     "NEGATIVE_INFINITY",
+    "PROBABILITY_FLOOR",
     "log_add",
     "log_softmax",
     "logsumexp",
+    "safe_log",
     "softmax",
 ]
 
@@ -85,3 +88,20 @@ def log_softmax(logits: np.ndarray, axis: int = -1) -> FloatArray:
 def softmax(logits: np.ndarray, axis: int = -1) -> FloatArray:
     """Return probabilities normalised along ``axis``."""
     return np.exp(log_softmax(logits, axis=axis))
+
+
+#: Smallest probability that survives the logarithm.  ``log(PROBABILITY_FLOOR)``
+#: is about -690.8, far below any score a decoder compares, and stays finite.
+PROBABILITY_FLOOR = 1e-300
+
+
+def safe_log(values: np.ndarray, floor: float = PROBABILITY_FLOOR) -> FloatArray:
+    """Return ``log(values)`` with entries below ``floor`` clamped up to it.
+
+    Filterbank energies and products of small posteriors hit exact zero
+    routinely; a raw ``log`` would emit ``-inf`` and poison every later sum.
+    """
+    require_positive("floor", floor)
+    array = np.asarray(values, dtype=FEATURE_DTYPE)
+    require(bool(np.all(array >= 0.0)), "safe_log expects non-negative input", FeatureError)
+    return np.log(np.maximum(array, floor))
