@@ -102,3 +102,24 @@ def test_is_silent_threshold_is_inclusive() -> None:
 def test_is_silent_rejects_a_negative_threshold() -> None:
     with pytest.raises(ValueError, match="must not be negative"):
         Audio([0.0], 16000).is_silent(threshold=-0.1)
+
+
+def test_peak_and_rms_are_computed_in_float64() -> None:
+    # 0.1 squared summed 10000 times in float32 drifts visibly; float64 does not.
+    samples = np.full(10000, 0.1, dtype=np.float32)
+    audio = Audio(samples, 16000)
+    assert audio.rms() == pytest.approx(0.1, abs=1e-7)
+    assert audio.peak() == pytest.approx(float(np.float32(0.1)), abs=0.0)
+
+
+def test_audio_does_not_alias_the_caller_array() -> None:
+    source = np.array([0.1, 0.2, 0.3], dtype=np.float32)
+    audio = Audio(source, 16000)
+    source[0] = -9.0
+    assert audio.samples[0] == pytest.approx(0.1)
+
+
+def test_empty_audio_reports_a_zero_duration_at_any_rate() -> None:
+    for rate in (8000, 16000, 44100):
+        assert Audio([], rate).duration == 0.0
+        assert Audio([], rate).rms() == 0.0
