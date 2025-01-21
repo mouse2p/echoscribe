@@ -171,3 +171,33 @@ def test_safe_log_rejects_negative_input_and_a_bad_floor() -> None:
 def test_safe_log_then_softmax_recovers_log_softmax() -> None:
     logits = np.array([[2.0, -1.0, 0.0], [-5.0, 5.0, 0.0]])
     assert np.allclose(safe_log(softmax(logits)), log_softmax(logits), atol=1e-12)
+
+
+@pytest.mark.parametrize(
+    ("left", "right", "expected"),
+    [
+        (0.0, 0.0, math.log(2.0)),
+        (-1.0, -1.0, -1.0 + math.log(2.0)),
+        (0.0, -math.inf, 0.0),
+        (-2.0, -2.0 + 1e-12, -2.0 + math.log(2.0)),
+    ],
+)
+def test_log_add_reference_table(left: float, right: float, expected: float) -> None:
+    assert log_add(left, right) == pytest.approx(expected, abs=1e-12)
+
+
+def test_log_add_accumulates_a_whole_path_sum() -> None:
+    terms = [math.log(p) for p in (0.1, 0.2, 0.3, 0.4)]
+    total = NEGATIVE_INFINITY
+    for term in terms:
+        total = log_add(total, term)
+    assert math.exp(total) == pytest.approx(1.0, rel=1e-12)
+
+
+def test_log_add_accumulation_matches_logsumexp() -> None:
+    rng = np.random.default_rng(11)
+    terms = rng.uniform(-9.0, -0.5, size=37)
+    folded = NEGATIVE_INFINITY
+    for term in terms:
+        folded = log_add(folded, float(term))
+    assert folded == pytest.approx(float(logsumexp(terms)), abs=1e-9)
