@@ -16,6 +16,8 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
+import numpy as np
+
 from echoscribe.errors import AudioError, require
 from echoscribe.types import SampleArray, as_samples
 
@@ -36,3 +38,31 @@ class Audio:
             f"sample rate must be a positive integer, got {self.sample_rate!r}",
             AudioError,
         )
+
+    @property
+    def num_frames(self) -> int:
+        """Number of samples in the buffer."""
+        return int(self.samples.shape[0])
+
+    @property
+    def duration(self) -> float:
+        """Length in seconds; exactly zero for an empty buffer."""
+        return self.num_frames / self.sample_rate
+
+    def peak(self) -> float:
+        """Largest absolute sample value, or 0.0 for an empty buffer."""
+        if self.num_frames == 0:
+            return 0.0
+        return float(np.max(np.abs(self.samples.astype(np.float64))))
+
+    def rms(self) -> float:
+        """Root-mean-square level, or 0.0 for an empty buffer."""
+        if self.num_frames == 0:
+            return 0.0
+        squared = self.samples.astype(np.float64) ** 2
+        return float(np.sqrt(np.mean(squared)))
+
+    def is_silent(self, threshold: float = 1e-6) -> bool:
+        """True when no sample exceeds ``threshold`` in absolute value."""
+        require(threshold >= 0.0, f"silence threshold must not be negative, got {threshold!r}")
+        return self.peak() <= threshold

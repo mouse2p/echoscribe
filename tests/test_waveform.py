@@ -51,3 +51,54 @@ def test_audio_rejects_non_finite_samples() -> None:
 def test_audio_accepts_an_empty_buffer() -> None:
     audio = Audio([], 16000)
     assert audio.samples.shape == (0,)
+
+
+def test_frame_count_and_duration_agree() -> None:
+    audio = Audio(np.zeros(1600, dtype=np.float32), 16000)
+    assert audio.num_frames == 1600
+    assert audio.duration == pytest.approx(0.1)
+
+
+def test_duration_of_an_empty_buffer_is_zero() -> None:
+    assert Audio([], 16000).duration == 0.0
+
+
+def test_peak_ignores_sign() -> None:
+    assert Audio([0.2, -0.9, 0.4], 16000).peak() == pytest.approx(0.9)
+
+
+def test_peak_of_an_empty_buffer_is_zero() -> None:
+    assert Audio([], 8000).peak() == 0.0
+
+
+def test_rms_of_a_full_scale_square_wave_is_one() -> None:
+    samples = np.tile([-1.0, 1.0], 32).astype(np.float32)
+    assert Audio(samples, 16000).rms() == pytest.approx(1.0)
+
+
+def test_rms_of_a_sine_is_one_over_root_two() -> None:
+    t = np.arange(16000, dtype=np.float64) / 16000.0
+    samples = np.sin(2.0 * np.pi * 100.0 * t).astype(np.float32)
+    assert Audio(samples, 16000).rms() == pytest.approx(1.0 / np.sqrt(2.0), abs=1e-3)
+
+
+def test_rms_never_exceeds_peak() -> None:
+    rng = np.random.default_rng(1)
+    audio = Audio(rng.uniform(-0.7, 0.7, 512).astype(np.float32), 16000)
+    assert audio.rms() <= audio.peak() + 1e-9
+
+
+def test_is_silent_holds_for_zeros_and_fails_for_a_spike() -> None:
+    assert Audio(np.zeros(64, dtype=np.float32), 16000).is_silent()
+    assert not Audio([0.0] * 63 + [0.5], 16000).is_silent()
+
+
+def test_is_silent_threshold_is_inclusive() -> None:
+    audio = Audio([0.01], 16000)
+    assert audio.is_silent(threshold=0.01)
+    assert not audio.is_silent(threshold=0.009)
+
+
+def test_is_silent_rejects_a_negative_threshold() -> None:
+    with pytest.raises(ValueError, match="must not be negative"):
+        Audio([0.0], 16000).is_silent(threshold=-0.1)
