@@ -123,3 +123,35 @@ def test_empty_audio_reports_a_zero_duration_at_any_rate() -> None:
     for rate in (8000, 16000, 44100):
         assert Audio([], rate).duration == 0.0
         assert Audio([], rate).rms() == 0.0
+
+
+def test_slice_is_half_open() -> None:
+    audio = Audio([0.0, 1.0, 2.0, 3.0], 16000)
+    assert list(audio.slice(1, 3).samples) == [1.0, 2.0]
+
+
+def test_slice_keeps_the_sample_rate() -> None:
+    assert Audio([0.0, 1.0], 44100).slice(0, 1).sample_rate == 44100
+
+
+def test_slice_boundaries_are_inclusive_of_both_ends_of_the_buffer() -> None:
+    audio = Audio([0.0, 1.0, 2.0], 16000)
+    assert audio.slice(0, 3).num_frames == 3
+    assert audio.slice(3, 3).num_frames == 0
+    assert audio.slice(0, 0).num_frames == 0
+
+
+@pytest.mark.parametrize(
+    ("start", "end"),
+    [(-1, 2), (0, 4), (2, 1), (5, 5)],
+)
+def test_slice_rejects_out_of_range_and_inverted_bounds(start: int, end: int) -> None:
+    with pytest.raises(AudioError, match="is outside"):
+        Audio([0.0, 1.0, 2.0], 16000).slice(start, end)
+
+
+def test_slice_returns_an_independent_copy() -> None:
+    audio = Audio([0.0, 1.0, 2.0, 3.0], 16000)
+    part = audio.slice(0, 2)
+    part.samples[0] = -5.0
+    assert audio.samples[0] == 0.0

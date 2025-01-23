@@ -66,3 +66,17 @@ class Audio:
         """True when no sample exceeds ``threshold`` in absolute value."""
         require(threshold >= 0.0, f"silence threshold must not be negative, got {threshold!r}")
         return self.peak() <= threshold
+
+    def slice(self, start: int, end: int) -> Audio:
+        """Return the half-open sample range ``[start, end)`` as a new Audio.
+
+        Indices follow Python semantics: ``end`` may equal ``num_frames`` and an
+        inverted range is an error rather than an empty result, because a caller
+        asking for ``slice(50, 10)`` has a bug worth surfacing.
+        """
+        require(
+            0 <= start <= end <= self.num_frames,
+            f"slice ({start}, {end}) is outside [0, {self.num_frames}]",
+            AudioError,
+        )
+        return Audio(self.samples[start:end], self.sample_rate)
