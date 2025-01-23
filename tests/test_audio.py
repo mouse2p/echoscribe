@@ -63,3 +63,30 @@ def test_int16_round_trip_is_exact_for_every_code() -> None:
     payload = codes.astype("<i2").tobytes()
     recovered = np.frombuffer(float32_to_pcm16(pcm16_to_float32(payload)), dtype="<i2")
     assert np.array_equal(recovered.astype(np.int64), codes)
+
+
+def test_encoding_rounds_half_way_values_away_from_zero() -> None:
+    # np.rint uses banker's rounding, so pin what actually happens rather than
+    # assume: 0.5 codes -> 0, 1.5 codes -> 2.
+    quantum = 1.0 / INT16_SCALE
+    values = np.array([0.5 * quantum, 1.5 * quantum], dtype=np.float64)
+    codes = np.frombuffer(float32_to_pcm16(values), "<i2")
+    assert list(codes) == [0, 2]
+
+
+def test_encoding_a_sine_stays_within_one_quantisation_step() -> None:
+    t = np.arange(1000, dtype=np.float64) / 16000.0
+    wave = np.sin(2.0 * np.pi * 440.0 * t)
+    recovered = pcm16_to_float32(float32_to_pcm16(wave.astype(np.float32)))
+    assert np.max(np.abs(recovered - wave)) <= 1.0 / INT16_SCALE + 1e-9
+
+
+def test_encoding_accepts_a_python_list() -> None:
+    assert len(float32_to_pcm16([0.0, 0.5])) == 4
+
+
+def test_decoding_then_encoding_is_stable_on_repeated_passes() -> None:
+    payload = np.arange(-1000, 1000, 7, dtype=np.int64).astype("<i2").tobytes()
+    once = float32_to_pcm16(pcm16_to_float32(payload))
+    twice = float32_to_pcm16(pcm16_to_float32(once))
+    assert once == twice
