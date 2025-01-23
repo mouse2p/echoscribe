@@ -6,7 +6,7 @@ import numpy as np
 import pytest
 
 from echoscribe.errors import AudioError, FeatureError
-from echoscribe.waveform import Audio
+from echoscribe.waveform import Audio, concatenate, silence
 
 
 def test_audio_keeps_its_samples_and_sample_rate() -> None:
@@ -155,3 +155,52 @@ def test_slice_returns_an_independent_copy() -> None:
     part = audio.slice(0, 2)
     part.samples[0] = -5.0
     assert audio.samples[0] == 0.0
+
+
+def test_silence_length_follows_the_sample_rate() -> None:
+    assert silence(0.01, 16000).num_frames == 160
+    assert silence(0.01, 8000).num_frames == 80
+    assert silence(0.0, 16000).num_frames == 0
+
+
+def test_silence_rounds_instead_of_truncating() -> None:
+    # 3 samples at 16 kHz is 0.1875 ms; truncation would give 2 frames.
+    assert silence(3 / 16000, 16000).num_frames == 3
+
+
+def test_silence_is_silent() -> None:
+    assert silence(0.5, 16000).is_silent(threshold=0.0)
+
+
+def test_silence_rejects_a_negative_duration() -> None:
+    with pytest.raises(AudioError, match="non-negative"):
+        silence(-0.1, 16000)
+
+
+def test_concatenate_joins_in_order() -> None:
+    joined = concatenate([Audio([0.0], 16000), Audio([1.0, 2.0], 16000)])
+    assert list(joined.samples) == [0.0, 1.0, 2.0]
+    assert joined.sample_rate == 16000
+
+
+def test_concatenate_of_a_single_part_is_a_copy() -> None:
+    original = Audio([0.5], 16000)
+    joined = concatenate([original])
+    joined.samples[0] = -1.0
+    assert original.samples[0] == pytest.approx(0.5)
+
+
+def test_concatenate_rejects_mixed_sample_rates() -> None:
+    with pytest.raises(AudioError, match="part 1 is at 8000 Hz"):
+        concatenate([Audio([0.0], 16000), Audio([0.0], 8000)])
+
+
+def test_concatenate_rejects_an_empty_sequence() -> None:
+    with pytest.raises(AudioError, match="at least one waveform"):
+        concatenate([])
+
+
+def test_silence_then_concatenate_preserves_total_duration() -> None:
+    gap = silence(0.01, 16000)
+    joined = concatenate([gap, Audio(np.ones(160, dtype=np.float32), 16000), gap])
+    assert joined.duration == pytest.approx(0.03)

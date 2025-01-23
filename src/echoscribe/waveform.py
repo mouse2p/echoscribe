@@ -14,12 +14,13 @@ walk the buffer.
 
 from __future__ import annotations
 
+from collections.abc import Sequence
 from dataclasses import dataclass
 
 import numpy as np
 
 from echoscribe.errors import AudioError, require
-from echoscribe.types import SampleArray, as_samples
+from echoscribe.types import SAMPLE_DTYPE, SampleArray, as_samples
 
 
 @dataclass(frozen=True)
@@ -80,3 +81,33 @@ class Audio:
             AudioError,
         )
         return Audio(self.samples[start:end], self.sample_rate)
+
+
+def silence(duration: float, sample_rate: int) -> Audio:
+    """Return exactly ``round(duration * sample_rate)`` zero samples.
+
+    Rounding, not truncation, keeps a 10 ms gap at 16 kHz exactly 160 samples so
+    that concatenated utterances land on frame boundaries.
+    """
+    require(
+        isinstance(duration, int | float) and duration >= 0.0,
+        f"silence duration must be a non-negative number, got {duration!r}",
+        AudioError,
+    )
+    frames = int(round(duration * sample_rate))
+    return Audio(np.zeros(frames, dtype=SAMPLE_DTYPE), sample_rate)
+
+
+def concatenate(parts: Sequence[Audio]) -> Audio:
+    """Join waveforms end to end; every part must share one sample rate."""
+    items = list(parts)
+    require(len(items) > 0, "concatenate needs at least one waveform", AudioError)
+    rate = items[0].sample_rate
+    for index, part in enumerate(items[1:], start=1):
+        require(
+            part.sample_rate == rate,
+            f"part {index} is at {part.sample_rate} Hz but part 0 is at {rate} Hz",
+            AudioError,
+        )
+    joined = np.concatenate([part.samples for part in items])
+    return Audio(joined, rate)
