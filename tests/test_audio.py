@@ -5,7 +5,13 @@ from __future__ import annotations
 import numpy as np
 import pytest
 
-from echoscribe.audio import INT16_SCALE, float32_to_pcm16, pcm16_to_float32
+from echoscribe.audio import (
+    INT16_SCALE,
+    float32_to_pcm16,
+    pcm8_to_float32,
+    pcm16_to_float32,
+    pcm32_to_float32,
+)
 
 
 def test_int16_scale_is_two_to_the_fifteen() -> None:
@@ -90,3 +96,36 @@ def test_decoding_then_encoding_is_stable_on_repeated_passes() -> None:
     once = float32_to_pcm16(pcm16_to_float32(payload))
     twice = float32_to_pcm16(pcm16_to_float32(once))
     assert once == twice
+
+
+def test_8bit_zero_code_maps_to_minus_one() -> None:
+    assert float(pcm8_to_float32(b"\x00")[0]) == -1.0
+
+
+def test_8bit_centre_code_maps_to_zero() -> None:
+    assert float(pcm8_to_float32(bytes([128]))[0]) == 0.0
+
+
+def test_8bit_top_code_stays_below_one() -> None:
+    value = float(pcm8_to_float32(bytes([255]))[0])
+    assert value == pytest.approx(127 / 128, rel=1e-7)
+    assert value < 1.0
+
+
+def test_8bit_decoding_accepts_an_empty_payload() -> None:
+    assert pcm8_to_float32(b"").shape == (0,)
+
+
+def test_32bit_extremes() -> None:
+    assert float(pcm32_to_float32((-2147483648).to_bytes(4, "little", signed=True))[0]) == -1.0
+    # 2147483647 / 2147483648 sits one float32 ulp below 1.0, so the cast rounds
+    # it up: the top 32-bit code is indistinguishable from full scale once the
+    # waveform is held as float32.  Pinned because it is a real precision limit,
+    # not a codec bug.
+    top = float(pcm32_to_float32((2147483647).to_bytes(4, "little", signed=True))[0])
+    assert top == 1.0
+
+
+def test_32bit_decoding_rejects_a_truncated_payload() -> None:
+    with pytest.raises(ValueError, match="whole samples"):
+        pcm32_to_float32(b"\x01\x02\x03")

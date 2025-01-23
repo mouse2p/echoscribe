@@ -39,3 +39,26 @@ def float32_to_pcm16(samples: SampleArray) -> bytes:
     array = np.asarray(samples, dtype=np.float64)
     scaled = np.rint(np.clip(array, -1.0, 1.0) * INT16_SCALE)
     return np.clip(scaled, -INT16_SCALE, INT16_SCALE - 1).astype("<i2").tobytes()
+
+
+INT8_OFFSET = 128.0
+INT8_SCALE = float(1 << 7)
+INT32_SCALE = float(1 << 31)
+
+
+def pcm8_to_float32(payload: bytes) -> SampleArray:
+    """Decode unsigned 8-bit PCM, which is centred on 128 rather than on zero."""
+    raw = np.frombuffer(payload, dtype=np.uint8)
+    shifted = raw.astype(np.float32) - np.float32(INT8_OFFSET)
+    return (shifted / np.float32(INT8_SCALE)).astype(SAMPLE_DTYPE)
+
+
+def pcm32_to_float32(payload: bytes) -> SampleArray:
+    """Decode little-endian signed 32-bit PCM into float32 samples."""
+    require(
+        len(payload) % 4 == 0,
+        f"32-bit PCM payload must hold whole samples, got {len(payload)} bytes",
+        AudioError,
+    )
+    raw = np.frombuffer(payload, dtype="<i4")
+    return (raw.astype(np.float64) / INT32_SCALE).astype(SAMPLE_DTYPE)
