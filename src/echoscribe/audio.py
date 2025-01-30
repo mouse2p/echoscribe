@@ -21,6 +21,10 @@ rather than letting it wrap to the most negative one.
 
 from __future__ import annotations
 
+import wave
+from dataclasses import dataclass
+from pathlib import Path
+
 import numpy as np
 
 from echoscribe.errors import AudioError, require
@@ -154,3 +158,47 @@ def encode_pcm(samples: SampleArray, sample_width: int) -> bytes:
         AudioError,
     )
     return _ENCODERS[sample_width](samples)
+
+
+@dataclass(frozen=True)
+class WavInfo:
+    """What a WAV header claims, read without decoding any samples."""
+
+    path: str
+    channels: int
+    sample_rate: int
+    sample_width: int
+    num_frames: int
+    compression: str
+
+    @property
+    def duration(self) -> float:
+        """Length in seconds implied by the frame count."""
+        return self.num_frames / self.sample_rate
+
+    @property
+    def is_pcm(self) -> bool:
+        """True for the uncompressed encoding that ``wave`` labels ``NONE``."""
+        return self.compression == "NONE"
+
+
+def inspect_wav(path: str | Path) -> WavInfo:
+    """Read only the header of ``path``.
+
+    Useful before committing to a decode: a caller can reject a floating-point or
+    compressed file from its metadata alone.
+    """
+    resolved = Path(path)
+    require(resolved.is_file(), f"wav file not found: {resolved}", AudioError)
+    try:
+        with wave.open(str(resolved), "rb") as handle:
+            return WavInfo(
+                path=str(resolved),
+                channels=handle.getnchannels(),
+                sample_rate=handle.getframerate(),
+                sample_width=handle.getsampwidth(),
+                num_frames=handle.getnframes(),
+                compression=handle.getcomptype(),
+            )
+    except wave.Error as error:
+        raise AudioError(f"{resolved}: not a readable wav file ({error})") from error

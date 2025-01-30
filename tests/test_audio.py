@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import wave
+
 import numpy as np
 import pytest
 
@@ -14,6 +16,7 @@ from echoscribe.audio import (
     float32_to_pcm16,
     float32_to_pcm24,
     float32_to_pcm32,
+    inspect_wav,
     pcm8_to_float32,
     pcm16_to_float32,
     pcm24_to_float32,
@@ -251,3 +254,38 @@ def test_encode_decode_is_idempotent_on_reconstructed_audio(width: int) -> None:
 def test_decoders_all_return_float32() -> None:
     for width in SUPPORTED_WIDTHS:
         assert decode_pcm(b"\x00" * (width * 3), width).dtype == np.float32
+
+
+def _write_raw_wav(path, payload: bytes, width: int, channels: int, rate: int) -> None:
+    """Write a wav with an explicit PCM payload, bypassing the encoders."""
+    with wave.open(str(path), "wb") as handle:
+        handle.setnchannels(channels)
+        handle.setsampwidth(width)
+        handle.setframerate(rate)
+        handle.writeframes(payload)
+
+
+def test_inspect_wav_reports_the_header(tmp_path) -> None:
+    target = tmp_path / "tone.wav"
+    _write_raw_wav(target, b"\x00\x00" * 100, 2, 1, 16000)
+    info = inspect_wav(target)
+    assert info.channels == 1
+    assert info.sample_rate == 16000
+    assert info.sample_width == 2
+    assert info.num_frames == 100
+    assert info.compression == "NONE"
+    assert info.is_pcm
+    assert info.duration == pytest.approx(100 / 16000)
+    assert info.path.endswith("tone.wav")
+
+
+def test_inspect_wav_rejects_a_missing_file(tmp_path) -> None:
+    with pytest.raises(ValueError, match="wav file not found"):
+        inspect_wav(tmp_path / "absent.wav")
+
+
+def test_inspect_wav_rejects_a_non_wav_file(tmp_path) -> None:
+    target = tmp_path / "broken.wav"
+    target.write_bytes(b"not a riff container at all")
+    with pytest.raises(ValueError, match="not a readable wav file"):
+        inspect_wav(target)
