@@ -11,6 +11,12 @@ The convention throughout is:
 * decoding divides by ``2 ** (bits - 1)`` so ``-1.0`` maps to the most negative
   code and ``+1.0`` maps to one step *below* the most positive code, keeping the
   mapping symmetric and the round trip exact.
+
+The asymmetry is inherent to two's complement: for ``n`` bits there are
+``2 ** (n - 1)`` negative codes but only ``2 ** (n - 1) - 1`` positive ones.
+Dividing by ``2 ** (n - 1)`` on the way out therefore can never produce exactly
+``+1.0``, and clipping on the way in keeps ``+1.0`` at the largest positive code
+rather than letting it wrap to the most negative one.
 """
 
 from __future__ import annotations
