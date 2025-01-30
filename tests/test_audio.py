@@ -7,6 +7,8 @@ import pytest
 
 from echoscribe.audio import (
     INT16_SCALE,
+    SUPPORTED_WIDTHS,
+    decode_pcm,
     float32_to_pcm16,
     pcm8_to_float32,
     pcm16_to_float32,
@@ -159,3 +161,20 @@ def test_24bit_decoding_handles_multiple_samples() -> None:
     assert result.shape == (3,)
     assert result[0] == 0.0
     assert result[1] == -1.0
+
+
+def test_decode_pcm_routes_to_the_matching_codec() -> None:
+    assert float(decode_pcm(b"\x80", 1)[0]) == 0.0
+    assert float(decode_pcm(b"\x00\x00", 2)[0]) == 0.0
+    assert float(decode_pcm(b"\x00\x00\x00", 3)[0]) == 0.0
+    assert float(decode_pcm(b"\x00\x00\x00\x00", 4)[0]) == 0.0
+
+
+@pytest.mark.parametrize("width", [0, 5, -2, 6])
+def test_decode_pcm_rejects_an_unsupported_width(width: int) -> None:
+    with pytest.raises(ValueError, match="unsupported PCM sample width"):
+        decode_pcm(b"\x00" * 8, width)
+
+
+def test_supported_widths_cover_every_registered_codec() -> None:
+    assert tuple(sorted(SUPPORTED_WIDTHS)) == (1, 2, 3, 4)

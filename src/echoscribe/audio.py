@@ -82,3 +82,24 @@ def pcm24_to_float32(payload: bytes) -> SampleArray:
     codes = raw[:, 0] | (raw[:, 1] << 8) | (raw[:, 2] << 16)
     codes = np.where(codes >= 1 << 23, codes - (1 << 24), codes)
     return (codes.astype(np.float64) / INT24_SCALE).astype(SAMPLE_DTYPE)
+
+
+#: PCM sample widths in bytes that echoscribe can decode.
+SUPPORTED_WIDTHS = (1, 2, 3, 4)
+
+_DECODERS = {
+    1: pcm8_to_float32,
+    2: pcm16_to_float32,
+    3: pcm24_to_float32,
+    4: pcm32_to_float32,
+}
+
+
+def decode_pcm(payload: bytes, sample_width: int) -> SampleArray:
+    """Decode ``payload`` according to ``sample_width`` in bytes."""
+    require(
+        sample_width in SUPPORTED_WIDTHS,
+        f"unsupported PCM sample width {sample_width}; echoscribe reads {SUPPORTED_WIDTHS}",
+        AudioError,
+    )
+    return _DECODERS[sample_width](payload)
