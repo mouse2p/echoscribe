@@ -10,6 +10,7 @@ from echoscribe.audio import (
     float32_to_pcm16,
     pcm8_to_float32,
     pcm16_to_float32,
+    pcm24_to_float32,
     pcm32_to_float32,
 )
 
@@ -129,3 +130,32 @@ def test_32bit_extremes() -> None:
 def test_32bit_decoding_rejects_a_truncated_payload() -> None:
     with pytest.raises(ValueError, match="whole samples"):
         pcm32_to_float32(b"\x01\x02\x03")
+
+
+def test_24bit_extremes() -> None:
+    assert float(pcm24_to_float32(b"\x00\x00\x80")[0]) == -1.0
+    top = float(pcm24_to_float32(b"\xff\xff\x7f")[0])
+    assert top < 1.0
+    assert top == pytest.approx(1.0, abs=1e-6)
+
+
+def test_24bit_zero_code_maps_to_zero() -> None:
+    assert float(pcm24_to_float32(b"\x00\x00\x00")[0]) == 0.0
+
+
+def test_24bit_decoding_is_little_endian() -> None:
+    # 0x000001 in the low byte is code 1, not code 65536.
+    assert float(pcm24_to_float32(b"\x01\x00\x00")[0]) == pytest.approx(1.0 / (1 << 23))
+
+
+def test_24bit_decoding_rejects_a_truncated_payload() -> None:
+    with pytest.raises(ValueError, match="whole samples"):
+        pcm24_to_float32(b"\x01\x02")
+
+
+def test_24bit_decoding_handles_multiple_samples() -> None:
+    payload = b"\x00\x00\x00" + b"\x00\x00\x80" + b"\xff\xff\x7f"
+    result = pcm24_to_float32(payload)
+    assert result.shape == (3,)
+    assert result[0] == 0.0
+    assert result[1] == -1.0

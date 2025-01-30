@@ -62,3 +62,23 @@ def pcm32_to_float32(payload: bytes) -> SampleArray:
     )
     raw = np.frombuffer(payload, dtype="<i4")
     return (raw.astype(np.float64) / INT32_SCALE).astype(SAMPLE_DTYPE)
+
+
+INT24_SCALE = float(1 << 23)
+
+
+def pcm24_to_float32(payload: bytes) -> SampleArray:
+    """Decode little-endian signed 24-bit PCM, which ``wave`` stores unpacked.
+
+    There is no ``<i3`` dtype, so the three bytes are reassembled into ``int32``
+    and sign-extended manually.
+    """
+    require(
+        len(payload) % 3 == 0,
+        f"24-bit PCM payload must hold whole samples, got {len(payload)} bytes",
+        AudioError,
+    )
+    raw = np.frombuffer(payload, dtype=np.uint8).reshape(-1, 3).astype(np.int32)
+    codes = raw[:, 0] | (raw[:, 1] << 8) | (raw[:, 2] << 16)
+    codes = np.where(codes >= 1 << 23, codes - (1 << 24), codes)
+    return (codes.astype(np.float64) / INT24_SCALE).astype(SAMPLE_DTYPE)
