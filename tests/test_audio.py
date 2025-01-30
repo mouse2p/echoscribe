@@ -230,3 +230,24 @@ def test_32bit_encoder_holds_the_full_range() -> None:
     codes = np.frombuffer(payload, dtype="<i4")
     assert codes[0] == 2147483647
     assert codes[1] == -2147483648
+
+
+@pytest.mark.parametrize("width", [1, 2, 3, 4])
+def test_encoding_is_monotonic_in_the_input(width: int) -> None:
+    ramp = np.linspace(-1.0, 1.0, 512)
+    recovered = decode_pcm(encode_pcm(ramp, width), width).astype(np.float64)
+    assert np.all(np.diff(recovered) >= 0.0)
+
+
+@pytest.mark.parametrize("width", [1, 2, 3, 4])
+def test_encode_decode_is_idempotent_on_reconstructed_audio(width: int) -> None:
+    rng = np.random.default_rng(9)
+    wave = rng.uniform(-0.8, 0.8, 128).astype(np.float32)
+    first = encode_pcm(wave, width)
+    second = encode_pcm(decode_pcm(first, width), width)
+    assert first == second
+
+
+def test_decoders_all_return_float32() -> None:
+    for width in SUPPORTED_WIDTHS:
+        assert decode_pcm(b"\x00" * (width * 3), width).dtype == np.float32
