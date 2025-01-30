@@ -103,3 +103,48 @@ def decode_pcm(payload: bytes, sample_width: int) -> SampleArray:
         AudioError,
     )
     return _DECODERS[sample_width](payload)
+
+
+def float32_to_pcm8(samples: SampleArray) -> bytes:
+    """Encode float32 samples as unsigned 8-bit PCM centred on 128."""
+    array = np.asarray(samples, dtype=np.float64)
+    scaled = np.rint(np.clip(array, -1.0, 1.0) * INT8_SCALE + INT8_OFFSET)
+    return np.clip(scaled, 0.0, 255.0).astype(np.uint8).tobytes()
+
+
+def float32_to_pcm24(samples: SampleArray) -> bytes:
+    """Encode float32 samples as little-endian signed 24-bit PCM."""
+    array = np.asarray(samples, dtype=np.float64)
+    scaled = np.rint(np.clip(array, -1.0, 1.0) * INT24_SCALE)
+    codes = np.clip(scaled, -INT24_SCALE, INT24_SCALE - 1).astype(np.int32)
+    raw = (codes & 0xFFFFFF).astype(np.uint32)
+    packed = np.empty((raw.size, 3), dtype=np.uint8)
+    packed[:, 0] = raw & 0xFF
+    packed[:, 1] = (raw >> 8) & 0xFF
+    packed[:, 2] = (raw >> 16) & 0xFF
+    return packed.tobytes()
+
+
+def float32_to_pcm32(samples: SampleArray) -> bytes:
+    """Encode float32 samples as little-endian signed 32-bit PCM."""
+    array = np.asarray(samples, dtype=np.float64)
+    scaled = np.rint(np.clip(array, -1.0, 1.0) * INT32_SCALE)
+    return np.clip(scaled, -INT32_SCALE, INT32_SCALE - 1).astype("<i4").tobytes()
+
+
+_ENCODERS = {
+    1: float32_to_pcm8,
+    2: float32_to_pcm16,
+    3: float32_to_pcm24,
+    4: float32_to_pcm32,
+}
+
+
+def encode_pcm(samples: SampleArray, sample_width: int) -> bytes:
+    """Encode ``samples`` at the requested ``sample_width`` in bytes."""
+    require(
+        sample_width in SUPPORTED_WIDTHS,
+        f"unsupported PCM sample width {sample_width}; echoscribe writes {SUPPORTED_WIDTHS}",
+        AudioError,
+    )
+    return _ENCODERS[sample_width](samples)

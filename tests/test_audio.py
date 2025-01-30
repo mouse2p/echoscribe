@@ -9,7 +9,11 @@ from echoscribe.audio import (
     INT16_SCALE,
     SUPPORTED_WIDTHS,
     decode_pcm,
+    encode_pcm,
+    float32_to_pcm8,
     float32_to_pcm16,
+    float32_to_pcm24,
+    float32_to_pcm32,
     pcm8_to_float32,
     pcm16_to_float32,
     pcm24_to_float32,
@@ -178,3 +182,51 @@ def test_decode_pcm_rejects_an_unsupported_width(width: int) -> None:
 
 def test_supported_widths_cover_every_registered_codec() -> None:
     assert tuple(sorted(SUPPORTED_WIDTHS)) == (1, 2, 3, 4)
+
+
+@pytest.mark.parametrize("width", [1, 2, 3, 4])
+def test_every_width_round_trips_within_one_quantisation_step(width: int) -> None:
+    rng = np.random.default_rng(5)
+    # Feed the codec a float32 waveform, which is how Audio stores one.  Feeding
+    # float64 instead makes 32-bit PCM look lossy: the extra mantissa bits land
+    # within one float32 ulp of a rounding midpoint and the cast can flip a code.
+    wave = rng.uniform(-1.0, 1.0, 256).astype(np.float32)
+    quantum = 2.0 / (1 << (width * 8 - 1))
+    recovered = decode_pcm(encode_pcm(wave, width), width)
+    error = np.abs(recovered.astype(np.float64) - wave.astype(np.float64))
+    assert np.max(error) <= quantum
+
+
+@pytest.mark.parametrize("width", [1, 2, 3, 4])
+def test_every_width_clips_out_of_range_input(width: int) -> None:
+    payload = encode_pcm(np.array([9.0, -9.0]), width)
+    recovered = decode_pcm(payload, width)
+    assert recovered[0] > 0.9
+    assert recovered[1] == -1.0
+
+
+@pytest.mark.parametrize("width", [1, 2, 3, 4])
+def test_every_width_encodes_silence_to_its_zero_code(width: int) -> None:
+    payload = encode_pcm(np.zeros(4), width)
+    assert len(payload) == 4 * width
+    assert np.all(decode_pcm(payload, width) == 0.0)
+
+
+def test_encode_pcm_rejects_an_unsupported_width() -> None:
+    with pytest.raises(ValueError, match="unsupported PCM sample width"):
+        encode_pcm(np.zeros(2), 5)
+
+
+def test_8bit_encoder_centres_silence_on_128() -> None:
+    assert list(float32_to_pcm8(np.zeros(3))) == [128, 128, 128]
+
+
+def test_24bit_encoder_packs_three_bytes_per_sample() -> None:
+    assert len(float32_to_pcm24(np.array([0.0, 0.5, -0.5]))) == 9
+
+
+def test_32bit_encoder_holds_the_full_range() -> None:
+    payload = float32_to_pcm32(np.array([1.0, -1.0]))
+    codes = np.frombuffer(payload, dtype="<i4")
+    assert codes[0] == 2147483647
+    assert codes[1] == -2147483648
