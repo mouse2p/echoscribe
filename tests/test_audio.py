@@ -22,7 +22,9 @@ from echoscribe.audio import (
     pcm24_to_float32,
     pcm32_to_float32,
     read_wav_channels,
+    to_mono,
 )
+from echoscribe.errors import FeatureError
 
 
 def test_int16_scale_is_two_to_the_fifteen() -> None:
@@ -347,3 +349,43 @@ def test_read_wav_channels_of_an_empty_file(tmp_path) -> None:
     _write_raw_wav(target, b"", 2, 1, 16000)
     channels, _ = read_wav_channels(target)
     assert channels.shape == (0, 1)
+
+
+def test_to_mono_averages_two_channels() -> None:
+    channels = np.array([[0.2, 0.4], [-0.6, 0.0]], dtype=np.float32)
+    assert np.allclose(to_mono(channels), [0.3, -0.3], atol=1e-7)
+
+
+def test_to_mono_passes_a_single_channel_through() -> None:
+    channels = np.array([[0.25], [-0.75]], dtype=np.float32)
+    assert np.allclose(to_mono(channels), [0.25, -0.75])
+
+
+def test_to_mono_weights_select_a_channel() -> None:
+    channels = np.array([[0.2, 0.8], [0.4, -0.4]], dtype=np.float32)
+    assert np.allclose(to_mono(channels, [0.0, 1.0]), [0.8, -0.4])
+    assert np.allclose(to_mono(channels, [1.0, 0.0]), [0.2, 0.4])
+
+
+def test_to_mono_weights_are_normalised_by_their_sum() -> None:
+    channels = np.array([[0.5, 0.5]], dtype=np.float32)
+    assert np.allclose(to_mono(channels, [2.0, 2.0]), [0.5])
+
+
+def test_to_mono_rejects_the_wrong_number_of_weights() -> None:
+    with pytest.raises(ValueError, match="expected 2 channel weights"):
+        to_mono(np.zeros((3, 2)), [1.0])
+
+
+def test_to_mono_rejects_weights_that_sum_to_zero() -> None:
+    with pytest.raises(ValueError, match="must not sum to zero"):
+        to_mono(np.zeros((3, 2)), [1.0, -1.0])
+
+
+def test_to_mono_rejects_a_flat_vector() -> None:
+    with pytest.raises(FeatureError, match="must be 2-D"):
+        to_mono(np.zeros(4))
+
+
+def test_to_mono_returns_float32() -> None:
+    assert to_mono(np.zeros((2, 2), dtype=np.float64)).dtype == np.float32
