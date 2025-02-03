@@ -21,6 +21,7 @@ from echoscribe.audio import (
     pcm16_to_float32,
     pcm24_to_float32,
     pcm32_to_float32,
+    read_wav_channels,
 )
 
 
@@ -289,3 +290,60 @@ def test_inspect_wav_rejects_a_non_wav_file(tmp_path) -> None:
     target.write_bytes(b"not a riff container at all")
     with pytest.raises(ValueError, match="not a readable wav file"):
         inspect_wav(target)
+
+
+#: Canonical RIFF/WAVE header offsets that `wave` reads back.
+OFFSET_FORMAT_TAG = 20
+OFFSET_SAMPLE_RATE = 24
+OFFSET_BITS_PER_SAMPLE = 34
+OFFSET_DATA_SIZE = 40
+
+
+def _patch_wav_header(path, offset: int, value: int, size: int = 4) -> None:
+    """Rewrite one little-endian header field in place.
+
+    `wave` has no update mode, and the guards under test only trip on headers
+    that a well-behaved writer would never produce.
+    """
+    raw = bytearray(path.read_bytes())
+    raw[offset : offset + size] = value.to_bytes(size, "little")
+    path.write_bytes(bytes(raw))
+
+
+def test_read_wav_channels_keeps_stereo_separate(tmp_path) -> None:
+    target = tmp_path / "stereo.wav"
+    left = np.array([0, 32767, -32768], dtype="<i2")
+    right = np.array([32767, 0, 16384], dtype="<i2")
+    interleaved = np.empty(6, dtype="<i2")
+    interleaved[0::2] = left
+    interleaved[1::2] = right
+    _write_raw_wav(target, interleaved.tobytes(), 2, 2, 16000)
+    channels, rate = read_wav_channels(target)
+    assert channels.shape == (3, 2)
+    assert rate == 16000
+    assert channels[1, 0] == pytest.approx(1.0, abs=1e-4)
+    assert channels[1, 1] == 0.0
+    assert channels[2, 1] == pytest.approx(0.5, abs=1e-4)
+
+
+def test_read_wav_channels_of_a_mono_file_is_a_single_column(tmp_path) -> None:
+    target = tmp_path / "mono-raw.wav"
+    _write_raw_wav(target, b"\x00\x40\x00\xc0", 2, 1, 8000)
+    channels, rate = read_wav_channels(target)
+    assert channels.shape == (2, 1)
+    assert rate == 8000
+
+
+def test_read_wav_channels_rejects_a_payload_shorter_than_the_header(tmp_path) -> None:
+    target = tmp_path / "short.wav"
+    _write_raw_wav(target, b"\x00\x00" * 10, 2, 1, 16000)
+    _patch_wav_header(target, OFFSET_DATA_SIZE, 999 * 2)
+    with pytest.raises(ValueError, match="header claims 999 frames but the payload holds 10"):
+        read_wav_channels(target)
+
+
+def test_read_wav_channels_of_an_empty_file(tmp_path) -> None:
+    target = tmp_path / "nothing.wav"
+    _write_raw_wav(target, b"", 2, 1, 16000)
+    channels, _ = read_wav_channels(target)
+    assert channels.shape == (0, 1)
