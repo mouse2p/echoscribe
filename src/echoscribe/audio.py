@@ -28,8 +28,9 @@ from pathlib import Path
 
 import numpy as np
 
-from echoscribe.errors import AudioError, require
+from echoscribe.errors import AudioError, require, require_in
 from echoscribe.types import SAMPLE_DTYPE, SampleArray, require_rank
+from echoscribe.waveform import Audio
 
 INT16_SCALE = float(1 << 15)
 
@@ -258,3 +259,29 @@ def to_mono(channels: np.ndarray, weights: Sequence[float] | None = None) -> Sam
     total = float(gains.sum())
     require(abs(total) > 1e-12, "channel weights must not sum to zero", AudioError)
     return ((matrix @ gains) / total).astype(SAMPLE_DTYPE)
+
+
+def read_wav(path: str | Path) -> Audio:
+    """Read ``path`` and return it as a mono :class:`~echoscribe.waveform.Audio`.
+
+    Multi-channel files are averaged down to mono; use :func:`read_wav_channels`
+    when the individual channels matter.
+    """
+    channels, sample_rate = read_wav_channels(path)
+    return Audio(to_mono(channels), sample_rate)
+
+
+def write_wav(path: str | Path, audio: Audio, sample_width: int = 2) -> None:
+    """Write ``audio`` as a mono PCM wav file at the requested sample width."""
+    require_in("sample width", sample_width, SUPPORTED_WIDTHS, AudioError)
+    payload = encode_pcm(audio.samples, sample_width)
+    resolved = Path(path)
+    resolved.parent.mkdir(parents=True, exist_ok=True)
+    try:
+        with wave.open(str(resolved), "wb") as handle:
+            handle.setnchannels(1)
+            handle.setsampwidth(sample_width)
+            handle.setframerate(audio.sample_rate)
+            handle.writeframes(payload)
+    except wave.Error as error:
+        raise AudioError(f"{resolved}: cannot write wav ({error})") from error
