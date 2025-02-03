@@ -433,3 +433,30 @@ def test_read_wav_of_a_stereo_file_returns_the_channel_mean(tmp_path) -> None:
     audio = read_wav(target)
     assert audio.num_frames == frames
     assert np.allclose(audio.samples, 0.1, atol=1e-4)
+
+
+@pytest.mark.parametrize("rate", [8000, 16000, 22050, 44100, 48000])
+def test_common_sample_rates_survive_a_round_trip(tmp_path, rate: int) -> None:
+    target = tmp_path / f"rate{rate}.wav"
+    write_wav(target, Audio(np.zeros(rate // 100, dtype=np.float32), rate))
+    audio = read_wav(target)
+    assert audio.sample_rate == rate
+    assert audio.num_frames == rate // 100
+
+
+def test_an_empty_wav_round_trips(tmp_path) -> None:
+    target = tmp_path / "empty.wav"
+    write_wav(target, Audio(np.zeros(0, dtype=np.float32), 16000))
+    audio = read_wav(target)
+    assert audio.num_frames == 0
+    assert audio.sample_rate == 16000
+
+
+def test_read_wav_channels_preserves_frame_order(tmp_path) -> None:
+    target = tmp_path / "ramp.wav"
+    frames = 32
+    ramp = np.arange(frames, dtype=np.float32) / frames
+    write_wav(target, Audio(ramp, 16000))
+    channels, _ = read_wav_channels(target)
+    assert np.all(np.diff(channels[:, 0]) > 0.0)
+    assert np.allclose(channels[:, 0], pcm16_to_float32(float32_to_pcm16(ramp)))
