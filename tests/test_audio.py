@@ -21,10 +21,13 @@ from echoscribe.audio import (
     pcm16_to_float32,
     pcm24_to_float32,
     pcm32_to_float32,
+    read_wav,
     read_wav_channels,
     to_mono,
+    write_wav,
 )
 from echoscribe.errors import FeatureError
+from echoscribe.waveform import Audio
 
 
 def test_int16_scale_is_two_to_the_fifteen() -> None:
@@ -389,3 +392,44 @@ def test_to_mono_rejects_a_flat_vector() -> None:
 
 def test_to_mono_returns_float32() -> None:
     assert to_mono(np.zeros((2, 2), dtype=np.float64)).dtype == np.float32
+
+
+def test_write_then_read_recovers_a_16bit_wav_exactly(tmp_path) -> None:
+    target = tmp_path / "round.wav"
+    samples = np.linspace(-1.0, 1.0, 512).astype(np.float32)
+    write_wav(target, Audio(samples, 16000))
+    audio = read_wav(target)
+    assert audio.sample_rate == 16000
+    assert np.array_equal(audio.samples, pcm16_to_float32(float32_to_pcm16(samples)))
+
+
+def test_write_wav_creates_missing_parent_directories(tmp_path) -> None:
+    target = tmp_path / "nested" / "deeper" / "audio.wav"
+    write_wav(target, Audio(np.zeros(8, dtype=np.float32), 8000))
+    assert target.is_file()
+
+
+@pytest.mark.parametrize("width", [1, 2, 3, 4])
+def test_write_wav_honours_the_requested_width(tmp_path, width: int) -> None:
+    target = tmp_path / f"w{width}.wav"
+    write_wav(target, Audio(np.zeros(4, dtype=np.float32), 16000), sample_width=width)
+    assert inspect_wav(target).sample_width == width
+    assert target.stat().st_size > width * 4
+
+
+def test_write_wav_rejects_an_unsupported_width(tmp_path) -> None:
+    with pytest.raises(ValueError, match=r"sample width must be one of \(1, 2, 3, 4\), got 5"):
+        write_wav(tmp_path / "bad.wav", Audio(np.zeros(2, dtype=np.float32), 16000), 5)
+    assert not (tmp_path / "bad.wav").exists()
+
+
+def test_read_wav_of_a_stereo_file_returns_the_channel_mean(tmp_path) -> None:
+    target = tmp_path / "mix.wav"
+    frames = 64
+    interleaved = np.empty(2 * frames, dtype=np.float32)
+    interleaved[0::2] = 0.4
+    interleaved[1::2] = -0.2
+    _write_raw_wav(target, float32_to_pcm16(interleaved), 2, 2, 16000)
+    audio = read_wav(target)
+    assert audio.num_frames == frames
+    assert np.allclose(audio.samples, 0.1, atol=1e-4)
