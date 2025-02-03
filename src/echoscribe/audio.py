@@ -22,13 +22,14 @@ rather than letting it wrap to the most negative one.
 from __future__ import annotations
 
 import wave
+from collections.abc import Sequence
 from dataclasses import dataclass
 from pathlib import Path
 
 import numpy as np
 
 from echoscribe.errors import AudioError, require
-from echoscribe.types import SAMPLE_DTYPE, SampleArray
+from echoscribe.types import SAMPLE_DTYPE, SampleArray, require_rank
 
 INT16_SCALE = float(1 << 15)
 
@@ -236,3 +237,24 @@ def read_wav_channels(path: str | Path) -> tuple[np.ndarray, int]:
         AudioError,
     )
     return flat.reshape(info.num_frames, info.channels), info.sample_rate
+
+
+def to_mono(channels: np.ndarray, weights: Sequence[float] | None = None) -> SampleArray:
+    """Mix a ``(frames, channels)`` matrix down to one channel.
+
+    Without ``weights`` the channels are averaged, which is what a mono ASR front
+    end wants.  With ``weights`` the mix is divided by their sum, so passing
+    ``[0.0, 1.0]`` *selects* the right channel instead of halving it.
+    """
+    matrix = require_rank("channel matrix", np.asarray(channels, dtype=np.float64), 2)
+    if weights is None:
+        return matrix.mean(axis=1).astype(SAMPLE_DTYPE)
+    gains = np.asarray(weights, dtype=np.float64)
+    require(
+        gains.shape == (matrix.shape[1],),
+        f"expected {matrix.shape[1]} channel weights, got shape {gains.shape}",
+        AudioError,
+    )
+    total = float(gains.sum())
+    require(abs(total) > 1e-12, "channel weights must not sum to zero", AudioError)
+    return ((matrix @ gains) / total).astype(SAMPLE_DTYPE)
