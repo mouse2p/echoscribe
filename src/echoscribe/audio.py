@@ -202,3 +202,37 @@ def inspect_wav(path: str | Path) -> WavInfo:
             )
     except wave.Error as error:
         raise AudioError(f"{resolved}: not a readable wav file ({error})") from error
+
+
+def read_wav_channels(path: str | Path) -> tuple[np.ndarray, int]:
+    """Read ``path`` without mixing, returning ``(frames, channels)`` and the rate.
+
+    Only uncompressed PCM in one of :data:`SUPPORTED_WIDTHS` is accepted.
+    Compressed and floating-point WAV variants raise :class:`AudioError` rather
+    than being silently mis-decoded.
+    """
+    info = inspect_wav(path)
+    require(
+        info.is_pcm,
+        f"{info.path}: only uncompressed PCM wav is supported, got {info.compression!r}",
+        AudioError,
+    )
+    require(
+        info.sample_width in SUPPORTED_WIDTHS,
+        f"{info.path}: unsupported sample width {info.sample_width}",
+        AudioError,
+    )
+    require(info.channels > 0, f"{info.path}: header claims {info.channels} channels", AudioError)
+    try:
+        with wave.open(info.path, "rb") as handle:
+            payload = handle.readframes(info.num_frames)
+    except wave.Error as error:
+        raise AudioError(f"{info.path}: cannot read frames ({error})") from error
+    flat = decode_pcm(payload, info.sample_width)
+    require(
+        flat.size == info.num_frames * info.channels,
+        f"{info.path}: header claims {info.num_frames} frames but the payload holds "
+        f"{flat.size // max(info.channels, 1)}",
+        AudioError,
+    )
+    return flat.reshape(info.num_frames, info.channels), info.sample_rate
