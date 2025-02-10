@@ -213,18 +213,7 @@ def read_wav_channels(path: str | Path) -> tuple[np.ndarray, int]:
     Compressed and floating-point WAV variants raise :class:`AudioError` rather
     than being silently mis-decoded.
     """
-    info = inspect_wav(path)
-    require(
-        info.is_pcm,
-        f"{info.path}: only uncompressed PCM wav is supported, got {info.compression!r}",
-        AudioError,
-    )
-    require(
-        info.sample_width in SUPPORTED_WIDTHS,
-        f"{info.path}: unsupported sample width {info.sample_width}",
-        AudioError,
-    )
-    require(info.channels > 0, f"{info.path}: header claims {info.channels} channels", AudioError)
+    info = assert_readable_wav(path)
     try:
         with wave.open(info.path, "rb") as handle:
             payload = handle.readframes(info.num_frames)
@@ -285,3 +274,30 @@ def write_wav(path: str | Path, audio: Audio, sample_width: int = 2) -> None:
             handle.writeframes(payload)
     except wave.Error as error:
         raise AudioError(f"{resolved}: cannot write wav ({error})") from error
+
+
+def assert_readable_wav(path: str | Path) -> WavInfo:
+    """Validate ``path`` for decoding and return its header.
+
+    Kept separate from :func:`read_wav_channels` so a CLI can report a precise
+    reason before touching any sample data.
+    """
+    info = inspect_wav(path)
+    require(
+        info.is_pcm,
+        f"{info.path}: only uncompressed PCM wav is supported, got {info.compression!r}",
+        AudioError,
+    )
+    require(
+        info.sample_width in SUPPORTED_WIDTHS,
+        f"{info.path}: unsupported sample width {info.sample_width}; "
+        f"echoscribe reads {SUPPORTED_WIDTHS}",
+        AudioError,
+    )
+    require(info.channels > 0, f"{info.path}: header claims {info.channels} channels", AudioError)
+    require(
+        info.sample_rate > 0,
+        f"{info.path}: header claims a sample rate of {info.sample_rate}",
+        AudioError,
+    )
+    return info
