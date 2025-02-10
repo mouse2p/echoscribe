@@ -214,12 +214,7 @@ def read_wav_channels(path: str | Path) -> tuple[np.ndarray, int]:
     than being silently mis-decoded.
     """
     info = assert_readable_wav(path)
-    try:
-        with wave.open(info.path, "rb") as handle:
-            payload = handle.readframes(info.num_frames)
-    except wave.Error as error:
-        raise AudioError(f"{info.path}: cannot read frames ({error})") from error
-    flat = decode_pcm(payload, info.sample_width)
+    flat = _read_pcm_payload(info)
     require(
         flat.size == info.num_frames * info.channels,
         f"{info.path}: header claims {info.num_frames} frames but the payload holds "
@@ -301,3 +296,13 @@ def assert_readable_wav(path: str | Path) -> WavInfo:
         AudioError,
     )
     return info
+
+
+def _read_pcm_payload(info: WavInfo) -> SampleArray:
+    """Decode every frame of an already-validated wav file."""
+    try:
+        with wave.open(info.path, "rb") as handle:
+            payload = handle.readframes(info.num_frames)
+    except wave.Error as error:
+        raise AudioError(f"{info.path}: cannot read frames ({error})") from error
+    return decode_pcm(payload, info.sample_width)
