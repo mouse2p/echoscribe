@@ -513,3 +513,21 @@ def test_inspect_wav_rejects_an_unknown_format_tag(tmp_path) -> None:
     _patch_wav_header(target, OFFSET_FORMAT_TAG, 3, size=2)
     with pytest.raises(ValueError, match="not a readable wav file"):
         inspect_wav(target)
+
+
+def test_reading_a_truncated_data_section_names_the_frame_counts(tmp_path) -> None:
+    target = tmp_path / "truncated.wav"
+    write_wav(target, Audio(np.zeros(16, dtype=np.float32), 16000))
+    raw = target.read_bytes()
+    target.write_bytes(raw[: len(raw) - 16])
+    with pytest.raises(ValueError, match="header claims 16 frames but the payload holds 8"):
+        read_wav(target)
+
+
+def test_inspect_wav_still_reads_a_truncated_header(tmp_path) -> None:
+    target = tmp_path / "truncated2.wav"
+    write_wav(target, Audio(np.zeros(16, dtype=np.float32), 16000))
+    raw = target.read_bytes()
+    target.write_bytes(raw[: len(raw) - 16])
+    # The header is intact, so inspection succeeds and reports the stale count.
+    assert inspect_wav(target).num_frames == 16
