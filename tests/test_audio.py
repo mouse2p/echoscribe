@@ -10,6 +10,7 @@ import pytest
 from echoscribe.audio import (
     INT16_SCALE,
     SUPPORTED_WIDTHS,
+    assert_readable_wav,
     decode_pcm,
     encode_pcm,
     float32_to_pcm8,
@@ -460,3 +461,55 @@ def test_read_wav_channels_preserves_frame_order(tmp_path) -> None:
     channels, _ = read_wav_channels(target)
     assert np.all(np.diff(channels[:, 0]) > 0.0)
     assert np.allclose(channels[:, 0], pcm16_to_float32(float32_to_pcm16(ramp)))
+
+
+def test_a_24bit_wav_file_round_trips(tmp_path) -> None:
+    target = tmp_path / "wide.wav"
+    codes = [0, 1 << 22, -(1 << 22), (1 << 23) - 1]
+    payload = b"".join(code.to_bytes(3, "little", signed=True) for code in codes)
+    _write_raw_wav(target, payload, 3, 1, 48000)
+    audio = read_wav(target)
+    assert audio.sample_rate == 48000
+    expected = np.array(codes, dtype=np.float64) / float(1 << 23)
+    assert np.allclose(audio.samples.astype(np.float64), expected, atol=1e-7)
+
+
+def test_an_8bit_wav_file_round_trips(tmp_path) -> None:
+    target = tmp_path / "narrow.wav"
+    _write_raw_wav(target, bytes([0, 128, 255]), 1, 1, 8000)
+    audio = read_wav(target)
+    assert list(audio.samples) == pytest.approx([-1.0, 0.0, 127 / 128], abs=1e-6)
+
+
+def test_assert_readable_wav_accepts_a_plain_file(tmp_path) -> None:
+    target = tmp_path / "ok.wav"
+    write_wav(target, Audio(np.zeros(4, dtype=np.float32), 16000))
+    assert assert_readable_wav(target).is_pcm
+
+
+def test_assert_readable_wav_rejects_a_zero_sample_rate(tmp_path) -> None:
+    target = tmp_path / "norate.wav"
+    _write_raw_wav(target, b"\x00\x00" * 4, 2, 1, 16000)
+    # `wave` itself accepts a zero rate, so the guard is what stops a later
+    # division by zero when a duration is computed.
+    _patch_wav_header(target, OFFSET_SAMPLE_RATE, 0)
+    assert inspect_wav(target).sample_rate == 0
+    with pytest.raises(ValueError, match="sample rate of 0"):
+        assert_readable_wav(target)
+
+
+def test_assert_readable_wav_rejects_an_unsupported_sample_width(tmp_path) -> None:
+    target = tmp_path / "wide48.wav"
+    _write_raw_wav(target, b"\x00\x00" * 4, 2, 1, 16000)
+    _patch_wav_header(target, OFFSET_BITS_PER_SAMPLE, 48, size=2)
+    assert inspect_wav(target).sample_width == 6
+    with pytest.raises(ValueError, match="unsupported sample width 6"):
+        assert_readable_wav(target)
+
+
+def test_inspect_wav_rejects_an_unknown_format_tag(tmp_path) -> None:
+    target = tmp_path / "float.wav"
+    _write_raw_wav(target, b"\x00\x00" * 4, 2, 1, 16000)
+    _patch_wav_header(target, OFFSET_FORMAT_TAG, 3, size=2)
+    with pytest.raises(ValueError, match="not a readable wav file"):
+        inspect_wav(target)
