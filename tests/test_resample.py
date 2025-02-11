@@ -2,10 +2,16 @@
 
 from __future__ import annotations
 
+import numpy as np
 import pytest
 
 from echoscribe.errors import ConfigError
-from echoscribe.resample import rational_factors
+from echoscribe.resample import (
+    FILTER_WINDOWS,
+    design_lowpass_fir,
+    rational_factors,
+    window_vector,
+)
 
 
 @pytest.mark.parametrize(
@@ -35,3 +41,68 @@ def test_rational_factors_rejects_a_bad_rate(bad) -> None:
         rational_factors(16000, bad)  # type: ignore[arg-type]
     with pytest.raises(ConfigError):
         rational_factors(bad, 16000)  # type: ignore[arg-type]
+
+
+@pytest.mark.parametrize("window", list(FILTER_WINDOWS))
+def test_lowpass_fir_has_unit_dc_gain(window: str) -> None:
+    assert design_lowpass_fir(31, 0.4, window).sum() == pytest.approx(1.0, abs=1e-12)
+
+
+def test_lowpass_fir_is_symmetric_and_therefore_linear_phase() -> None:
+    taps = design_lowpass_fir(33, 0.45, "hamming")
+    assert np.allclose(taps, taps[::-1], atol=1e-15)
+
+
+def test_lowpass_fir_attenuates_above_the_cutoff() -> None:
+    taps = design_lowpass_fir(65, 0.25, "hamming")
+    rate = 1000.0
+    t = np.arange(4096, dtype=np.float64) / rate
+    for frequency, limit in [(50.0, 1.05), (300.0, 0.2), (450.0, 0.02)]:
+        tone = np.sin(2 * np.pi * frequency * t)
+        response = np.convolve(tone, taps, mode="valid")
+        middle = response[len(response) // 4 : 3 * len(response) // 4]
+        assert np.max(np.abs(middle)) < limit, frequency
+
+
+def test_longer_filters_transition_more_sharply() -> None:
+    t = np.arange(4096, dtype=np.float64) / 1000.0
+    tone = np.sin(2 * np.pi * 300.0 * t)
+    leakage = []
+    for taps_count in (17, 65, 257):
+        taps = design_lowpass_fir(taps_count, 0.1, "hamming")
+        response = np.convolve(tone, taps, mode="valid")
+        leakage.append(float(np.max(np.abs(response[len(response) // 4 :]))))
+    assert leakage[0] > leakage[1] > leakage[2]
+
+
+@pytest.mark.parametrize("bad_cutoff", [0.0, 1.0, -0.5, 1.5])
+def test_lowpass_fir_rejects_an_out_of_range_cutoff(bad_cutoff: float) -> None:
+    with pytest.raises(ConfigError, match="cutoff must lie in"):
+        design_lowpass_fir(31, bad_cutoff)
+
+
+@pytest.mark.parametrize("bad_taps", [0, -3, 4.5, "16"])
+def test_lowpass_fir_rejects_a_bad_tap_count(bad_taps) -> None:
+    with pytest.raises(ConfigError, match="num_taps must be a positive integer"):
+        design_lowpass_fir(bad_taps, 0.4)
+
+
+def test_lowpass_fir_accepts_a_single_tap() -> None:
+    assert np.allclose(design_lowpass_fir(1, 0.4), [1.0])
+
+
+def test_window_vector_endpoints_distinguish_hann_from_hamming() -> None:
+    assert window_vector("hann", 8)[0] == pytest.approx(0.0)
+    assert window_vector("hamming", 8)[0] == pytest.approx(0.08, abs=1e-3)
+    assert window_vector("rectangular", 8).tolist() == [1.0] * 8
+    assert len(window_vector("blackman", 8)) == 8
+
+
+def test_window_vector_rejects_an_unknown_kind() -> None:
+    with pytest.raises(ConfigError, match="window must be one of"):
+        window_vector("kaiser", 8)
+
+
+def test_window_vector_rejects_a_non_positive_length() -> None:
+    with pytest.raises(ConfigError, match="length must be positive"):
+        window_vector("hamming", 0)
