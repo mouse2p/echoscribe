@@ -22,7 +22,9 @@ from __future__ import annotations
 
 from math import gcd
 
-from echoscribe.errors import ConfigError, require
+import numpy as np
+
+from echoscribe.errors import ConfigError, require, require_in, require_positive
 
 
 def rational_factors(source_rate: int, target_rate: int) -> tuple[int, int]:
@@ -40,3 +42,49 @@ def rational_factors(source_rate: int, target_rate: int) -> tuple[int, int]:
         )
     divisor = gcd(int(source_rate), int(target_rate))
     return int(target_rate) // divisor, int(source_rate) // divisor
+
+
+#: Window functions accepted by :func:`design_lowpass_fir`.
+FILTER_WINDOWS = ("rectangular", "hamming", "hann", "blackman")
+
+
+def window_vector(kind: str, length: int) -> np.ndarray:
+    """Return a symmetric window of ``length`` samples.
+
+    ``hann`` and ``hamming`` differ only at the edges: Hamming keeps a small
+    non-zero endpoint, trading a slightly wider transition band for a lower
+    first side lobe.
+    """
+    require_positive("length", length)
+    require_in("window", kind, FILTER_WINDOWS, ConfigError)
+    if kind == "rectangular":
+        return np.ones(length, dtype=np.float64)
+    if kind == "hamming":
+        return np.hamming(length).astype(np.float64)
+    if kind == "hann":
+        return np.hanning(length).astype(np.float64)
+    return np.blackman(length).astype(np.float64)
+
+
+def design_lowpass_fir(num_taps: int, cutoff: float, window: str = "hamming") -> np.ndarray:
+    """Design a windowed-sinc lowpass filter with unit gain at DC.
+
+    ``cutoff`` is a fraction of the Nyquist frequency of the rate the filter runs
+    at, so ``0.45`` keeps everything below 45% of Nyquist.  The coefficients are
+    normalised to sum to one, which makes the filter amplitude-preserving for
+    signals well inside the pass band.
+    """
+    require(
+        isinstance(num_taps, int) and num_taps >= 1,
+        f"num_taps must be a positive integer, got {num_taps!r}",
+        ConfigError,
+    )
+    require(
+        0.0 < cutoff < 1.0,
+        f"cutoff must lie in (0, 1) of Nyquist, got {cutoff!r}",
+        ConfigError,
+    )
+    centre = (num_taps - 1) / 2.0
+    offsets = np.arange(num_taps, dtype=np.float64) - centre
+    taps = cutoff * np.sinc(cutoff * offsets) * window_vector(window, num_taps)
+    return taps / taps.sum()
