@@ -25,6 +25,7 @@ from math import gcd
 import numpy as np
 
 from echoscribe.errors import ConfigError, require, require_in, require_positive
+from echoscribe.types import SAMPLE_DTYPE, SampleArray
 
 
 def rational_factors(source_rate: int, target_rate: int) -> tuple[int, int]:
@@ -88,3 +89,28 @@ def design_lowpass_fir(num_taps: int, cutoff: float, window: str = "hamming") ->
     offsets = np.arange(num_taps, dtype=np.float64) - centre
     taps = cutoff * np.sinc(cutoff * offsets) * window_vector(window, num_taps)
     return taps / taps.sum()
+
+
+def linear_resample(samples: np.ndarray, source_rate: int, target_rate: int) -> SampleArray:
+    """Resample by interpolating between the two nearest input samples.
+
+    The first and last input samples map onto the first and last output samples,
+    so the output duration matches the input duration even for short buffers.
+    That is the trade-off: no anti-alias filter is applied, so energy above the
+    target Nyquist folds back into the result.
+    """
+    up, down = rational_factors(source_rate, target_rate)
+    x = np.asarray(samples, dtype=np.float64)
+    require(x.ndim == 1, f"linear_resample needs 1-D samples, got shape {x.shape}", ConfigError)
+    count = x.size
+    if count == 0:
+        return np.zeros(0, dtype=SAMPLE_DTYPE)
+    length = max(1, int(round(count * up / down)))
+    if length == 1 or count == 1:
+        return np.full(length, x[0], dtype=SAMPLE_DTYPE)
+    positions = np.arange(length, dtype=np.float64) * ((count - 1) / (length - 1))
+    left = np.floor(positions).astype(np.intp)
+    fraction = positions - left
+    right = np.minimum(left + 1, count - 1)
+    mixed = x[left] * (1.0 - fraction) + x[right] * fraction
+    return mixed.astype(SAMPLE_DTYPE)
