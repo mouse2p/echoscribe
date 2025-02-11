@@ -20,9 +20,9 @@ test: ## Run the fast suite (everything except @pytest.mark.slow).
 test-all: ## Run the whole suite including slow and model-marked tests.
 	.venv/bin/python -m pytest -q
 
-format: ## Rewrite sources with ruff format and apply safe lint fixes.
+format: ## Rewrite sources with ruff format and sort imports.
 	.venv/bin/ruff format src tests examples scripts
-	.venv/bin/ruff check --fix src tests examples scripts
+	.venv/bin/ruff check --fix --select I src tests examples scripts
 
 format-check: ## Verify formatting and lint without writing anything.
 	.venv/bin/ruff format --check src tests examples scripts && .venv/bin/ruff check src tests examples scripts
