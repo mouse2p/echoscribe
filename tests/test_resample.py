@@ -9,6 +9,7 @@ from echoscribe.errors import ConfigError
 from echoscribe.resample import (
     FILTER_WINDOWS,
     design_lowpass_fir,
+    linear_resample,
     rational_factors,
     window_vector,
 )
@@ -106,3 +107,55 @@ def test_window_vector_rejects_an_unknown_kind() -> None:
 def test_window_vector_rejects_a_non_positive_length() -> None:
     with pytest.raises(ConfigError, match="length must be positive"):
         window_vector("hamming", 0)
+
+
+def test_linear_downsample_halves_the_length() -> None:
+    assert linear_resample(np.arange(100, dtype=np.float64), 16000, 8000).shape == (50,)
+
+
+def test_linear_upsample_doubles_the_length() -> None:
+    assert linear_resample(np.arange(100, dtype=np.float64), 8000, 16000).shape == (200,)
+
+
+def test_linear_resample_keeps_both_endpoints() -> None:
+    samples = np.array([-0.75, 0.0, 0.25, 1.0], dtype=np.float64)
+    for target in (4000, 8000, 32000):
+        result = linear_resample(samples, 8000, target)
+        assert result[0] == pytest.approx(-0.75)
+        assert result[-1] == pytest.approx(1.0)
+
+
+def test_linear_resample_at_the_same_rate_is_the_identity() -> None:
+    samples = np.linspace(-1.0, 1.0, 37)
+    assert np.allclose(linear_resample(samples, 16000, 16000), samples.astype(np.float32))
+
+
+def test_linear_resample_of_an_empty_buffer_is_empty() -> None:
+    assert linear_resample(np.zeros(0), 16000, 8000).shape == (0,)
+
+
+def test_linear_resample_of_a_single_sample_repeats_it() -> None:
+    result = linear_resample(np.array([0.25]), 8000, 16000)
+    assert result.shape == (2,)
+    assert np.all(result == pytest.approx(0.25))
+
+
+def test_linear_resample_is_monotonic_on_a_ramp() -> None:
+    result = linear_resample(np.arange(64, dtype=np.float64), 16000, 11025)
+    assert np.all(np.diff(result) >= 0.0)
+
+
+def test_linear_resample_returns_float32() -> None:
+    assert linear_resample(np.arange(8, dtype=np.float64), 8000, 16000).dtype == np.float32
+
+
+def test_linear_resample_rejects_a_matrix() -> None:
+    with pytest.raises(ConfigError, match="needs 1-D samples"):
+        linear_resample(np.zeros((4, 2)), 8000, 16000)
+
+
+def test_linear_resample_interpolates_between_neighbours_when_upsampling() -> None:
+    result = linear_resample(np.array([0.0, 1.0], dtype=np.float64), 8000, 16000)
+    # Two samples at twice the rate give four outputs spread over [0, 1].
+    assert result.shape == (4,)
+    assert list(result) == pytest.approx([0.0, 1 / 3, 2 / 3, 1.0], abs=1e-7)
