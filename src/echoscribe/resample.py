@@ -114,3 +114,59 @@ def linear_resample(samples: np.ndarray, source_rate: int, target_rate: int) -> 
     right = np.minimum(left + 1, count - 1)
     mixed = x[left] * (1.0 - fraction) + x[right] * fraction
     return mixed.astype(SAMPLE_DTYPE)
+
+
+def polyphase_filter_bank(
+    up: int,
+    down: int,
+    taps_per_phase: int = 16,
+    window: str = "hamming",
+    cutoff: float = 0.9,
+) -> np.ndarray:
+    """Build the ``(up, taps_per_phase)`` polyphase decomposition of the filter.
+
+    The prototype lowpass runs at the ``up``-sampled rate, so its cutoff is
+    divided by ``max(up, down)``: that places the transition band below the
+    Nyquist of whichever rate is lower, which is exactly where aliasing starts.
+    Multiplying by ``up`` compensates for the zeros the upsampler inserts.
+    """
+    require(
+        isinstance(taps_per_phase, int) and taps_per_phase >= 1,
+        f"taps_per_phase must be a positive integer, got {taps_per_phase!r}",
+        ConfigError,
+    )
+    prototype = design_lowpass_fir(taps_per_phase * up, cutoff / max(up, down), window) * up
+    return prototype.reshape(taps_per_phase, up).T
+
+
+def polyphase_resample(
+    samples: np.ndarray,
+    source_rate: int,
+    target_rate: int,
+    taps_per_phase: int = 16,
+    window: str = "hamming",
+    cutoff: float = 0.9,
+) -> SampleArray:
+    """Resample by exact rational polyphase filtering.
+
+    The output length is ``ceil(n * up / down)``, so every input sample that a
+    output slot would read is covered and none is dropped silently.  The filter
+    contributes a group delay of ``(taps_per_phase - 1) / 2`` output samples,
+    which callers measuring latency need to account for.
+    """
+    up, down = rational_factors(source_rate, target_rate)
+    x = np.asarray(samples, dtype=np.float64)
+    require(x.ndim == 1, f"polyphase_resample needs 1-D samples, got shape {x.shape}", ConfigError)
+    count = x.size
+    if count == 0:
+        return np.zeros(0, dtype=SAMPLE_DTYPE)
+    phases = polyphase_filter_bank(up, down, taps_per_phase, window, cutoff)
+    length = -(-count * up // down)
+    padded = np.concatenate([np.zeros(taps_per_phase - 1), x, np.zeros(taps_per_phase - 1)])
+    slots = np.arange(length, dtype=np.int64) * down
+    phase = slots % up
+    base = (slots - phase) // up
+    # Walk the taps backwards so gather column 0 pairs with tap 0.
+    offsets = np.arange(taps_per_phase - 1, -1, -1, dtype=np.int64)
+    gather = padded[base[:, None] + offsets[None, :]]
+    return np.sum(phases[phase] * gather, axis=1).astype(SAMPLE_DTYPE)
