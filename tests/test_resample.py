@@ -8,6 +8,8 @@ import pytest
 from echoscribe.errors import ConfigError
 from echoscribe.resample import (
     FILTER_WINDOWS,
+    RESAMPLE_METHODS,
+    ResampleConfig,
     design_lowpass_fir,
     linear_resample,
     polyphase_filter_bank,
@@ -234,3 +236,44 @@ def test_filter_bank_rows_sum_to_about_one() -> None:
     # Each phase carries the DC gain, so a constant input stays constant.
     phases = polyphase_filter_bank(2, 1, taps_per_phase=16)
     assert np.allclose(phases.sum(axis=1), 1.0, atol=2e-3)
+
+
+def test_resample_config_defaults_are_valid() -> None:
+    config = ResampleConfig()
+    assert config.target_rate == 16000
+    assert config.method == "polyphase"
+    assert config.taps_per_phase == 16
+    assert config.window == "hamming"
+    assert config.cutoff == 0.9
+
+
+@pytest.mark.parametrize(
+    "kwargs",
+    [
+        {"target_rate": 0},
+        {"target_rate": -8000},
+        {"target_rate": 16000.0},
+        {"method": "cubic"},
+        {"taps_per_phase": 0},
+        {"window": "kaiser"},
+        {"cutoff": 0.0},
+        {"cutoff": 1.0},
+    ],
+)
+def test_resample_config_rejects_bad_values(kwargs) -> None:
+    with pytest.raises(ConfigError):
+        ResampleConfig(**kwargs)
+
+
+def test_resample_config_is_frozen() -> None:
+    config = ResampleConfig()
+    with pytest.raises(AttributeError):
+        config.target_rate = 8000  # type: ignore[misc]
+
+
+def test_every_declared_method_and_window_is_accepted() -> None:
+    assert set(RESAMPLE_METHODS) == {"polyphase", "linear"}
+    for window in FILTER_WINDOWS:
+        assert ResampleConfig(window=window).window == window
+    for method in RESAMPLE_METHODS:
+        assert ResampleConfig(method=method).method == method
