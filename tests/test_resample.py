@@ -10,6 +10,8 @@ from echoscribe.resample import (
     FILTER_WINDOWS,
     design_lowpass_fir,
     linear_resample,
+    polyphase_filter_bank,
+    polyphase_resample,
     rational_factors,
     window_vector,
 )
@@ -159,3 +161,76 @@ def test_linear_resample_interpolates_between_neighbours_when_upsampling() -> No
     # Two samples at twice the rate give four outputs spread over [0, 1].
     assert result.shape == (4,)
     assert list(result) == pytest.approx([0.0, 1 / 3, 2 / 3, 1.0], abs=1e-7)
+
+
+def _tone(frequency: float, rate: int, seconds: float = 0.5) -> np.ndarray:
+    t = np.arange(int(rate * seconds), dtype=np.float64) / rate
+    return np.sin(2.0 * np.pi * frequency * t)
+
+
+def _peak_frequency(samples: np.ndarray, rate: int) -> float:
+    spectrum = np.abs(np.fft.rfft(samples * np.hanning(len(samples))))
+    bins = np.fft.rfftfreq(len(samples), 1.0 / rate)
+    return float(bins[int(np.argmax(spectrum))])
+
+
+def test_polyphase_downsample_preserves_a_tone_frequency() -> None:
+    converted = polyphase_resample(_tone(440.0, 16000), 16000, 8000)
+    assert _peak_frequency(converted, 8000) == pytest.approx(440.0, abs=2.0)
+
+
+def test_polyphase_upsample_preserves_a_tone_frequency() -> None:
+    converted = polyphase_resample(_tone(440.0, 8000), 8000, 16000)
+    assert _peak_frequency(converted, 16000) == pytest.approx(440.0, abs=2.0)
+
+
+def test_polyphase_output_length_is_the_ceiling_of_the_ratio() -> None:
+    for count in (1, 7, 100, 1001):
+        assert polyphase_resample(np.zeros(count), 16000, 8000).shape == (-(-count // 2),)
+
+
+def test_polyphase_at_the_same_rate_applies_only_the_prototype_filter() -> None:
+    samples = _tone(300.0, 16000, 0.2)
+    taps = polyphase_filter_bank(1, 1, 16, "hamming", 0.9)[0]
+    expected = np.convolve(samples, taps, mode="full")[: len(samples)]
+    result = polyphase_resample(samples, 16000, 16000, taps_per_phase=16)
+    assert np.allclose(result, expected.astype(np.float32), atol=1e-5)
+
+
+def test_polyphase_of_an_empty_buffer_is_empty() -> None:
+    assert polyphase_resample(np.zeros(0), 16000, 8000).shape == (0,)
+
+
+def test_polyphase_suppresses_aliasing_that_linear_lets_through() -> None:
+    # 5 kHz at 16 kHz folds to 3 kHz once the target Nyquist is 4 kHz.
+    tone = _tone(5000.0, 16000, 0.25)
+    filtered = polyphase_resample(tone, 16000, 8000, taps_per_phase=32)
+    raw = linear_resample(tone, 16000, 8000)
+    middle = slice(64, len(raw) - 64)
+    assert np.max(np.abs(filtered[middle])) < 0.25 * np.max(np.abs(raw[middle]))
+
+
+def test_polyphase_pass_band_keeps_a_tone_amplitude() -> None:
+    converted = polyphase_resample(_tone(440.0, 16000, 0.5), 16000, 8000)
+    assert np.max(np.abs(converted[64:-64])) == pytest.approx(1.0, abs=0.02)
+
+
+def test_polyphase_rejects_a_matrix() -> None:
+    with pytest.raises(ConfigError, match="needs 1-D samples"):
+        polyphase_resample(np.zeros((4, 2)), 8000, 16000)
+
+
+def test_filter_bank_has_one_row_per_phase() -> None:
+    assert polyphase_filter_bank(3, 7, taps_per_phase=5).shape == (3, 5)
+    assert polyphase_filter_bank(1, 2, taps_per_phase=5).shape == (1, 5)
+
+
+def test_filter_bank_rejects_a_bad_tap_count() -> None:
+    with pytest.raises(ConfigError, match="taps_per_phase must be a positive integer"):
+        polyphase_filter_bank(1, 2, taps_per_phase=0)
+
+
+def test_filter_bank_rows_sum_to_about_one() -> None:
+    # Each phase carries the DC gain, so a constant input stays constant.
+    phases = polyphase_filter_bank(2, 1, taps_per_phase=16)
+    assert np.allclose(phases.sum(axis=1), 1.0, atol=2e-3)
