@@ -20,6 +20,7 @@ Both are pure NumPy and both are deterministic for a given input.
 
 from __future__ import annotations
 
+from dataclasses import dataclass
 from math import gcd
 
 import numpy as np
@@ -170,3 +171,39 @@ def polyphase_resample(
     offsets = np.arange(taps_per_phase - 1, -1, -1, dtype=np.int64)
     gather = padded[base[:, None] + offsets[None, :]]
     return np.sum(phases[phase] * gather, axis=1).astype(SAMPLE_DTYPE)
+
+
+#: Conversion methods accepted by :class:`ResampleConfig`.
+RESAMPLE_METHODS = ("polyphase", "linear")
+
+
+@dataclass(frozen=True)
+class ResampleConfig:
+    """How to convert a waveform to another sample rate."""
+
+    target_rate: int = 16000
+    method: str = "polyphase"
+    taps_per_phase: int = 16
+    window: str = "hamming"
+    cutoff: float = 0.9
+
+    def __post_init__(self) -> None:
+        require(
+            isinstance(self.target_rate, int)
+            and not isinstance(self.target_rate, bool)
+            and self.target_rate > 0,
+            f"target_rate must be a positive integer, got {self.target_rate!r}",
+            ConfigError,
+        )
+        require_in("method", self.method, RESAMPLE_METHODS, ConfigError)
+        require(
+            isinstance(self.taps_per_phase, int) and self.taps_per_phase >= 1,
+            f"taps_per_phase must be a positive integer, got {self.taps_per_phase!r}",
+            ConfigError,
+        )
+        require_in("window", self.window, FILTER_WINDOWS, ConfigError)
+        require(
+            0.0 < self.cutoff < 1.0,
+            f"cutoff must lie in (0, 1) of Nyquist, got {self.cutoff!r}",
+            ConfigError,
+        )
