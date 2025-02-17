@@ -15,8 +15,10 @@ from echoscribe.resample import (
     polyphase_filter_bank,
     polyphase_resample,
     rational_factors,
+    resample,
     window_vector,
 )
+from echoscribe.waveform import Audio
 
 
 @pytest.mark.parametrize(
@@ -277,3 +279,42 @@ def test_every_declared_method_and_window_is_accepted() -> None:
         assert ResampleConfig(window=window).window == window
     for method in RESAMPLE_METHODS:
         assert ResampleConfig(method=method).method == method
+
+
+def test_resample_returns_audio_at_the_target_rate() -> None:
+    source = Audio(_tone(440.0, 44100, 0.1).astype(np.float32), 44100)
+    converted = resample(source, ResampleConfig(target_rate=16000))
+    assert converted.sample_rate == 16000
+    assert converted.num_frames == pytest.approx(source.num_frames * 16000 / 44100, abs=2)
+
+
+def test_resample_duration_is_preserved_by_both_methods() -> None:
+    source = Audio(_tone(300.0, 22050, 0.25).astype(np.float32), 22050)
+    for method in RESAMPLE_METHODS:
+        converted = resample(source, ResampleConfig(target_rate=16000, method=method))
+        assert converted.duration == pytest.approx(source.duration, abs=2e-3)
+
+
+def test_resample_defaults_to_polyphase_at_16k() -> None:
+    source = Audio(_tone(440.0, 8000, 0.1).astype(np.float32), 8000)
+    assert np.array_equal(
+        resample(source).samples,
+        resample(source, ResampleConfig(target_rate=16000)).samples,
+    )
+
+
+def test_resample_does_not_mutate_the_input() -> None:
+    source = Audio(_tone(440.0, 16000, 0.1).astype(np.float32), 16000)
+    before = source.samples.copy()
+    resample(source, ResampleConfig(target_rate=8000))
+    assert np.array_equal(source.samples, before)
+
+
+def test_both_methods_preserve_a_low_frequency_tone() -> None:
+    # 120 Hz sits far below either Nyquist, so the missing anti-alias filter in
+    # the linear path cannot matter; amplitude and pitch must both survive.
+    source = Audio(_tone(120.0, 16000, 0.5).astype(np.float32), 16000)
+    for method in RESAMPLE_METHODS:
+        result = resample(source, ResampleConfig(target_rate=8000, method=method))
+        assert _peak_frequency(result.samples, 8000) == pytest.approx(120.0, abs=1.0)
+        assert np.max(np.abs(result.samples[64:-64])) == pytest.approx(1.0, abs=0.05)
