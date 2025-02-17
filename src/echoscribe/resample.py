@@ -27,6 +27,7 @@ import numpy as np
 
 from echoscribe.errors import ConfigError, require, require_in, require_positive
 from echoscribe.types import SAMPLE_DTYPE, SampleArray
+from echoscribe.waveform import Audio
 
 
 def rational_factors(source_rate: int, target_rate: int) -> tuple[int, int]:
@@ -207,3 +208,24 @@ class ResampleConfig:
             f"cutoff must lie in (0, 1) of Nyquist, got {self.cutoff!r}",
             ConfigError,
         )
+
+
+def resample(audio: Audio, config: ResampleConfig | None = None) -> Audio:
+    """Return ``audio`` converted to ``config.target_rate``.
+
+    ``None`` selects the defaults, which is polyphase conversion to 16 kHz -- the
+    rate the rest of the toolkit assumes unless told otherwise.
+    """
+    settings = ResampleConfig() if config is None else config
+    if settings.method == "linear":
+        converted = linear_resample(audio.samples, audio.sample_rate, settings.target_rate)
+    else:
+        converted = polyphase_resample(
+            audio.samples,
+            audio.sample_rate,
+            settings.target_rate,
+            taps_per_phase=settings.taps_per_phase,
+            window=settings.window,
+            cutoff=settings.cutoff,
+        )
+    return Audio(converted, settings.target_rate)
