@@ -10,6 +10,7 @@ from echoscribe.resample import (
     FILTER_WINDOWS,
     RESAMPLE_METHODS,
     ResampleConfig,
+    _cached_filter_bank,
     design_lowpass_fir,
     linear_resample,
     polyphase_filter_bank,
@@ -318,3 +319,38 @@ def test_both_methods_preserve_a_low_frequency_tone() -> None:
         result = resample(source, ResampleConfig(target_rate=8000, method=method))
         assert _peak_frequency(result.samples, 8000) == pytest.approx(120.0, abs=1.0)
         assert np.max(np.abs(result.samples[64:-64])) == pytest.approx(1.0, abs=0.05)
+
+
+def test_the_cached_bank_equals_a_fresh_design() -> None:
+    for up, down in [(1, 2), (2, 1), (160, 441)]:
+        cached = _cached_filter_bank(up, down, 16, "hamming", 0.9)
+        assert np.array_equal(cached, polyphase_filter_bank(up, down, 16, "hamming", 0.9))
+
+
+def test_the_cached_bank_is_read_only() -> None:
+    bank = _cached_filter_bank(1, 2, 8, "hann", 0.8)
+    with pytest.raises(ValueError):
+        bank[0, 0] = 0.0
+
+
+def test_repeated_resampling_of_a_corpus_stays_deterministic() -> None:
+    source = _tone(440.0, 22050, 0.2).astype(np.float32)
+    first = polyphase_resample(source, 22050, 16000)
+    for _ in range(5):
+        assert np.array_equal(polyphase_resample(source, 22050, 16000), first)
+
+
+def test_caching_does_not_leak_across_design_settings() -> None:
+    assert not np.array_equal(
+        _cached_filter_bank(1, 2, 16, "hamming", 0.9),
+        _cached_filter_bank(1, 2, 16, "hann", 0.9),
+    )
+
+
+def test_polyphase_resample_still_matches_the_uncached_bank() -> None:
+    samples = _tone(700.0, 32000, 0.1).astype(np.float32)
+    up, down = 1, 2
+    phases = polyphase_filter_bank(up, down, 12, "blackman", 0.85)
+    result = polyphase_resample(samples, 32000, 16000, taps_per_phase=12, window="blackman")
+    assert np.array_equal(_cached_filter_bank(1, 2, 12, "blackman", 0.85), phases)
+    assert _peak_frequency(result, 16000) == pytest.approx(700.0, abs=2.0)
