@@ -21,6 +21,7 @@ Both are pure NumPy and both are deterministic for a given input.
 from __future__ import annotations
 
 from dataclasses import dataclass
+from functools import lru_cache
 from math import gcd
 
 import numpy as np
@@ -162,7 +163,7 @@ def polyphase_resample(
     count = x.size
     if count == 0:
         return np.zeros(0, dtype=SAMPLE_DTYPE)
-    phases = polyphase_filter_bank(up, down, taps_per_phase, window, cutoff)
+    phases = _cached_filter_bank(up, down, taps_per_phase, window, cutoff)
     length = -(-count * up // down)
     padded = np.concatenate([np.zeros(taps_per_phase - 1), x, np.zeros(taps_per_phase - 1)])
     slots = np.arange(length, dtype=np.int64) * down
@@ -229,3 +230,19 @@ def resample(audio: Audio, config: ResampleConfig | None = None) -> Audio:
             cutoff=settings.cutoff,
         )
     return Audio(converted, settings.target_rate)
+
+
+@lru_cache(maxsize=64)
+def _cached_filter_bank(
+    up: int, down: int, taps_per_phase: int, window: str, cutoff: float
+) -> np.ndarray:
+    """Memoised :func:`polyphase_filter_bank`.
+
+    Resampling a corpus would otherwise redesign the same filter once per
+    utterance.  The coefficients depend only on the rate pair and the design
+    settings, so the cache is exact rather than an approximation.  Cached arrays
+    are made read-only so a caller cannot corrupt them for everyone else.
+    """
+    bank = np.array(polyphase_filter_bank(up, down, taps_per_phase, window, cutoff))
+    bank.setflags(write=False)
+    return bank
