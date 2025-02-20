@@ -17,7 +17,6 @@ from echoscribe.resample import (
     polyphase_resample,
     rational_factors,
     resample,
-    window_vector,
 )
 from echoscribe.waveform import Audio
 
@@ -97,23 +96,6 @@ def test_lowpass_fir_rejects_a_bad_tap_count(bad_taps) -> None:
 
 def test_lowpass_fir_accepts_a_single_tap() -> None:
     assert np.allclose(design_lowpass_fir(1, 0.4), [1.0])
-
-
-def test_window_vector_endpoints_distinguish_hann_from_hamming() -> None:
-    assert window_vector("hann", 8)[0] == pytest.approx(0.0)
-    assert window_vector("hamming", 8)[0] == pytest.approx(0.08, abs=1e-3)
-    assert window_vector("rectangular", 8).tolist() == [1.0] * 8
-    assert len(window_vector("blackman", 8)) == 8
-
-
-def test_window_vector_rejects_an_unknown_kind() -> None:
-    with pytest.raises(ConfigError, match="window must be one of"):
-        window_vector("kaiser", 8)
-
-
-def test_window_vector_rejects_a_non_positive_length() -> None:
-    with pytest.raises(ConfigError, match="length must be positive"):
-        window_vector("hamming", 0)
 
 
 def test_linear_downsample_halves_the_length() -> None:

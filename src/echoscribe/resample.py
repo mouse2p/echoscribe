@@ -26,9 +26,10 @@ from math import gcd
 
 import numpy as np
 
-from echoscribe.errors import ConfigError, require, require_in, require_positive
+from echoscribe.errors import ConfigError, require, require_in
 from echoscribe.types import SAMPLE_DTYPE, SampleArray
 from echoscribe.waveform import Audio
+from echoscribe.windows import FILTER_WINDOWS, window_vector
 
 
 def rational_factors(source_rate: int, target_rate: int) -> tuple[int, int]:
@@ -46,28 +47,6 @@ def rational_factors(source_rate: int, target_rate: int) -> tuple[int, int]:
         )
     divisor = gcd(int(source_rate), int(target_rate))
     return int(target_rate) // divisor, int(source_rate) // divisor
-
-
-#: Window functions accepted by :func:`design_lowpass_fir`.
-FILTER_WINDOWS = ("rectangular", "hamming", "hann", "blackman")
-
-
-def window_vector(kind: str, length: int) -> np.ndarray:
-    """Return a symmetric window of ``length`` samples.
-
-    ``hann`` and ``hamming`` differ only at the edges: Hamming keeps a small
-    non-zero endpoint, trading a slightly wider transition band for a lower
-    first side lobe.
-    """
-    require_positive("length", length)
-    require_in("window", kind, FILTER_WINDOWS, ConfigError)
-    if kind == "rectangular":
-        return np.ones(length, dtype=np.float64)
-    if kind == "hamming":
-        return np.hamming(length).astype(np.float64)
-    if kind == "hann":
-        return np.hanning(length).astype(np.float64)
-    return np.blackman(length).astype(np.float64)
 
 
 def design_lowpass_fir(num_taps: int, cutoff: float, window: str = "hamming") -> np.ndarray:
