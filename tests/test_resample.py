@@ -17,6 +17,7 @@ from echoscribe.resample import (
     polyphase_resample,
     rational_factors,
     resample,
+    window_vector,
 )
 from echoscribe.waveform import Audio
 
@@ -336,3 +337,18 @@ def test_polyphase_resample_still_matches_the_uncached_bank() -> None:
     result = polyphase_resample(samples, 32000, 16000, taps_per_phase=12, window="blackman")
     assert np.array_equal(_cached_filter_bank(1, 2, 12, "blackman", 0.85), phases)
     assert _peak_frequency(result, 16000) == pytest.approx(700.0, abs=2.0)
+
+
+def test_resample_still_exposes_the_shared_window_names() -> None:
+    from echoscribe import resample as module
+    from echoscribe import windows
+
+    assert module.FILTER_WINDOWS is windows.FILTER_WINDOWS
+    assert module.window_vector is windows.window_vector
+
+
+def test_the_fir_still_uses_the_shared_coefficients() -> None:
+    taps = design_lowpass_fir(21, 0.4, "blackman")
+    offsets = np.arange(21, dtype=np.float64) - 10.0
+    manual = 0.4 * np.sinc(0.4 * offsets) * window_vector("blackman", 21)
+    assert np.allclose(taps, manual / manual.sum(), atol=1e-15)
