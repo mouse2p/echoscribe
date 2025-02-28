@@ -25,13 +25,17 @@ from __future__ import annotations
 import math
 from dataclasses import dataclass
 
+import numpy as np
+
 from echoscribe.errors import (
     ConfigError,
     require,
     require_in,
+    require_non_negative,
     require_positive,
     require_range,
 )
+from echoscribe.types import INDEX_DTYPE, IntArray
 from echoscribe.windows import FRAME_WINDOWS
 
 #: Policies for the first pre-emphasis sample, which has no predecessor.
@@ -102,3 +106,33 @@ class FrameConfig:
         if not self.round_to_power_of_two:
             return self.frame_length
         return 1 << (self.frame_length - 1).bit_length()
+
+
+def frame_count(num_samples: int, config: FrameConfig) -> int:
+    """Number of frames ``num_samples`` produces under ``config``.
+
+    With ``snip_edges`` this counts the frames fully inside the signal.  Without
+    it, one frame per hop: the signal is conceptually padded by half a frame at
+    each end, so a frame is emitted for every sample position the shift lands on.
+    """
+    require_non_negative("num_samples", num_samples)
+    length, shift = config.frame_length, config.frame_shift
+    if num_samples == 0:
+        return 0
+    if config.snip_edges:
+        if num_samples < length:
+            return 0
+        return 1 + (num_samples - length) // shift
+    return (num_samples + shift - 1) // shift
+
+
+def frame_starts(num_samples: int, config: FrameConfig) -> IntArray:
+    """Start index of every frame, relative to the *padded* signal.
+
+    When ``snip_edges`` is false the padded signal has ``frame_length // 2`` zeros
+    in front, and frame ``m`` starts at ``m * frame_shift`` in that padded buffer;
+    in raw-signal coordinates that is ``m * frame_shift - frame_length // 2``.
+    When ``snip_edges`` is true there is no padding and the two coincide.
+    """
+    count = frame_count(num_samples, config)
+    return (np.arange(count, dtype=INDEX_DTYPE) * config.frame_shift).astype(INDEX_DTYPE)
