@@ -2,10 +2,11 @@
 
 from __future__ import annotations
 
+import numpy as np
 import pytest
 
 from echoscribe.errors import ConfigError
-from echoscribe.framing import FrameConfig
+from echoscribe.framing import FrameConfig, frame_count, frame_starts
 
 
 def test_defaults_match_the_standard_25ms_10ms_recipe() -> None:
@@ -120,3 +121,57 @@ def test_fft_size_is_stable_for_an_exact_power_of_two_frame() -> None:
 def test_frame_length_ms_at_least_frame_shift_ms_is_enforced() -> None:
     with pytest.raises(ConfigError, match="must be at least frame_shift_ms"):
         FrameConfig(frame_length_ms=9.0, frame_shift_ms=10.0)
+
+
+SNIPPED = FrameConfig(snip_edges=True)
+PADDED = FrameConfig(snip_edges=False)
+
+
+@pytest.mark.parametrize(
+    ("num_samples", "expected"),
+    [(0, 0), (1, 0), (399, 0), (400, 1), (559, 1), (560, 2), (1600, 8), (1601, 8)],
+)
+def test_snipped_frame_count(num_samples: int, expected: int) -> None:
+    assert frame_count(num_samples, SNIPPED) == expected
+
+
+@pytest.mark.parametrize(
+    ("num_samples", "expected"),
+    [(0, 0), (1, 1), (160, 1), (161, 2), (1600, 10), (1601, 11)],
+)
+def test_padded_frame_count(num_samples: int, expected: int) -> None:
+    assert frame_count(num_samples, PADDED) == expected
+
+
+def test_padding_never_yields_fewer_frames_than_snipping() -> None:
+    for num_samples in range(0, 2000, 37):
+        assert frame_count(num_samples, PADDED) >= frame_count(num_samples, SNIPPED)
+
+
+def test_frame_starts_are_a_regular_grid_when_snipping() -> None:
+    starts = frame_starts(1600, SNIPPED)
+    assert starts.tolist() == [0, 160, 320, 480, 640, 800, 960, 1120]
+    assert np.all(np.diff(starts) == 160)
+
+
+def test_frame_starts_are_padded_coordinates_when_not_snipping() -> None:
+    starts = frame_starts(1600, PADDED)
+    # Padded coordinates start at zero; the half-frame left pad is implied.
+    assert starts[0] == 0
+    assert len(starts) == frame_count(1600, PADDED)
+    assert np.all(np.diff(starts) == 160)
+
+
+def test_the_last_snipped_frame_fits_inside_the_signal() -> None:
+    starts = frame_starts(1601, SNIPPED)
+    assert int(starts[-1]) + SNIPPED.frame_length <= 1601
+
+
+def test_frame_count_rejects_a_negative_length() -> None:
+    with pytest.raises(ValueError, match="num_samples must not be negative"):
+        frame_count(-1, SNIPPED)
+
+
+def test_frame_starts_are_integers_of_the_index_dtype() -> None:
+    assert frame_starts(1600, SNIPPED).dtype == np.intp
+    assert frame_starts(1600, PADDED).dtype == np.intp
