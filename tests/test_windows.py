@@ -6,7 +6,12 @@ import numpy as np
 import pytest
 
 from echoscribe.errors import ConfigError
-from echoscribe.windows import FILTER_WINDOWS, window_vector
+from echoscribe.windows import (
+    FILTER_WINDOWS,
+    FRAME_WINDOWS,
+    POVEY_EXPONENT,
+    window_vector,
+)
 
 
 def test_rectangular_window_is_all_ones() -> None:
@@ -61,3 +66,41 @@ def test_window_vector_rejects_a_non_positive_length() -> None:
 
 def test_filter_windows_lists_exactly_four_designs() -> None:
     assert FILTER_WINDOWS == ("rectangular", "hamming", "hann", "blackman")
+
+
+@pytest.mark.parametrize("length", [2, 9, 64, 401])
+def test_povey_is_hann_raised_to_the_declared_exponent(length: int) -> None:
+    hann = window_vector("hann", length)
+    assert np.allclose(window_vector("povey", length), hann**POVEY_EXPONENT, atol=1e-15)
+
+
+def test_povey_endpoints_are_zero_and_the_centre_is_one() -> None:
+    window = window_vector("povey", 401)
+    assert window[0] == 0.0
+    assert window[-1] == 0.0
+    assert window[200] == pytest.approx(1.0)
+
+
+def test_povey_lifts_the_hann_shoulder_but_keeps_its_peak() -> None:
+    hann = window_vector("hann", 129)
+    povey = window_vector("povey", 129)
+    shoulder = np.r_[1:64, 65:128]
+    # Raising a value in [0, 1] to the 0.85 power lifts everything below 1 and
+    # leaves the unit peak exactly where it was.
+    assert np.all(povey[shoulder] > hann[shoulder])
+    assert povey[64] == hann[64] == 1.0
+
+
+def test_povey_is_symmetric() -> None:
+    window = window_vector("povey", 129)
+    assert np.allclose(window, window[::-1], atol=1e-15)
+
+
+def test_frame_windows_extends_filter_windows_with_povey() -> None:
+    assert FRAME_WINDOWS == FILTER_WINDOWS + ("povey",)
+    assert POVEY_EXPONENT == 0.85
+
+
+def test_povey_is_rejected_for_a_length_of_zero() -> None:
+    with pytest.raises(ConfigError, match="length must be positive"):
+        window_vector("povey", 0)
