@@ -82,3 +82,41 @@ def test_config_is_frozen() -> None:
     config = FrameConfig()
     with pytest.raises(AttributeError):
         config.window = "hann"  # type: ignore[misc]
+
+
+@pytest.mark.parametrize(
+    ("rate", "length_ms", "expected"),
+    [
+        (16000, 25.0, 512),
+        (8000, 25.0, 256),
+        (16000, 32.0, 512),
+        (44100, 25.0, 2048),
+        (16000, 16.0, 256),
+    ],
+)
+def test_fft_size_is_the_next_power_of_two(rate: int, length_ms: float, expected: int) -> None:
+    config = FrameConfig(sample_rate=rate, frame_length_ms=length_ms)
+    assert config.fft_size == expected
+    assert config.fft_size >= config.frame_length
+
+
+def test_fft_size_can_be_left_exact() -> None:
+    config = FrameConfig(frame_length_ms=30.0, round_to_power_of_two=False)
+    assert config.fft_size == config.frame_length == 480
+
+
+def test_fft_size_of_a_single_sample_frame_is_one() -> None:
+    config = FrameConfig(sample_rate=16000, frame_length_ms=0.001, frame_shift_ms=0.001)
+    assert config.frame_length == 1
+    assert config.fft_size == 1
+
+
+def test_fft_size_is_stable_for_an_exact_power_of_two_frame() -> None:
+    config = FrameConfig(sample_rate=16000, frame_length_ms=32.0)
+    assert config.frame_length == 512
+    assert config.fft_size == 512
+
+
+def test_frame_length_ms_at_least_frame_shift_ms_is_enforced() -> None:
+    with pytest.raises(ConfigError, match="must be at least frame_shift_ms"):
+        FrameConfig(frame_length_ms=9.0, frame_shift_ms=10.0)
