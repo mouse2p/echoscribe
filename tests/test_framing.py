@@ -6,7 +6,7 @@ import numpy as np
 import pytest
 
 from echoscribe.errors import ConfigError
-from echoscribe.framing import FrameConfig, frame_count, frame_starts
+from echoscribe.framing import FrameConfig, frame_count, frame_starts, preemphasis
 
 
 def test_defaults_match_the_standard_25ms_10ms_recipe() -> None:
@@ -175,3 +175,65 @@ def test_frame_count_rejects_a_negative_length() -> None:
 def test_frame_starts_are_integers_of_the_index_dtype() -> None:
     assert frame_starts(1600, SNIPPED).dtype == np.intp
     assert frame_starts(1600, PADDED).dtype == np.intp
+
+
+def test_preemphasis_matches_the_definition_sample_by_sample() -> None:
+    x = np.array([1.0, 2.0, 3.0, 4.0])
+    expected = np.array([0.5, 1.5, 2.0, 2.5])
+    assert np.allclose(preemphasis(x, 0.5), expected.astype(np.float32))
+
+
+def test_the_first_sample_policy_switches_both_ways() -> None:
+    x = np.array([0.8, 0.2, -0.4])
+    assert preemphasis(x, 0.97, first="replicate")[0] == pytest.approx(0.8 * 0.03, abs=1e-7)
+    assert preemphasis(x, 0.97, first="zero")[0] == pytest.approx(0.8, abs=1e-7)
+
+
+def test_a_zero_coefficient_is_the_identity() -> None:
+    x = np.linspace(-1.0, 1.0, 64)
+    assert np.allclose(preemphasis(x, 0.0), x.astype(np.float32))
+
+
+def test_a_unit_coefficient_is_a_first_difference() -> None:
+    x = np.array([1.0, 3.0, 6.0])
+    assert np.allclose(preemphasis(x, 1.0), [0.0, 2.0, 3.0])
+
+
+def test_preemphasis_lifts_high_frequencies_relative_to_low() -> None:
+    t = np.arange(4096, dtype=np.float64) / 16000.0
+
+    def band_energy(frequency: float, coefficient: float) -> float:
+        tone = np.sin(2 * np.pi * frequency * t)
+        filtered = preemphasis(tone, coefficient).astype(np.float64)
+        return float(np.mean(filtered[64:-64] ** 2))
+
+    # |H(w)|^2 = 1 - 2c*cos(w) + c^2 grows with frequency, so the high/low energy
+    # ratio must rise sharply once pre-emphasis is switched on.
+    ratio_off = band_energy(3000.0, 0.0) / band_energy(200.0, 0.0)
+    ratio_on = band_energy(3000.0, 0.97) / band_energy(200.0, 0.97)
+    assert ratio_off == pytest.approx(1.0, abs=1e-3)
+    assert ratio_on > 50.0 * ratio_off
+
+
+def test_preemphasis_of_an_empty_buffer_is_empty() -> None:
+    assert preemphasis(np.zeros(0)).shape == (0,)
+
+
+def test_preemphasis_rejects_bad_arguments() -> None:
+    with pytest.raises(ConfigError, match="coefficient must lie in"):
+        preemphasis(np.zeros(4), 1.5)
+    with pytest.raises(ConfigError, match="first must be one of"):
+        preemphasis(np.zeros(4), 0.97, first="wrap")
+    with pytest.raises(ConfigError, match="needs 1-D samples"):
+        preemphasis(np.zeros((2, 2)))
+
+
+def test_preemphasis_is_invertible_by_an_all_pole_filter() -> None:
+    rng = np.random.default_rng(4)
+    x = rng.uniform(-1.0, 1.0, 200)
+    y = preemphasis(x, 0.97).astype(np.float64)
+    recovered = np.empty_like(x)
+    recovered[0] = y[0] / 0.03
+    for index in range(1, len(x)):
+        recovered[index] = y[index] + 0.97 * recovered[index - 1]
+    assert np.allclose(recovered, x, atol=1e-4)
