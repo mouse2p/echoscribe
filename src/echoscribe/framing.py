@@ -35,7 +35,13 @@ from echoscribe.errors import (
     require_positive,
     require_range,
 )
-from echoscribe.types import INDEX_DTYPE, SAMPLE_DTYPE, IntArray, SampleArray
+from echoscribe.types import (
+    INDEX_DTYPE,
+    SAMPLE_DTYPE,
+    FloatArray,
+    IntArray,
+    SampleArray,
+)
 from echoscribe.windows import FRAME_WINDOWS
 
 #: Policies for the first pre-emphasis sample, which has no predecessor.
@@ -168,3 +174,28 @@ def preemphasis(
     previous[0] = x[0] if first == "replicate" else 0.0
     previous[1:] = x[:-1]
     return (x - coefficient * previous).astype(SAMPLE_DTYPE)
+
+
+def extract_frames(samples: np.ndarray, config: FrameConfig) -> FloatArray:
+    """Slice ``samples`` into a ``(frames, frame_length)`` matrix.
+
+    With ``snip_edges=False`` the signal is padded by half a frame on the left and
+    by whatever the last frame still needs on the right, so the matrix always has
+    :func:`frame_count` rows.  Frames come back *before* windowing and before DC
+    removal; :func:`frame_signal` composes the whole pipeline.
+    """
+    x = np.asarray(samples, dtype=np.float64)
+    require(x.ndim == 1, f"extract_frames needs 1-D samples, got shape {x.shape}", ConfigError)
+    length, shift = config.frame_length, config.frame_shift
+    count = frame_count(x.size, config)
+    if count == 0:
+        return np.zeros((0, length), dtype=np.float64)
+    if config.snip_edges:
+        padded = x
+    else:
+        pad_left = length // 2
+        pad_right = max(0, (count - 1) * shift + length - pad_left - x.size)
+        padded = np.concatenate([np.zeros(pad_left), x, np.zeros(pad_right)])
+    starts = frame_starts(x.size, config)
+    offsets = np.arange(length, dtype=INDEX_DTYPE)
+    return padded[starts[:, None] + offsets[None, :]]
