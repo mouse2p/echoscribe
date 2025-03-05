@@ -35,7 +35,7 @@ from echoscribe.errors import (
     require_positive,
     require_range,
 )
-from echoscribe.types import INDEX_DTYPE, IntArray
+from echoscribe.types import INDEX_DTYPE, SAMPLE_DTYPE, IntArray, SampleArray
 from echoscribe.windows import FRAME_WINDOWS
 
 #: Policies for the first pre-emphasis sample, which has no predecessor.
@@ -136,3 +136,35 @@ def frame_starts(num_samples: int, config: FrameConfig) -> IntArray:
     """
     count = frame_count(num_samples, config)
     return (np.arange(count, dtype=INDEX_DTYPE) * config.frame_shift).astype(INDEX_DTYPE)
+
+
+def preemphasis(
+    samples: np.ndarray,
+    coefficient: float = 0.97,
+    first: str = "replicate",
+) -> SampleArray:
+    """Apply the one-zero high-pass filter ``y[n] = x[n] - c * x[n-1]``.
+
+    Speech puts most of its energy below 1 kHz.  Pre-emphasis lifts the high end
+    so the mel filterbank sees a flatter spectrum and quiet fricatives survive
+    quantisation.  ``coefficient = 0`` is a no-op; ``1`` is a pure first
+    difference.
+
+    ``first`` decides what stands in for the missing ``x[-1]``:
+
+    ``"replicate"``
+        uses ``x[0]``, so ``y[0] = (1 - c) * x[0]``.  This is what Kaldi's fbank
+        does and it avoids the one-sample step the zero policy introduces.
+    ``"zero"``
+        leaves ``y[0] = x[0]``, treating the signal as starting from silence.
+    """
+    require_range("coefficient", coefficient, 0.0, 1.0, ConfigError)
+    require_in("first", first, PREEMPHASIS_EDGE_POLICIES, ConfigError)
+    x = np.asarray(samples, dtype=np.float64)
+    require(x.ndim == 1, f"preemphasis needs 1-D samples, got shape {x.shape}", ConfigError)
+    if x.size == 0:
+        return np.zeros(0, dtype=SAMPLE_DTYPE)
+    previous = np.empty_like(x)
+    previous[0] = x[0] if first == "replicate" else 0.0
+    previous[1:] = x[:-1]
+    return (x - coefficient * previous).astype(SAMPLE_DTYPE)
