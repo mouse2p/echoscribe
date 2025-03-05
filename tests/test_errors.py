@@ -148,3 +148,9 @@ def test_require_positive_accepts_infinity_and_rejects_nan() -> None:
         errors.require_non_negative("gain", float("nan"))
     with pytest.raises(errors.ConfigError):
         errors.require_range("gain", float("nan"), 0.0, 1.0)
+
+
+def test_require_non_negative_returns_the_value_it_accepted() -> None:
+    assert errors.require_non_negative("frames", 0) == 0
+    assert errors.require_non_negative("frames", 12) == 12
+    assert errors.require_non_negative("frames", 0.25) == 0.25
