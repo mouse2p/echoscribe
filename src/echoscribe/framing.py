@@ -41,6 +41,7 @@ from echoscribe.types import (
     FloatArray,
     IntArray,
     SampleArray,
+    require_rank,
 )
 from echoscribe.windows import FRAME_WINDOWS
 
@@ -199,3 +200,15 @@ def extract_frames(samples: np.ndarray, config: FrameConfig) -> FloatArray:
     starts = frame_starts(x.size, config)
     offsets = np.arange(length, dtype=INDEX_DTYPE)
     return padded[starts[:, None] + offsets[None, :]]
+
+
+def remove_dc_offset(frames: FloatArray) -> FloatArray:
+    """Subtract each frame's own mean.
+
+    A DC component carries no speech information but leaks into every FFT bin
+    through the window's side lobes, and it biases the low mel bins most of all.
+    Removing it per frame rather than per utterance matters for streaming, where
+    the running mean of an utterance is not known yet.
+    """
+    matrix = require_rank("frames", np.asarray(frames, dtype=np.float64), 2)
+    return matrix - matrix.mean(axis=1, keepdims=True)
