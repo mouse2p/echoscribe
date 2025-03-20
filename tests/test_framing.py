@@ -6,7 +6,7 @@ import numpy as np
 import pytest
 
 from echoscribe.errors import ConfigError
-from echoscribe.framing import FrameConfig, frame_count, frame_starts, preemphasis
+from echoscribe.framing import FrameConfig, extract_frames, frame_count, frame_starts, preemphasis
 
 
 def test_defaults_match_the_standard_25ms_10ms_recipe() -> None:
@@ -237,3 +237,71 @@ def test_preemphasis_is_invertible_by_an_all_pole_filter() -> None:
     for index in range(1, len(x)):
         recovered[index] = y[index] + 0.97 * recovered[index - 1]
     assert np.allclose(recovered, x, atol=1e-4)
+
+
+def test_snipped_frames_are_plain_slices_of_the_signal() -> None:
+    x = np.arange(1000, dtype=np.float64)
+    frames = extract_frames(x, SNIPPED)
+    assert frames.shape == (frame_count(1000, SNIPPED), 400)
+    for index, start in enumerate(frame_starts(1000, SNIPPED)):
+        assert np.array_equal(frames[index], x[start : start + 400])
+
+
+def test_padded_frames_pad_the_left_edge_with_zeros() -> None:
+    x = np.arange(1, 401, dtype=np.float64)
+    frames = extract_frames(x, PADDED)
+    assert frames.shape[0] == frame_count(400, PADDED) == 3
+    # Frame 0 is centred on sample 0, so its left half is padding.
+    assert np.all(frames[0][:200] == 0.0)
+    assert frames[0][200] == 1.0
+
+
+def test_padded_frames_pad_the_right_edge() -> None:
+    x = np.ones(1600, dtype=np.float64)
+    frames = extract_frames(x, PADDED)
+    assert frames.shape[0] == 10
+    # The last frame starts at raw sample 1440 - 200 = 1240 and runs 400 samples,
+    # so it reaches 40 past the end of the signal.
+    assert frames[-1][359] == 1.0
+    assert np.all(frames[-1][360:] == 0.0)
+
+
+def test_extract_frames_of_a_short_signal_is_empty_when_snipping() -> None:
+    assert extract_frames(np.ones(100), SNIPPED).shape == (0, 400)
+
+
+def test_extract_frames_of_a_short_signal_still_pads_when_not_snipping() -> None:
+    frames = extract_frames(np.ones(100), PADDED)
+    assert frames.shape == (1, 400)
+    assert np.count_nonzero(frames[0]) == 100
+
+
+def test_extract_frames_of_an_empty_signal() -> None:
+    assert extract_frames(np.zeros(0), SNIPPED).shape == (0, 400)
+    assert extract_frames(np.zeros(0), PADDED).shape == (0, 400)
+
+
+def test_extract_frames_is_deterministic_and_side_effect_free() -> None:
+    x = np.linspace(-1.0, 1.0, 3200)
+    first = extract_frames(x, SNIPPED)
+    assert np.array_equal(extract_frames(x, SNIPPED), first)
+    assert np.array_equal(x, np.linspace(-1.0, 1.0, 3200))
+
+
+def test_extract_frames_rejects_a_matrix() -> None:
+    with pytest.raises(ConfigError, match="needs 1-D samples"):
+        extract_frames(np.zeros((4, 2)), SNIPPED)
+
+
+def test_frames_do_not_share_memory_with_the_input() -> None:
+    x = np.arange(1000, dtype=np.float64)
+    frames = extract_frames(x, SNIPPED)
+    frames[0, 0] = -999.0
+    assert x[0] == 0.0
+
+
+def test_consecutive_snipped_frames_overlap_by_length_minus_shift() -> None:
+    x = np.arange(2000, dtype=np.float64)
+    frames = extract_frames(x, SNIPPED)
+    overlap = SNIPPED.frame_length - SNIPPED.frame_shift
+    assert np.array_equal(frames[0][-overlap:], frames[1][:overlap])
