@@ -8,12 +8,15 @@ import pytest
 from echoscribe.errors import ConfigError
 from echoscribe.framing import (
     FrameConfig,
+    apply_window,
     extract_frames,
     frame_count,
     frame_starts,
     preemphasis,
+    preemphasize_frames,
     remove_dc_offset,
 )
+from echoscribe.windows import window_vector
 
 
 def test_defaults_match_the_standard_25ms_10ms_recipe() -> None:
@@ -344,3 +347,49 @@ def test_dc_removal_of_an_empty_frame_matrix() -> None:
 def test_dc_removal_rejects_a_flat_vector() -> None:
     with pytest.raises(ValueError, match="must be 2-D"):
         remove_dc_offset(np.zeros(400))
+
+
+def test_apply_window_multiplies_elementwise() -> None:
+    config = FrameConfig(window="hamming")
+    frames = np.ones((3, 400))
+    windowed = apply_window(frames, config)
+    assert np.allclose(windowed, window_vector("hamming", 400)[None, :])
+
+
+def test_a_rectangular_window_is_the_identity() -> None:
+    rng = np.random.default_rng(6)
+    frames = rng.standard_normal((4, 400))
+    config = FrameConfig(window="rectangular")
+    assert np.allclose(apply_window(frames, config), frames)
+
+
+def test_apply_window_rejects_a_width_mismatch() -> None:
+    with pytest.raises(ConfigError, match="frames are 512 samples wide"):
+        apply_window(np.zeros((2, 512)), FrameConfig())
+
+
+def test_apply_window_does_not_mutate_its_input() -> None:
+    frames = np.ones((2, 400))
+    apply_window(frames, FrameConfig(window="hann"))
+    assert np.all(frames == 1.0)
+
+
+def test_preemphasize_frames_matches_the_signal_level_filter_per_row() -> None:
+    rng = np.random.default_rng(8)
+    frames = rng.uniform(-1.0, 1.0, size=(5, 64))
+    filtered = preemphasize_frames(frames, 0.97)
+    for index in range(5):
+        expected = preemphasis(frames[index], 0.97, first="replicate").astype(np.float64)
+        assert np.allclose(filtered[index], expected, atol=1e-6)
+
+
+def test_preemphasize_frames_with_a_zero_coefficient_copies() -> None:
+    frames = np.arange(12, dtype=np.float64).reshape(2, 6)
+    result = preemphasize_frames(frames, 0.0)
+    assert np.array_equal(result, frames)
+    assert result is not frames
+
+
+def test_preemphasize_frames_rejects_a_bad_coefficient() -> None:
+    with pytest.raises(ConfigError, match="coefficient must lie in"):
+        preemphasize_frames(np.zeros((1, 4)), 1.2)
