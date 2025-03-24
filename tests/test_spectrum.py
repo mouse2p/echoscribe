@@ -1,0 +1,72 @@
+"""Spectral conventions are pinned on signals whose transform is known in closed form."""
+
+from __future__ import annotations
+
+import numpy as np
+import pytest
+
+from echoscribe.errors import ConfigError
+from echoscribe.spectrum import power_spectrum, rfft_bin_count
+
+
+def test_bin_count_is_half_the_size_plus_one() -> None:
+    assert rfft_bin_count(512) == 257
+    assert rfft_bin_count(400) == 201
+    assert rfft_bin_count(1) == 1
+
+
+@pytest.mark.parametrize("size", [0, -8])
+def test_bin_count_rejects_a_non_positive_size(size: int) -> None:
+    with pytest.raises(ConfigError, match="fft_size must be positive"):
+        rfft_bin_count(size)
+
+
+def test_a_constant_frame_concentrates_everything_at_dc() -> None:
+    frames = np.ones((1, 16))
+    power = power_spectrum(frames)
+    assert power.shape == (1, 9)
+    assert power[0, 0] == pytest.approx(16.0)
+    assert np.allclose(power[0, 1:], 0.0, atol=1e-24)
+
+
+def test_a_cosine_on_an_exact_bin_peaks_there() -> None:
+    size = 64
+    bin_index = 5
+    t = np.arange(size, dtype=np.float64)
+    frames = np.cos(2 * np.pi * bin_index * t / size)[None, :]
+    power = power_spectrum(frames)
+    assert int(np.argmax(power[0])) == bin_index
+    assert power[0, bin_index] == pytest.approx(size / 4.0, rel=1e-12)
+
+
+def test_zero_padding_does_not_change_the_normalised_power() -> None:
+    size = 64
+    bin_index = 3
+    t = np.arange(size, dtype=np.float64)
+    frames = np.cos(2 * np.pi * bin_index * t / size)[None, :]
+    padded = power_spectrum(frames, fft_size=256)
+    # Energy spreads over interpolated bins, but the total stays the same.
+    assert padded.sum() == pytest.approx(power_spectrum(frames).sum(), rel=1e-9)
+
+
+def test_a_smaller_fft_size_is_rejected() -> None:
+    with pytest.raises(ConfigError, match="is smaller than the frame width"):
+        power_spectrum(np.zeros((2, 400)), fft_size=256)
+
+
+def test_power_spectrum_rejects_a_flat_vector() -> None:
+    with pytest.raises(ValueError, match="must be 2-D"):
+        power_spectrum(np.zeros(64))
+
+
+def test_power_spectrum_of_no_frames_has_no_rows() -> None:
+    assert power_spectrum(np.zeros((0, 64))).shape == (0, 33)
+
+
+def test_power_is_non_negative_and_additive_over_frames() -> None:
+    rng = np.random.default_rng(3)
+    frames = rng.standard_normal((6, 128))
+    power = power_spectrum(frames)
+    assert np.all(power >= 0.0)
+    combined = power_spectrum(np.vstack([frames[:3], frames[3:]]))
+    assert np.array_equal(combined, np.vstack([power[:3], power[3:]]))
