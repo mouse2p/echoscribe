@@ -70,3 +70,33 @@ def test_power_is_non_negative_and_additive_over_frames() -> None:
     assert np.all(power >= 0.0)
     combined = power_spectrum(np.vstack([frames[:3], frames[3:]]))
     assert np.array_equal(combined, np.vstack([power[:3], power[3:]]))
+
+
+def test_parseval_relates_the_power_sum_to_the_frame_energy() -> None:
+    rng = np.random.default_rng(7)
+    frames = rng.standard_normal((4, 128))
+    power = power_spectrum(frames)
+    # sum_k |X[k]|^2 over the full DFT equals n * sum_t x[t]^2; the one-sided
+    # rfft doubles every bin except DC and Nyquist.
+    doubled = power.copy()
+    doubled[:, 1:-1] *= 2.0
+    assert doubled.sum(axis=1) == pytest.approx((frames**2).sum(axis=1), rel=1e-12)
+
+
+def test_power_of_a_unit_cosine_is_independent_of_padding() -> None:
+    size = 128
+    t = np.arange(size, dtype=np.float64)
+    frames = np.cos(2 * np.pi * 7 * t / size)[None, :]
+    totals = [power_spectrum(frames, fft_size=size * factor).sum() for factor in (1, 2, 4)]
+    assert totals[0] == pytest.approx(totals[1], rel=1e-9)
+    assert totals[1] == pytest.approx(totals[2], rel=1e-9)
+
+
+def test_scaling_a_frame_scales_its_power_quadratically() -> None:
+    rng = np.random.default_rng(11)
+    frames = rng.standard_normal((2, 96))
+    assert np.allclose(power_spectrum(frames * 3.0), power_spectrum(frames) * 9.0)
+
+
+def test_output_dtype_is_float64_for_float32_input() -> None:
+    assert power_spectrum(np.zeros((2, 32), dtype=np.float32)).dtype == np.float64
