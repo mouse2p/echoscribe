@@ -11,6 +11,7 @@ from echoscribe.framing import (
     apply_window,
     extract_frames,
     frame_count,
+    frame_signal,
     frame_starts,
     preemphasis,
     preemphasize_frames,
@@ -393,3 +394,48 @@ def test_preemphasize_frames_with_a_zero_coefficient_copies() -> None:
 def test_preemphasize_frames_rejects_a_bad_coefficient() -> None:
     with pytest.raises(ConfigError, match="coefficient must lie in"):
         preemphasize_frames(np.zeros((1, 4)), 1.2)
+
+
+def test_frame_signal_shape_follows_the_frame_count() -> None:
+    x = np.linspace(-0.5, 0.5, 3200)
+    for config in (SNIPPED, PADDED):
+        assert frame_signal(x, config).shape == (frame_count(3200, config), 400)
+
+
+def test_frame_signal_matches_the_pipeline_run_stage_by_stage() -> None:
+    x = np.linspace(-0.8, 0.8, 2400)
+    config = FrameConfig()
+    expected = extract_frames(x, config)
+    expected = remove_dc_offset(expected)
+    expected = preemphasize_frames(expected, config.preemphasis)
+    expected = apply_window(expected, config)
+    assert np.array_equal(frame_signal(x, config), expected)
+
+
+def test_frame_signal_accepts_an_audio_object() -> None:
+    from echoscribe.waveform import Audio
+
+    x = np.linspace(-0.5, 0.5, 1600).astype(np.float32)
+    assert np.allclose(frame_signal(Audio(x, 16000), SNIPPED), frame_signal(x, SNIPPED))
+
+
+def test_frame_signal_is_deterministic() -> None:
+    x = np.linspace(-1.0, 1.0, 4000)
+    assert np.array_equal(frame_signal(x, SNIPPED), frame_signal(x, SNIPPED))
+
+
+def test_frame_signal_flags_switch_their_stage_off() -> None:
+    x = np.linspace(-1.0, 1.0, 1600)
+    plain = frame_signal(x, FrameConfig(remove_dc_offset=False, preemphasis=0.0))
+    expected = apply_window(extract_frames(x, SNIPPED), FrameConfig())
+    assert np.allclose(plain, expected)
+
+
+def test_frame_signal_output_is_zero_at_the_povey_edges() -> None:
+    frames = frame_signal(np.linspace(-0.5, 0.5, 1600), FrameConfig(window="povey"))
+    assert np.allclose(frames[:, 0], 0.0, atol=1e-12)
+    assert np.allclose(frames[:, -1], 0.0, atol=1e-12)
+
+
+def test_frame_signal_of_a_short_signal_is_empty_when_snipping() -> None:
+    assert frame_signal(np.ones(100), SNIPPED).shape == (0, 400)
