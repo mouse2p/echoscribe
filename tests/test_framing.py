@@ -6,7 +6,14 @@ import numpy as np
 import pytest
 
 from echoscribe.errors import ConfigError
-from echoscribe.framing import FrameConfig, extract_frames, frame_count, frame_starts, preemphasis
+from echoscribe.framing import (
+    FrameConfig,
+    extract_frames,
+    frame_count,
+    frame_starts,
+    preemphasis,
+    remove_dc_offset,
+)
 
 
 def test_defaults_match_the_standard_25ms_10ms_recipe() -> None:
@@ -305,3 +312,35 @@ def test_consecutive_snipped_frames_overlap_by_length_minus_shift() -> None:
     frames = extract_frames(x, SNIPPED)
     overlap = SNIPPED.frame_length - SNIPPED.frame_shift
     assert np.array_equal(frames[0][-overlap:], frames[1][:overlap])
+
+
+def test_dc_removal_zeroes_every_frame_mean() -> None:
+    rng = np.random.default_rng(2)
+    frames = rng.uniform(2.0, 5.0, size=(7, 400))
+    cleaned = remove_dc_offset(frames)
+    assert np.allclose(cleaned.mean(axis=1), 0.0, atol=1e-12)
+
+
+def test_dc_removal_only_shifts_a_frame() -> None:
+    frames = np.array([[1.0, 3.0, 5.0, 7.0]])
+    assert np.allclose(remove_dc_offset(frames), [[-3.0, -1.0, 1.0, 3.0]])
+
+
+def test_dc_removal_preserves_an_already_centred_frame() -> None:
+    frames = np.array([[-1.0, 1.0, -1.0, 1.0]])
+    assert np.allclose(remove_dc_offset(frames), frames)
+
+
+def test_dc_removal_does_not_touch_the_input() -> None:
+    frames = np.full((2, 8), 4.0)
+    remove_dc_offset(frames)
+    assert np.all(frames == 4.0)
+
+
+def test_dc_removal_of_an_empty_frame_matrix() -> None:
+    assert remove_dc_offset(np.zeros((0, 400))).shape == (0, 400)
+
+
+def test_dc_removal_rejects_a_flat_vector() -> None:
+    with pytest.raises(ValueError, match="must be 2-D"):
+        remove_dc_offset(np.zeros(400))
