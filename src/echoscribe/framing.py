@@ -43,7 +43,7 @@ from echoscribe.types import (
     SampleArray,
     require_rank,
 )
-from echoscribe.windows import FRAME_WINDOWS
+from echoscribe.windows import FRAME_WINDOWS, window_vector
 
 #: Policies for the first pre-emphasis sample, which has no predecessor.
 PREEMPHASIS_EDGE_POLICIES = ("replicate", "zero")
@@ -212,3 +212,36 @@ def remove_dc_offset(frames: FloatArray) -> FloatArray:
     """
     matrix = require_rank("frames", np.asarray(frames, dtype=np.float64), 2)
     return matrix - matrix.mean(axis=1, keepdims=True)
+
+
+def preemphasize_frames(frames: FloatArray, coefficient: float = 0.97) -> FloatArray:
+    """Apply pre-emphasis independently to every row.
+
+    Per-frame rather than per-signal, so a frame boundary cannot leak information
+    from a frame that a streaming decoder has not seen yet.  The first sample of
+    each row uses the replicate policy: ``y[0] = (1 - c) * x[0]``.
+    """
+    require_range("coefficient", coefficient, 0.0, 1.0, ConfigError)
+    matrix = require_rank("frames", np.asarray(frames, dtype=np.float64), 2)
+    if coefficient == 0.0:
+        return matrix.copy()
+    out = np.empty_like(matrix)
+    out[:, 0] = matrix[:, 0] * (1.0 - coefficient)
+    out[:, 1:] = matrix[:, 1:] - coefficient * matrix[:, :-1]
+    return out
+
+
+def apply_window(frames: FloatArray, config: FrameConfig) -> FloatArray:
+    """Multiply every frame by the configured analysis window.
+
+    The frame width must match ``config.frame_length``: applying a 400-sample
+    window to 512-sample frames would broadcast silently in one direction and
+    raise in the other, depending on the shapes involved.
+    """
+    matrix = require_rank("frames", np.asarray(frames, dtype=np.float64), 2)
+    require(
+        matrix.shape[1] == config.frame_length,
+        f"frames are {matrix.shape[1]} samples wide but the config asks for {config.frame_length}",
+        ConfigError,
+    )
+    return matrix * window_vector(config.window, config.frame_length)[None, :]
