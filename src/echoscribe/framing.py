@@ -43,6 +43,7 @@ from echoscribe.types import (
     SampleArray,
     require_rank,
 )
+from echoscribe.waveform import Audio
 from echoscribe.windows import FRAME_WINDOWS, window_vector
 
 #: Policies for the first pre-emphasis sample, which has no predecessor.
@@ -245,3 +246,23 @@ def apply_window(frames: FloatArray, config: FrameConfig) -> FloatArray:
         ConfigError,
     )
     return matrix * window_vector(config.window, config.frame_length)[None, :]
+
+
+def frame_signal(signal: Audio | np.ndarray, config: FrameConfig) -> FloatArray:
+    """Run the whole analysis pipeline: frame, DC removal, pre-emphasis, window.
+
+    The order follows the standard fbank recipe.  DC removal comes first so a
+    constant offset cannot be differentiated into a spike by pre-emphasis, and
+    the window goes on last because it is what defines the frame's spectral
+    shape.  All three steps are per frame, which is what keeps the pipeline
+    usable on a stream where the future is not available.
+    """
+    if isinstance(signal, Audio):
+        samples = signal.samples.astype(np.float64)
+    else:
+        samples = np.asarray(signal, dtype=np.float64)
+    frames = extract_frames(samples, config)
+    if config.remove_dc_offset:
+        frames = remove_dc_offset(frames)
+    frames = preemphasize_frames(frames, config.preemphasis)
+    return apply_window(frames, config)
