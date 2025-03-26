@@ -40,13 +40,7 @@ def power_spectrum(frames: np.ndarray, fft_size: int | None = None) -> FloatArra
     smaller one is rejected rather than truncating the frame.
     """
     matrix = require_rank("frames", np.asarray(frames, dtype=FEATURE_DTYPE), 2)
-    size = matrix.shape[1] if fft_size is None else fft_size
-    require_positive("fft_size", size, ConfigError)
-    require(
-        size >= matrix.shape[1],
-        f"fft_size {size} is smaller than the frame width {matrix.shape[1]}",
-        ConfigError,
-    )
+    size = _resolve_fft_size(matrix, fft_size)
     transform = np.fft.rfft(matrix, n=size, axis=1)
     return (transform.real**2 + transform.imag**2) / size
 
@@ -85,3 +79,34 @@ def log_power_spectrum(
 ) -> FloatArray:
     """Return ``log`` of the power spectrum, floored so silence stays finite."""
     return safe_log(power_spectrum(frames, fft_size), floor)
+
+
+def complex_spectrum(frames: np.ndarray, fft_size: int | None = None) -> np.ndarray:
+    """Return the raw one-sided complex transform of every frame."""
+    matrix = require_rank("frames", np.asarray(frames, dtype=FEATURE_DTYPE), 2)
+    size = _resolve_fft_size(matrix, fft_size)
+    return np.fft.rfft(matrix, n=size, axis=1)
+
+
+def magnitude_spectrum(frames: np.ndarray, fft_size: int | None = None) -> FloatArray:
+    """Return ``|X[k]| / sqrt(fft_size)`` so magnitude squared is the power."""
+    matrix = require_rank("frames", np.asarray(frames, dtype=FEATURE_DTYPE), 2)
+    size = _resolve_fft_size(matrix, fft_size)
+    return np.abs(np.fft.rfft(matrix, n=size, axis=1)) / np.sqrt(float(size))
+
+
+def phase_spectrum(frames: np.ndarray, fft_size: int | None = None) -> FloatArray:
+    """Return the unwrapped-free principal phase of every bin, in radians."""
+    return np.angle(complex_spectrum(frames, fft_size))
+
+
+def _resolve_fft_size(matrix: np.ndarray, fft_size: int | None) -> int:
+    """Share the padding rules between the power, magnitude and phase paths."""
+    size = matrix.shape[1] if fft_size is None else fft_size
+    require_positive("fft_size", size, ConfigError)
+    require(
+        size >= matrix.shape[1],
+        f"fft_size {size} is smaller than the frame width {matrix.shape[1]}",
+        ConfigError,
+    )
+    return int(size)
