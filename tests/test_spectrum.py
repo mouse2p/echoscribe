@@ -9,7 +9,10 @@ from echoscribe.errors import ConfigError
 from echoscribe.spectrum import (
     SPECTRAL_FLOOR,
     bin_frequencies,
+    complex_spectrum,
     log_power_spectrum,
+    magnitude_spectrum,
+    phase_spectrum,
     power_spectrum,
     rfft_bin_count,
 )
@@ -147,3 +150,52 @@ def test_the_log_spectrum_matches_the_log_of_the_power_spectrum() -> None:
 def test_the_log_spectrum_floor_can_be_raised() -> None:
     frames = np.zeros((1, 32))
     assert np.allclose(log_power_spectrum(frames, floor=1e-6), np.log(1e-6))
+
+
+def test_magnitude_squared_equals_the_power_spectrum() -> None:
+    rng = np.random.default_rng(17)
+    frames = rng.standard_normal((3, 96))
+    assert np.allclose(magnitude_spectrum(frames) ** 2, power_spectrum(frames), rtol=1e-12)
+
+
+def test_a_time_shift_leaves_magnitude_untouched() -> None:
+    size = 64
+    t = np.arange(size, dtype=np.float64)
+    tone = np.cos(2 * np.pi * 5 * t / size)
+    shifted = np.roll(tone, 7)
+    assert np.allclose(
+        magnitude_spectrum(shifted[None, :]),
+        magnitude_spectrum(tone[None, :]),
+        atol=1e-12,
+    )
+
+
+def test_a_time_shift_adds_a_linear_phase_ramp() -> None:
+    size = 64
+    shift = 7
+    bin_index = 5
+    t = np.arange(size, dtype=np.float64)
+    tone = np.cos(2 * np.pi * bin_index * t / size)
+    phase = phase_spectrum(np.roll(tone, shift)[None, :])[0]
+    expected = float(np.angle(np.exp(-2j * np.pi * bin_index * shift / size)))
+    assert phase[bin_index] == pytest.approx(expected, abs=1e-9)
+
+
+def test_phase_of_a_real_cosine_is_zero_at_its_own_bin() -> None:
+    size = 64
+    t = np.arange(size, dtype=np.float64)
+    phase = phase_spectrum(np.cos(2 * np.pi * 4 * t / size)[None, :])[0]
+    assert phase[4] == pytest.approx(0.0, abs=1e-12)
+
+
+def test_complex_spectrum_shape_and_dtype() -> None:
+    transform = complex_spectrum(np.zeros((2, 32)), fft_size=64)
+    assert transform.shape == (2, 33)
+    assert np.iscomplexobj(transform)
+
+
+def test_magnitude_and_phase_reject_a_too_small_fft() -> None:
+    with pytest.raises(ConfigError, match="is smaller than the frame width"):
+        magnitude_spectrum(np.zeros((1, 64)), fft_size=32)
+    with pytest.raises(ConfigError, match="is smaller than the frame width"):
+        phase_spectrum(np.zeros((1, 64)), fft_size=32)
