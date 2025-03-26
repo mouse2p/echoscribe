@@ -6,7 +6,13 @@ import numpy as np
 import pytest
 
 from echoscribe.errors import ConfigError
-from echoscribe.spectrum import power_spectrum, rfft_bin_count
+from echoscribe.spectrum import (
+    SPECTRAL_FLOOR,
+    bin_frequencies,
+    log_power_spectrum,
+    power_spectrum,
+    rfft_bin_count,
+)
 
 
 def test_bin_count_is_half_the_size_plus_one() -> None:
@@ -100,3 +106,44 @@ def test_scaling_a_frame_scales_its_power_quadratically() -> None:
 
 def test_output_dtype_is_float64_for_float32_input() -> None:
     assert power_spectrum(np.zeros((2, 32), dtype=np.float32)).dtype == np.float64
+
+
+def test_bin_frequencies_run_from_dc_to_nyquist() -> None:
+    frequencies = bin_frequencies(512, 16000)
+    assert frequencies.shape == (257,)
+    assert frequencies[0] == 0.0
+    assert frequencies[-1] == 8000.0
+
+
+def test_bin_spacing_is_the_sample_rate_over_the_fft_size() -> None:
+    frequencies = bin_frequencies(400, 16000)
+    assert np.allclose(np.diff(frequencies), 40.0)
+
+
+def test_bin_frequencies_scale_with_the_sample_rate() -> None:
+    assert np.allclose(bin_frequencies(256, 8000), bin_frequencies(256, 16000) / 2.0)
+
+
+def test_bin_frequencies_reject_bad_arguments() -> None:
+    with pytest.raises(ConfigError, match="fft_size must be positive"):
+        bin_frequencies(0, 16000)
+    with pytest.raises(ConfigError, match="sample_rate must be positive"):
+        bin_frequencies(256, 0)
+
+
+def test_the_log_spectrum_of_a_silent_frame_is_the_floor() -> None:
+    power = log_power_spectrum(np.zeros((1, 64)))
+    assert np.all(np.isfinite(power))
+    assert np.allclose(power, np.log(SPECTRAL_FLOOR))
+
+
+def test_the_log_spectrum_matches_the_log_of_the_power_spectrum() -> None:
+    rng = np.random.default_rng(13)
+    frames = rng.uniform(0.0, 1.0, size=(3, 64))
+    expected = np.log(np.maximum(power_spectrum(frames), SPECTRAL_FLOOR))
+    assert np.allclose(log_power_spectrum(frames), expected)
+
+
+def test_the_log_spectrum_floor_can_be_raised() -> None:
+    frames = np.zeros((1, 32))
+    assert np.allclose(log_power_spectrum(frames, floor=1e-6), np.log(1e-6))
