@@ -199,3 +199,10 @@ def test_magnitude_and_phase_reject_a_too_small_fft() -> None:
         magnitude_spectrum(np.zeros((1, 64)), fft_size=32)
     with pytest.raises(ConfigError, match="is smaller than the frame width"):
         phase_spectrum(np.zeros((1, 64)), fft_size=32)
+
+
+def test_bin_count_matches_the_transform_width() -> None:
+    for size in (16, 17, 64, 400, 512):
+        transform = complex_spectrum(np.zeros((1, size)))
+        assert transform.shape[1] == rfft_bin_count(size)
+        assert bin_frequencies(size, 16000).shape == (rfft_bin_count(size),)
