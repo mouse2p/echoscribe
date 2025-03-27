@@ -23,10 +23,9 @@ from echoscribe.types import FEATURE_DTYPE, FloatArray, require_rank
 
 def rfft_bin_count(fft_size: int) -> int:
     """Number of bins a real FFT of ``fft_size`` points produces."""
-    require_positive("fft_size", fft_size, ConfigError)
     require(
-        isinstance(fft_size, int),
-        f"fft_size must be an integer, got {fft_size!r}",
+        isinstance(fft_size, int) and not isinstance(fft_size, bool) and fft_size >= 1,
+        f"fft_size must be a positive integer, got {fft_size!r}",
         ConfigError,
     )
     return fft_size // 2 + 1
@@ -58,18 +57,8 @@ def bin_frequencies(fft_size: int, sample_rate: int) -> FloatArray:
     ``sample_rate / fft_size``, which is the resolution the frame length buys.
     """
     require_positive("sample_rate", sample_rate, ConfigError)
-    return np.fft.rfftfreq(rfft_bin_count_check(fft_size), d=1.0 / sample_rate)
-
-
-def rfft_bin_count_check(fft_size: int) -> int:
-    """Validate ``fft_size`` and return it, so :func:`bin_frequencies` can chain."""
     require_positive("fft_size", fft_size, ConfigError)
-    require(
-        isinstance(fft_size, int) and fft_size >= 1,
-        f"fft_size must be a positive integer, got {fft_size!r}",
-        ConfigError,
-    )
-    return fft_size
+    return np.fft.rfftfreq(fft_size, d=1.0 / sample_rate)
 
 
 def log_power_spectrum(

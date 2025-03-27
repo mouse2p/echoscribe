@@ -24,9 +24,9 @@ def test_bin_count_is_half_the_size_plus_one() -> None:
     assert rfft_bin_count(1) == 1
 
 
-@pytest.mark.parametrize("size", [0, -8])
-def test_bin_count_rejects_a_non_positive_size(size: int) -> None:
-    with pytest.raises(ConfigError, match="fft_size must be positive"):
+@pytest.mark.parametrize("size", [0, -8, 64.0, True, "512"])
+def test_bin_count_rejects_anything_that_is_not_a_positive_int(size) -> None:
+    with pytest.raises(ConfigError, match="fft_size must be a positive integer"):
         rfft_bin_count(size)
 
 
