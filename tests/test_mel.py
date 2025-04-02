@@ -13,6 +13,8 @@ from echoscribe.mel import (
     SLANEY_MIN_LOG_HZ,
     SLANEY_MIN_LOG_MEL,
     hz_to_mel,
+    mel_centre_frequencies,
+    mel_edges,
     mel_to_hz,
 )
 
@@ -84,3 +86,55 @@ def test_the_two_scales_disagree_above_the_slaney_break_point() -> None:
     slaney = hz_to_mel(4000.0, "slaney")
     assert htk != pytest.approx(slaney)
     assert slaney < htk
+
+
+@pytest.mark.parametrize("scale", list(MEL_SCALES))
+def test_edges_start_at_the_low_cut_and_end_at_the_high_cut(scale: str) -> None:
+    edges = mel_edges(23, 16000, 100.0, 7500.0, scale)
+    assert edges.shape == (25,)
+    assert edges[0] == pytest.approx(100.0)
+    assert edges[-1] == pytest.approx(7500.0)
+
+
+@pytest.mark.parametrize("scale", list(MEL_SCALES))
+def test_edges_are_strictly_increasing(scale: str) -> None:
+    edges = mel_edges(40, 16000, 20.0, None, scale)
+    assert np.all(np.diff(edges) > 0.0)
+
+
+def test_the_default_high_edge_is_nyquist() -> None:
+    assert mel_edges(10, 16000, 0.0)[-1] == pytest.approx(8000.0)
+    assert mel_edges(10, 8000, 0.0)[-1] == pytest.approx(4000.0)
+
+
+def test_centre_frequencies_are_the_interior_edges() -> None:
+    edges = mel_edges(8, 16000, 50.0, 7000.0)
+    assert np.array_equal(mel_centre_frequencies(8, 16000, 50.0, 7000.0), edges[1:-1])
+
+
+def test_centres_sit_between_their_own_edges() -> None:
+    edges = mel_edges(20, 16000, 20.0, None, "slaney")
+    centres = mel_centre_frequencies(20, 16000, 20.0, None, "slaney")
+    assert np.all(centres > edges[:-2])
+    assert np.all(centres < edges[2:])
+
+
+def test_mel_spacing_compresses_the_high_end() -> None:
+    edges = mel_edges(20, 16000, 0.0, None, "htk")
+    widths = np.diff(edges)
+    assert widths[-1] > 4 * widths[0]
+
+
+@pytest.mark.parametrize(
+    ("low", "high"),
+    [(-1.0, 4000.0), (4000.0, 4000.0), (5000.0, 4000.0), (0.0, 9000.0)],
+)
+def test_an_impossible_band_is_rejected(low: float, high: float) -> None:
+    with pytest.raises(ConfigError, match="band must satisfy"):
+        mel_edges(10, 16000, low, high)
+
+
+@pytest.mark.parametrize("bins", [0, -3, 2.5])
+def test_a_bad_bin_count_is_rejected(bins) -> None:
+    with pytest.raises(ConfigError, match="num_bins must be a positive integer"):
+        mel_edges(bins, 16000)
