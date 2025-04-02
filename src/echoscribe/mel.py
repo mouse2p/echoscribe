@@ -23,6 +23,7 @@ import math
 import numpy as np
 
 from echoscribe.errors import ConfigError, require, require_in, require_positive
+from echoscribe.spectrum import bin_frequencies
 
 #: Mel scales understood by :func:`hz_to_mel` and :func:`mel_to_hz`.
 MEL_SCALES = ("htk", "slaney")
@@ -109,3 +110,39 @@ def mel_centre_frequencies(
 ) -> np.ndarray:
     """Centre frequency in Hz of each of the ``num_bins`` triangular filters."""
     return mel_edges(num_bins, sample_rate, low_frequency, high_frequency, scale)[1:-1]
+
+
+def mel_filterbank(
+    num_bins: int,
+    fft_size: int,
+    sample_rate: int,
+    low_frequency: float = 0.0,
+    high_frequency: float | None = None,
+    scale: str = "htk",
+    normalize: bool = False,
+) -> np.ndarray:
+    """Build the ``(num_bins, fft_size // 2 + 1)`` triangular filterbank.
+
+    Triangles are evaluated at the exact bin frequencies with fractional edges, so
+    the matrix does not depend on rounding a centre frequency to the nearest bin.
+    Each row rises linearly from the left edge to the centre and falls back to zero
+    at the right edge, capped at one.
+
+    ``normalize`` rescales each triangle to unit area in Hz (``2 / (right - left)``)
+    rather than unit height.  That makes the response independent of filter
+    bandwidth, so a broadband signal produces roughly equal energy in every bin --
+    which is what the Slaney recipe wants and what a narrow high-frequency filter
+    would otherwise under-report.
+    """
+    require_positive("fft_size", fft_size, ConfigError)
+    edges = mel_edges(num_bins, sample_rate, low_frequency, high_frequency, scale)
+    frequencies = bin_frequencies(fft_size, sample_rate)[None, :]
+    left = edges[:-2][:, None]
+    centre = edges[1:-1][:, None]
+    right = edges[2:][:, None]
+    rising = (frequencies - left) / np.maximum(centre - left, 1e-12)
+    falling = (right - frequencies) / np.maximum(right - centre, 1e-12)
+    weights = np.clip(np.minimum(rising, falling), 0.0, 1.0)
+    if normalize:
+        weights = weights * (2.0 / np.maximum(right - left, 1e-12))
+    return weights
