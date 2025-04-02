@@ -15,6 +15,7 @@ from echoscribe.mel import (
     hz_to_mel,
     mel_centre_frequencies,
     mel_edges,
+    mel_filterbank,
     mel_to_hz,
 )
 
@@ -138,3 +139,60 @@ def test_an_impossible_band_is_rejected(low: float, high: float) -> None:
 def test_a_bad_bin_count_is_rejected(bins) -> None:
     with pytest.raises(ConfigError, match="num_bins must be a positive integer"):
         mel_edges(bins, 16000)
+
+
+def test_filterbank_shape_matches_the_rfft_width() -> None:
+    bank = mel_filterbank(23, 512, 16000)
+    assert bank.shape == (23, 257)
+
+
+def test_filterbank_weights_stay_inside_zero_and_one() -> None:
+    bank = mel_filterbank(40, 512, 16000, 20.0, None, "slaney")
+    assert bank.min() >= 0.0
+    assert bank.max() <= 1.0
+
+
+def test_each_filter_has_one_contiguous_non_zero_run() -> None:
+    bank = mel_filterbank(23, 512, 16000)
+    for row in bank:
+        support = np.flatnonzero(row > 0.0)
+        if support.size:
+            assert support[-1] - support[0] + 1 == support.size
+
+
+def test_filter_centres_move_up_the_frequency_axis() -> None:
+    bank = mel_filterbank(23, 512, 16000, 20.0)
+    peaks = [int(np.argmax(row)) for row in bank]
+    assert peaks == sorted(peaks)
+    assert len(set(peaks)) == len(peaks)
+
+
+def test_filters_below_the_low_cut_are_empty() -> None:
+    bank = mel_filterbank(10, 512, 16000, 2000.0)
+    assert np.all(bank[:, :64] == 0.0)
+
+
+def test_filters_above_the_high_cut_are_empty() -> None:
+    bank = mel_filterbank(10, 512, 16000, 0.0, 3000.0)
+    frequencies = np.fft.rfftfreq(512, 1 / 16000)
+    assert np.all(bank[:, frequencies > 3000.0] == 0.0)
+
+
+def test_a_single_bin_bank_spans_the_whole_band() -> None:
+    bank = mel_filterbank(1, 8, 8000, 0.0, 4000.0, "htk")
+    assert bank.shape == (1, 5)
+    centre = mel_to_hz(hz_to_mel(4000.0, "htk") / 2.0, "htk")
+    frequencies = np.array([0.0, 1000.0, 2000.0, 3000.0, 4000.0])
+    expected = np.where(
+        frequencies <= centre,
+        frequencies / centre,
+        (4000.0 - frequencies) / (4000.0 - centre),
+    )
+    assert np.allclose(bank[0], np.clip(expected, 0.0, 1.0), atol=1e-9)
+    assert bank[0, 0] == 0.0
+    assert bank[0, -1] == pytest.approx(0.0, abs=1e-12)
+
+
+def test_the_filterbank_is_deterministic() -> None:
+    first = mel_filterbank(40, 512, 16000, 20.0, None, "slaney")
+    assert np.array_equal(first, mel_filterbank(40, 512, 16000, 20.0, None, "slaney"))
