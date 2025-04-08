@@ -19,6 +19,7 @@ than imported from a larger audio stack.
 from __future__ import annotations
 
 import math
+from functools import lru_cache
 
 import numpy as np
 
@@ -146,3 +147,26 @@ def mel_filterbank(
     if normalize:
         weights = weights * (2.0 / np.maximum(right - left, 1e-12))
     return weights
+
+
+@lru_cache(maxsize=32)
+def cached_filterbank(
+    num_bins: int,
+    fft_size: int,
+    sample_rate: int,
+    low_frequency: float,
+    high_frequency: float | None,
+    scale: str,
+    normalize: bool,
+) -> np.ndarray:
+    """Memoised :func:`mel_filterbank` for repeated extraction with one config.
+
+    The matrix depends only on its arguments, so caching is exact.  Cached arrays
+    are read-only: a caller that mutates one would silently change every later
+    feature extraction in the process.
+    """
+    bank = mel_filterbank(
+        num_bins, fft_size, sample_rate, low_frequency, high_frequency, scale, normalize
+    )
+    bank.setflags(write=False)
+    return bank
