@@ -12,6 +12,7 @@ from echoscribe.mel import (
     MEL_SCALES,
     SLANEY_MIN_LOG_HZ,
     SLANEY_MIN_LOG_MEL,
+    cached_filterbank,
     hz_to_mel,
     mel_centre_frequencies,
     mel_edges,
@@ -196,3 +197,34 @@ def test_a_single_bin_bank_spans_the_whole_band() -> None:
 def test_the_filterbank_is_deterministic() -> None:
     first = mel_filterbank(40, 512, 16000, 20.0, None, "slaney")
     assert np.array_equal(first, mel_filterbank(40, 512, 16000, 20.0, None, "slaney"))
+
+
+def test_the_cached_bank_equals_a_fresh_one() -> None:
+    for scale in MEL_SCALES:
+        cached = cached_filterbank(23, 512, 16000, 20.0, None, scale, False)
+        fresh = mel_filterbank(23, 512, 16000, 20.0, None, scale, False)
+        assert np.array_equal(cached, fresh)
+
+
+def test_the_cached_bank_is_read_only() -> None:
+    bank = cached_filterbank(10, 256, 8000, 0.0, None, "htk", True)
+    with pytest.raises(ValueError):
+        bank[0, 0] = 1.0
+
+
+def test_normalization_changes_the_high_end_more_than_the_low_end() -> None:
+    plain = mel_filterbank(23, 512, 16000, 20.0, None, "htk", normalize=False)
+    normalised = mel_filterbank(23, 512, 16000, 20.0, None, "htk", normalize=True)
+    # Unit-area triangles are taller where the band is narrow and shorter where it
+    # is wide, so the ratio must fall as the filter index rises.
+    ratios = normalised.sum(axis=1) / plain.sum(axis=1)
+    assert ratios[0] > ratios[-1]
+
+
+def test_a_normalized_filter_has_unit_area_in_hz() -> None:
+    bank = mel_filterbank(23, 4096, 16000, 200.0, 7000.0, "htk", normalize=True)
+    spacing = 16000.0 / 4096
+    areas = bank.sum(axis=1) * spacing
+    resolved = areas[(areas > 0.5) & (areas < 2.0)]
+    assert resolved.size >= 15
+    assert np.allclose(resolved, 1.0, atol=0.02)
