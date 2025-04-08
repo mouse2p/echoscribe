@@ -13,9 +13,15 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
+import numpy as np
+
 from echoscribe.errors import ConfigError, require, require_in, require_positive
-from echoscribe.framing import FrameConfig
-from echoscribe.mel import MEL_SCALES
+from echoscribe.framing import FrameConfig, frame_signal
+from echoscribe.mel import MEL_SCALES, cached_filterbank
+from echoscribe.numeric import safe_log
+from echoscribe.spectrum import power_spectrum
+from echoscribe.types import FloatArray
+from echoscribe.waveform import Audio
 
 
 @dataclass(frozen=True)
@@ -67,3 +73,33 @@ class FeatureConfig:
     def resolved_high_frequency(self) -> float:
         """The high cut, defaulting to Nyquist when unset."""
         return self.sample_rate / 2.0 if self.high_frequency is None else self.high_frequency
+
+
+def filterbank_matrix(config: FeatureConfig) -> np.ndarray:
+    """The cached ``(num_mel_bins, fft_size // 2 + 1)`` matrix for ``config``."""
+    return cached_filterbank(
+        config.num_mel_bins,
+        config.fft_size,
+        config.sample_rate,
+        config.low_frequency,
+        config.high_frequency,
+        config.mel_scale,
+        config.normalize_filterbank,
+    )
+
+
+def mel_energies(audio: Audio | np.ndarray, config: FeatureConfig) -> FloatArray:
+    """Linear mel-band energies per frame, before the logarithm."""
+    frames = frame_signal(audio, config.frame)
+    power = power_spectrum(frames, config.fft_size)
+    return power @ filterbank_matrix(config).T
+
+
+def extract_log_mel(audio: Audio | np.ndarray, config: FeatureConfig) -> FloatArray:
+    """Return the log-mel features of ``audio`` as ``(frames, num_mel_bins)``.
+
+    The logarithm is natural and floored at ``config.log_floor``.  A floor of
+    ``1e-10`` maps to about ``-23``, which is far enough below any speech energy
+    to be effectively silent without letting ``-inf`` propagate into a model.
+    """
+    return safe_log(mel_energies(audio, config), config.log_floor)
