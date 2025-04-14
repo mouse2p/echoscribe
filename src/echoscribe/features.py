@@ -103,3 +103,37 @@ def extract_log_mel(audio: Audio | np.ndarray, config: FeatureConfig) -> FloatAr
     to be effectively silent without letting ``-inf`` propagate into a model.
     """
     return safe_log(mel_energies(audio, config), config.log_floor)
+
+
+def dct_matrix(num_output: int, num_input: int) -> np.ndarray:
+    """Return the orthonormal DCT-II matrix of shape ``(num_output, num_input)``.
+
+    Row ``k`` is ``sqrt(2 / N) * cos(pi * k * (2n + 1) / (2N))`` with the DC row
+    additionally scaled by ``1 / sqrt(2)`` so the whole matrix is orthonormal when
+    ``num_output == num_input``.  MFCCs are the first few rows of that transform
+    applied to log-mel energies: the cepstrum decorrelates the bands, which is why
+    a diagonal-covariance model can use them.
+    """
+    require_positive("num_output", num_output, ConfigError)
+    require_positive("num_input", num_input, ConfigError)
+    require(
+        num_output <= num_input,
+        f"cannot take {num_output} cepstral coefficients from {num_input} mel bins",
+        ConfigError,
+    )
+    rows = np.arange(num_output, dtype=np.float64)[:, None]
+    columns = np.arange(num_input, dtype=np.float64)[None, :]
+    matrix = np.cos(np.pi * rows * (2.0 * columns + 1.0) / (2.0 * num_input))
+    matrix *= np.sqrt(2.0 / num_input)
+    matrix[0] /= np.sqrt(2.0)
+    return matrix
+
+
+def extract_mfcc(
+    audio: Audio | np.ndarray,
+    config: FeatureConfig,
+    num_coefficients: int = 13,
+) -> FloatArray:
+    """Return the first ``num_coefficients`` DCT-II coefficients of the log-mel."""
+    log_mel = extract_log_mel(audio, config)
+    return log_mel @ dct_matrix(num_coefficients, config.num_mel_bins).T
