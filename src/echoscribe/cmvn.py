@@ -88,3 +88,48 @@ class CmvnStatistics:
             return np.zeros(self.dimension, dtype=FEATURE_DTYPE)
         second = self.squared_total / self.count
         return np.maximum(second - self.mean() ** 2, 0.0)
+
+    def merge(self, other: CmvnStatistics) -> CmvnStatistics:
+        """Return the statistics of both streams concatenated.
+
+        Merging is how per-utterance counts are combined into a corpus estimate
+        without keeping every frame in memory.
+        """
+        require(
+            self.dimension == other.dimension,
+            f"cannot merge statistics of {self.dimension} and {other.dimension} dimensions",
+            ConfigError,
+        )
+        return CmvnStatistics(
+            dimension=self.dimension,
+            count=self.count + other.count,
+            total=self.total + other.total,
+            squared_total=self.squared_total + other.squared_total,
+        )
+
+
+def apply_cmvn(
+    features: np.ndarray,
+    statistics: CmvnStatistics,
+    normalize_variance: bool = True,
+    variance_floor: float = VARIANCE_FLOOR,
+) -> FloatArray:
+    """Subtract the mean and optionally divide by the standard deviation.
+
+    Empty statistics are a no-op rather than an error, so a caller can pass
+    corpus statistics that happen not to cover a dimension yet.  A variance below
+    ``variance_floor`` is raised to it, which keeps a dead band at zero instead of
+    amplifying it into noise.
+    """
+    matrix = require_rank("features", np.asarray(features, dtype=FEATURE_DTYPE), 2)
+    require_positive("variance_floor", variance_floor, ConfigError)
+    require(
+        statistics.dimension == matrix.shape[1],
+        f"features have {matrix.shape[1]} columns but the statistics track {statistics.dimension}",
+        EvalError,
+    )
+    centred = matrix - statistics.mean()
+    if not normalize_variance:
+        return centred
+    scale = np.sqrt(np.maximum(statistics.variance(), variance_floor))
+    return centred / scale
