@@ -8,7 +8,9 @@ import pytest
 from echoscribe.errors import ConfigError
 from echoscribe.features import (
     FeatureConfig,
+    dct_matrix,
     extract_log_mel,
+    extract_mfcc,
     filterbank_matrix,
     mel_energies,
 )
@@ -124,3 +126,56 @@ def test_a_tone_puts_its_energy_in_the_band_that_contains_it() -> None:
     peak = int(np.argmax(features.mean(axis=0)))
     centres = mel_centre_frequencies(23, rate, 0.0, None, "htk")
     assert centres[peak - 1] < 440.0 < centres[peak + 1]
+
+
+def test_a_square_dct_matrix_is_orthonormal() -> None:
+    matrix = dct_matrix(40, 40)
+    assert np.allclose(matrix @ matrix.T, np.eye(40), atol=1e-12)
+
+
+def test_the_dc_row_is_constant() -> None:
+    matrix = dct_matrix(4, 16)
+    assert np.allclose(matrix[0], matrix[0, 0])
+    assert matrix[0, 0] == pytest.approx(1.0 / 4.0)
+
+
+def test_higher_rows_oscillate_faster() -> None:
+    matrix = dct_matrix(8, 64)
+    crossings = [int(np.count_nonzero(np.diff(np.sign(row)) != 0)) for row in matrix]
+    assert crossings == sorted(crossings)
+    assert crossings[0] == 0
+
+
+def test_a_truncated_dct_keeps_the_first_rows() -> None:
+    full = dct_matrix(13, 40)
+    assert np.array_equal(dct_matrix(13, 40), full)
+    assert np.array_equal(dct_matrix(3, 40), full[:3])
+
+
+def test_dct_rejects_more_coefficients_than_bins() -> None:
+    with pytest.raises(ConfigError, match="cannot take 41 cepstral coefficients"):
+        dct_matrix(41, 40)
+
+
+def test_mfcc_is_the_log_mel_projected_through_the_dct() -> None:
+    audio = _sweep(0.2)
+    config = FeatureConfig(num_mel_bins=40)
+    expected = extract_log_mel(audio, config) @ dct_matrix(13, 40).T
+    assert np.allclose(extract_mfcc(audio, config, 13), expected)
+
+
+def test_mfcc_shape_follows_the_coefficient_count() -> None:
+    audio = _sweep(0.2)
+    config = FeatureConfig(num_mel_bins=40)
+    for count in (1, 13, 40):
+        assert extract_mfcc(audio, config, count).shape[1] == count
+
+
+def test_mfcc_of_silence_keeps_only_the_dc_coefficient() -> None:
+    silence = Audio(np.zeros(1600, dtype=np.float32), 16000)
+    config = FeatureConfig(num_mel_bins=23)
+    features = extract_mfcc(silence, config, 13)
+    # Every band sits at the floor, so only the DC row of the orthonormal DCT
+    # survives; its row sums to sqrt(num_bins).
+    assert np.allclose(features[:, 0], np.log(1e-10) * np.sqrt(23.0))
+    assert np.allclose(features[:, 1:], 0.0, atol=1e-9)
