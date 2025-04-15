@@ -133,3 +133,49 @@ def apply_cmvn(
         return centred
     scale = np.sqrt(np.maximum(statistics.variance(), variance_floor))
     return centred / scale
+
+
+def sliding_window_cmvn(
+    features: np.ndarray,
+    window_frames: int = 300,
+    normalize_variance: bool = True,
+    variance_floor: float = VARIANCE_FLOOR,
+) -> FloatArray:
+    """Normalise each frame by the statistics of the ``window_frames`` before it.
+
+    The window is *causal*: frame ``t`` only sees frames ``max(0, t - window + 1)``
+    to ``t``.  That is what makes it usable while audio is still arriving, and it
+    is also why the first frames are normalised by fewer samples than the rest --
+    a stream has no past to borrow from.
+
+    The running sums are computed with cumulative sums, so the cost is linear in
+    the number of frames rather than quadratic in the window.
+    """
+    require(
+        isinstance(window_frames, int)
+        and not isinstance(window_frames, bool)
+        and window_frames >= 1,
+        f"window_frames must be a positive integer, got {window_frames!r}",
+        ConfigError,
+    )
+    require_positive("variance_floor", variance_floor, ConfigError)
+    matrix = require_rank("features", np.asarray(features, dtype=FEATURE_DTYPE), 2)
+    frames, width = matrix.shape
+    if frames == 0:
+        return np.zeros_like(matrix)
+    counts = np.minimum(np.arange(frames) + 1, window_frames).astype(FEATURE_DTYPE)[:, None]
+    zeros = np.zeros((1, width), dtype=FEATURE_DTYPE)
+    # prefix[t] sums the frames strictly before t, so the causal window ending at
+    # t starts at prefix[max(0, t - window + 1)].
+    prefix = np.vstack([zeros, np.cumsum(matrix, axis=0)[:-1]])
+    prefix_squared = np.vstack([zeros, np.cumsum(matrix**2, axis=0)[:-1]])
+    running = np.cumsum(matrix, axis=0)
+    running_squared = np.cumsum(matrix**2, axis=0)
+    start = np.clip(np.arange(frames) - window_frames + 1, 0, None)
+    mean = (running - prefix[start]) / counts
+    second = (running_squared - prefix_squared[start]) / counts
+    variance = np.maximum(second - mean**2, 0.0)
+    centred = matrix - mean
+    if not normalize_variance:
+        return centred
+    return centred / np.sqrt(np.maximum(variance, variance_floor))
