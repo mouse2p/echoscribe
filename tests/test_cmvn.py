@@ -5,7 +5,7 @@ from __future__ import annotations
 import numpy as np
 import pytest
 
-from echoscribe.cmvn import CmvnStatistics, apply_cmvn
+from echoscribe.cmvn import CmvnStatistics, apply_cmvn, sliding_window_cmvn
 from echoscribe.errors import ConfigError, EvalError
 
 
@@ -121,3 +121,79 @@ def test_merging_matches_one_pass_over_the_concatenation() -> None:
 def test_merging_rejects_a_dimension_mismatch() -> None:
     with pytest.raises(ConfigError, match="cannot merge statistics of 3 and 4"):
         CmvnStatistics(dimension=3).merge(CmvnStatistics(dimension=4))
+
+
+def test_a_window_of_one_leaves_every_frame_at_zero() -> None:
+    rng = np.random.default_rng(2)
+    features = rng.standard_normal((25, 5)) * 4.0 + 9.0
+    normalised = sliding_window_cmvn(features, 1)
+    # A one-frame window has zero variance, so the numerator is the cumulative
+    # sum's rounding residue and the denominator is the variance floor.  The
+    # result is numerically zero but not bit zero.
+    assert np.max(np.abs(normalised)) < 1e-4
+
+
+def test_a_full_length_window_matches_global_cmvn_at_the_last_frame() -> None:
+    rng = np.random.default_rng(3)
+    features = rng.standard_normal((40, 6)) * 2.0 - 3.0
+    sliding = sliding_window_cmvn(features, 40)
+    global_ = apply_cmvn(features, _stats_of(features))
+    # Only the final frame has a window that spans the whole utterance; earlier
+    # frames see a shorter causal window by construction.
+    assert np.allclose(sliding[-1], global_[-1], atol=1e-9)
+
+
+def test_the_window_is_causal_so_a_future_change_does_not_move_the_past() -> None:
+    rng = np.random.default_rng(4)
+    features = rng.standard_normal((60, 4))
+    before = sliding_window_cmvn(features, 10)
+    altered = features.copy()
+    altered[55:] *= 100.0
+    after = sliding_window_cmvn(altered, 10)
+    # Frames up to 45 have a window that ends before the alteration starts.
+    assert np.allclose(before[:46], after[:46], atol=1e-12)
+    assert not np.allclose(before[56:], after[56:])
+
+
+def test_each_frame_is_standardised_over_its_own_window() -> None:
+    rng = np.random.default_rng(8)
+    features = rng.standard_normal((120, 5)) * 3.0 + 2.0
+    normalised = sliding_window_cmvn(features, 30)
+    for index in range(30, 120):
+        window = features[index - 29 : index + 1]
+        expected = (features[index] - window.mean(axis=0)) / window.std(axis=0)
+        assert np.allclose(normalised[index], expected, atol=1e-8)
+
+
+def test_mean_only_sliding_normalisation_subtracts_the_local_mean() -> None:
+    rng = np.random.default_rng(10)
+    features = rng.standard_normal((80, 3)) * 4.0
+    normalised = sliding_window_cmvn(features, 20, normalize_variance=False)
+    for index in range(20, 80):
+        window_mean = features[index - 19 : index + 1].mean(axis=0)
+        assert np.allclose(normalised[index], features[index] - window_mean, atol=1e-8)
+
+
+def test_sliding_normalisation_leaves_the_local_spread_at_one() -> None:
+    rng = np.random.default_rng(12)
+    features = rng.standard_normal((90, 4)) * 6.0 - 1.0
+    normalised = sliding_window_cmvn(features, 25)
+    for index in range(25, 90):
+        window = normalised[index - 24 : index + 1]
+        # Each frame is scaled by its own window, so the window is not exactly
+        # unit variance; it is close, and never the 6.0 it started at.
+        assert 0.5 < float(window.std()) < 2.0
+
+
+def test_sliding_normalisation_of_no_frames_is_empty() -> None:
+    assert sliding_window_cmvn(np.zeros((0, 4)), 10).shape == (0, 4)
+
+
+def test_sliding_normalisation_rejects_a_bad_window() -> None:
+    with pytest.raises(ConfigError, match="window_frames must be a positive integer"):
+        sliding_window_cmvn(np.zeros((4, 2)), 0)
+
+
+def test_a_constant_stream_normalises_to_zero() -> None:
+    features = np.full((50, 3), -7.5)
+    assert np.allclose(sliding_window_cmvn(features, 10), 0.0, atol=1e-9)
