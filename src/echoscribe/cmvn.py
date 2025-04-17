@@ -179,3 +179,40 @@ def sliding_window_cmvn(
     if not normalize_variance:
         return centred
     return centred / np.sqrt(np.maximum(variance, variance_floor))
+
+
+#: Bumped when the serialized shape of :class:`CmvnStatistics` changes.
+STATISTICS_SCHEMA_VERSION = 1
+
+
+def statistics_to_dict(statistics: CmvnStatistics) -> dict:
+    """Render statistics as a JSON-ready mapping, including the schema version."""
+    assert statistics.total is not None and statistics.squared_total is not None
+    return {
+        "schema": STATISTICS_SCHEMA_VERSION,
+        "dimension": statistics.dimension,
+        "count": statistics.count,
+        # Rounded here, at the point the value is produced, so a serialized
+        # statistics file reads the same on every interpreter.
+        "total": [round(float(value), 12) for value in statistics.total],
+        "squared_total": [round(float(value), 12) for value in statistics.squared_total],
+    }
+
+
+def statistics_from_dict(payload: dict) -> CmvnStatistics:
+    """Rebuild statistics from :func:`statistics_to_dict`, rejecting other schemas."""
+    version = payload.get("schema")
+    require(
+        version == STATISTICS_SCHEMA_VERSION,
+        f"CMVN statistics schema {version!r} is not supported; this build reads "
+        f"{STATISTICS_SCHEMA_VERSION}",
+        ConfigError,
+    )
+    for name in ("dimension", "count", "total", "squared_total"):
+        require(name in payload, f"CMVN statistics are missing {name!r}", ConfigError)
+    return CmvnStatistics(
+        dimension=int(payload["dimension"]),
+        count=int(payload["count"]),
+        total=np.asarray(payload["total"], dtype=FEATURE_DTYPE),
+        squared_total=np.asarray(payload["squared_total"], dtype=FEATURE_DTYPE),
+    )
