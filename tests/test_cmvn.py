@@ -5,7 +5,14 @@ from __future__ import annotations
 import numpy as np
 import pytest
 
-from echoscribe.cmvn import CmvnStatistics, apply_cmvn, sliding_window_cmvn
+from echoscribe.cmvn import (
+    STATISTICS_SCHEMA_VERSION,
+    CmvnStatistics,
+    apply_cmvn,
+    sliding_window_cmvn,
+    statistics_from_dict,
+    statistics_to_dict,
+)
 from echoscribe.errors import ConfigError, EvalError
 
 
@@ -197,3 +204,47 @@ def test_sliding_normalisation_rejects_a_bad_window() -> None:
 def test_a_constant_stream_normalises_to_zero() -> None:
     features = np.full((50, 3), -7.5)
     assert np.allclose(sliding_window_cmvn(features, 10), 0.0, atol=1e-9)
+
+
+def test_serialization_round_trips() -> None:
+    rng = np.random.default_rng(14)
+    stats = _stats_of(rng.standard_normal((50, 9)))
+    restored = statistics_from_dict(statistics_to_dict(stats))
+    assert restored.count == stats.count
+    assert restored.dimension == stats.dimension
+    assert np.allclose(restored.mean(), stats.mean(), atol=1e-9)
+    assert np.allclose(restored.variance(), stats.variance(), atol=1e-9)
+
+
+def test_serialization_is_json_friendly() -> None:
+    import json
+
+    payload = statistics_to_dict(_stats_of(np.ones((3, 2))))
+    text = json.dumps(payload)
+    assert json.loads(text)["schema"] == STATISTICS_SCHEMA_VERSION
+
+
+def test_the_serialized_payload_names_its_schema() -> None:
+    payload = statistics_to_dict(CmvnStatistics(dimension=2))
+    assert set(payload) == {"schema", "dimension", "count", "total", "squared_total"}
+
+
+def test_a_foreign_schema_is_rejected() -> None:
+    payload = statistics_to_dict(CmvnStatistics(dimension=2))
+    payload["schema"] = STATISTICS_SCHEMA_VERSION + 1
+    with pytest.raises(ConfigError, match="is not supported"):
+        statistics_from_dict(payload)
+
+
+def test_a_missing_field_is_rejected() -> None:
+    payload = statistics_to_dict(CmvnStatistics(dimension=2))
+    del payload["squared_total"]
+    with pytest.raises(ConfigError, match="missing 'squared_total'"):
+        statistics_from_dict(payload)
+
+
+def test_serialized_totals_are_rounded_at_the_production_point() -> None:
+    stats = CmvnStatistics(dimension=1, count=1, total=[1.0 / 3.0], squared_total=[1.0 / 9.0])
+    payload = statistics_to_dict(stats)
+    assert payload["total"] == [0.333333333333]
+    assert payload["squared_total"] == [0.111111111111]
