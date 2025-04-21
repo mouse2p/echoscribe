@@ -69,3 +69,23 @@ def delta_features(features: np.ndarray, config: DeltaConfig | None = None) -> F
         behind = padded[settings.window - offset :][:frames]
         total += offset * (ahead - behind)
     return total / settings.denominator
+
+
+def derivative_orders(features: np.ndarray, config: DeltaConfig | None = None) -> list[FloatArray]:
+    """Return ``[statics, deltas, delta-deltas, ...]`` up to ``config.order``."""
+    settings = DeltaConfig() if config is None else config
+    orders = [require_rank("features", np.asarray(features, dtype=FEATURE_DTYPE), 2)]
+    for _ in range(settings.order):
+        orders.append(delta_features(orders[-1], settings))
+    return orders
+
+
+def stack_features(features: np.ndarray, config: DeltaConfig | None = None) -> FloatArray:
+    """Concatenate the derivative orders along the feature axis.
+
+    The result is ``order + 1`` times as wide as the input, with the statics first,
+    which is the layout a concatenated-feature acoustic model expects.
+    """
+    settings = DeltaConfig() if config is None else config
+    orders = derivative_orders(features, settings)
+    return np.concatenate(orders, axis=1)

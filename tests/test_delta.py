@@ -5,7 +5,12 @@ from __future__ import annotations
 import numpy as np
 import pytest
 
-from echoscribe.delta import DeltaConfig, delta_features
+from echoscribe.delta import (
+    DeltaConfig,
+    delta_features,
+    derivative_orders,
+    stack_features,
+)
 from echoscribe.errors import ConfigError
 
 
@@ -78,3 +83,43 @@ def test_delta_is_deterministic_and_leaves_its_input_alone() -> None:
     first = delta_features(features, DeltaConfig(window=2))
     assert np.array_equal(delta_features(features, DeltaConfig(window=2)), first)
     assert np.array_equal(features, copy)
+
+
+def test_derivative_orders_returns_statics_first() -> None:
+    features = np.random.default_rng(4).standard_normal((24, 5))
+    orders = derivative_orders(features, DeltaConfig(window=2, order=2))
+    assert len(orders) == 3
+    assert np.array_equal(orders[0], features)
+    assert np.array_equal(orders[1], delta_features(features, DeltaConfig(window=2)))
+
+
+def test_a_first_order_config_yields_two_orders() -> None:
+    assert len(derivative_orders(np.zeros((5, 2)), DeltaConfig(order=1))) == 2
+
+
+def test_stacking_multiplies_the_width() -> None:
+    features = np.random.default_rng(5).standard_normal((30, 13))
+    for order in (1, 2, 3):
+        config = DeltaConfig(window=2, order=order)
+        assert stack_features(features, config).shape == (30, 13 * config.stacked_width_factor)
+
+
+def test_stacking_keeps_the_frame_count() -> None:
+    features = np.random.default_rng(6).standard_normal((17, 8))
+    assert stack_features(features).shape[0] == 17
+
+
+def test_stacked_statics_are_the_leading_columns() -> None:
+    features = np.random.default_rng(7).standard_normal((12, 4))
+    stacked = stack_features(features, DeltaConfig(order=2))
+    assert np.array_equal(stacked[:, :4], features)
+
+
+def test_a_parabola_has_a_linear_delta_and_a_constant_second_delta() -> None:
+    t = np.arange(-20, 21, dtype=np.float64)
+    features = (3.0 * t**2)[:, None]
+    config = DeltaConfig(window=2, order=2)
+    stacked = stack_features(features, config)
+    interior = slice(config.window * 2, len(t) - config.window * 2)
+    assert np.allclose(stacked[interior, 1], 6.0 * t[interior], atol=1e-9)
+    assert np.allclose(stacked[interior, 2], 6.0, atol=1e-9)
