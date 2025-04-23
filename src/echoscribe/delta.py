@@ -13,6 +13,13 @@ difference amplifies.
 Frames near either end replicate the nearest available sample, so a delta is
 defined for every frame the input has.  That keeps the output length equal to the
 input length, which matters when deltas are concatenated with statics.
+
+Why regression rather than ``x[t] - x[t - 1]``?  A first difference is a high-pass
+filter with gain ``2 sin(w / 2)``, so it amplifies exactly the frame-to-frame
+noise a log-mel trajectory carries.  The fitted slope averages ``2N + 1`` samples
+with weights ``-N, ..., -1, 0, 1, ..., N``, which has the same DC-blocking
+behaviour but a much lower noise gain -- at the cost of a ``(N - 1)`` frame group
+delay that a latency budget has to account for.
 """
 
 from __future__ import annotations
