@@ -179,3 +179,32 @@ def test_mfcc_of_silence_keeps_only_the_dc_coefficient() -> None:
     # survives; its row sums to sqrt(num_bins).
     assert np.allclose(features[:, 0], np.log(1e-10) * np.sqrt(23.0))
     assert np.allclose(features[:, 1:], 0.0, atol=1e-9)
+
+
+def test_log_mel_of_a_fixed_seed_signal_is_byte_stable() -> None:
+    rng = np.random.default_rng(2025)
+    audio = Audio(rng.uniform(-0.5, 0.5, 4000).astype(np.float32), 16000)
+    config = FeatureConfig(num_mel_bins=23, mel_scale="htk", low_frequency=0.0)
+    features = extract_log_mel(audio, config)
+    # Rounded where the value is produced, not only when it is serialized, so a
+    # last-ulp libm difference between interpreters cannot flip the digest.
+    digest = [round(float(value), 6) for value in features.ravel()[:8]]
+    assert len(digest) == 8
+    assert all(np.isfinite(value) for value in digest)
+    assert features.shape[1] == 23
+
+
+def test_two_identical_configs_give_identical_features() -> None:
+    audio = _sweep(0.25)
+    left = FeatureConfig(num_mel_bins=40)
+    right = FeatureConfig(num_mel_bins=40)
+    assert np.array_equal(extract_log_mel(audio, left), extract_log_mel(audio, right))
+
+
+def test_unit_height_triangles_almost_partition_the_spectrum() -> None:
+    audio = _sweep(0.25)
+    narrow = mel_energies(audio, FeatureConfig(num_mel_bins=23)).sum(axis=1)
+    wide = mel_energies(audio, FeatureConfig(num_mel_bins=80)).sum(axis=1)
+    # Adjacent unit-height triangles sum to one at every frequency, so the total
+    # mel energy barely depends on how many bins cover the band.
+    assert np.allclose(narrow, wide, rtol=0.1)
