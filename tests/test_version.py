@@ -13,3 +13,21 @@ def test_version_is_a_three_part_release() -> None:
     parts = echoscribe.__version__.split(".")
     assert len(parts) == 3
     assert all(part.isdigit() for part in parts)
+
+
+def test_the_public_namespace_is_importable_from_the_package_root() -> None:
+    for name in echoscribe.__all__:
+        assert hasattr(echoscribe, name), name
+
+
+def test_the_exported_names_cover_the_front_end() -> None:
+    for name in (
+        "Audio",
+        "FeatureConfig",
+        "FrameConfig",
+        "extract_log_mel",
+        "frame_signal",
+        "read_wav",
+        "write_wav",
+    ):
+        assert name in echoscribe.__all__
