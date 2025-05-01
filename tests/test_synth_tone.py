@@ -6,7 +6,13 @@ import numpy as np
 import pytest
 
 from echoscribe.errors import ConfigError
-from echoscribe.synth.tone import ToneContour
+from echoscribe.synth.tone import (
+    NEUTRAL_TONE,
+    TONE_INDICES,
+    TONES,
+    ToneContour,
+    tone_by_index,
+)
 
 
 def _level() -> ToneContour:
@@ -83,3 +89,53 @@ def test_a_contour_is_immutable() -> None:
     contour = _level()
     with pytest.raises(AttributeError):
         contour.name = "other"  # type: ignore[misc]
+
+
+def test_the_laboratory_defines_four_lexical_tones() -> None:
+    assert TONE_INDICES == (1, 2, 3, 4)
+    assert [tone.name for tone in TONES] == ["high-level", "rising", "dipping", "falling"]
+
+
+def test_tone_one_is_monotonically_flat_to_falling() -> None:
+    trajectory = TONES[0].trajectory(64)
+    assert np.all(np.diff(trajectory) <= 1e-12)
+
+
+def test_tone_two_rises_throughout() -> None:
+    trajectory = TONES[1].trajectory(64)
+    assert np.all(np.diff(trajectory) > 0.0)
+
+
+def test_tone_three_dips_below_both_of_its_endpoints() -> None:
+    trajectory = TONES[2].trajectory(256)
+    assert trajectory.min() < trajectory[0]
+    assert trajectory.min() < trajectory[-1]
+    assert int(np.argmin(trajectory)) not in (0, 255)
+
+
+def test_tone_four_falls_throughout() -> None:
+    trajectory = TONES[3].trajectory(64)
+    assert np.all(np.diff(trajectory) < 0.0)
+
+
+def test_the_four_tones_are_distinguishable_at_the_syllable_end() -> None:
+    endings = {round(float(tone.trajectory(64)[-1]), 6) for tone in TONES}
+    assert len(endings) == 4
+
+
+def test_every_registered_tone_stays_inside_the_voice_range() -> None:
+    for tone in (*TONES, NEUTRAL_TONE):
+        trajectory = tone.trajectory(128)
+        assert trajectory.min() > 0.7
+        assert trajectory.max() < 1.4
+
+
+def test_lookup_returns_the_registered_object() -> None:
+    for index in (1, 2, 3, 4):
+        assert tone_by_index(index) is TONES[index - 1]
+    assert tone_by_index(0) is NEUTRAL_TONE
+
+
+def test_lookup_rejects_an_unknown_index() -> None:
+    with pytest.raises(ConfigError, match="unknown tone index 7"):
+        tone_by_index(7)

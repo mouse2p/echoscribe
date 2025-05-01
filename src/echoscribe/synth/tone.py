@@ -65,3 +65,27 @@ class ToneContour:
 
     def _values(self) -> np.ndarray:
         return np.array([point[1] for point in self.control_points], dtype=np.float64)
+
+
+#: The four lexical tones of the synthetic tone language.
+TONES: tuple[ToneContour, ...] = (
+    ToneContour(1, "high-level", ((0.0, 1.12), (1.0, 1.1))),
+    ToneContour(2, "rising", ((0.0, 0.86), (0.45, 1.0), (1.0, 1.26))),
+    ToneContour(3, "dipping", ((0.0, 0.98), (0.35, 0.78), (0.7, 0.86), (1.0, 1.12))),
+    ToneContour(4, "falling", ((0.0, 1.3), (0.55, 1.0), (1.0, 0.78))),
+)
+
+#: Tone indices keyed for lookup, plus the neutral tone used in unstressed syllables.
+TONE_INDICES = tuple(tone.index for tone in TONES)
+NEUTRAL_TONE = ToneContour(0, "neutral", ((0.0, 0.95), (1.0, 0.9)))
+
+
+def tone_by_index(index: int) -> ToneContour:
+    """Return the contour for a lexical tone index, including the neutral tone."""
+    for tone in (*TONES, NEUTRAL_TONE):
+        if tone.index == index:
+            return tone
+    raise ConfigError(
+        f"unknown tone index {index}; the laboratory defines {NEUTRAL_TONE.index} "
+        f"(neutral) and {TONE_INDICES}"
+    )
