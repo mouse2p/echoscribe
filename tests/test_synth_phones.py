@@ -36,6 +36,7 @@ def test_manners_cover_every_class_the_synthesizer_renders() -> None:
         "vowel",
         "nasal",
         "plosive",
+        "affricate",
         "fricative",
         "approximant",
     )
