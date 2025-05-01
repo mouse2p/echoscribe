@@ -10,6 +10,18 @@ That constraint is the point.  A recognizer's accuracy on this audio says nothin
 about its accuracy on speech; what it does say is whether the feature pipeline,
 the decoder, the latency budget and the scorer behave the way their contracts
 claim.  Every number produced from this laboratory is labelled synthetic.
+
+Concretely, a result reported from this package means:
+
+* the waveform was rendered by a formant synthesizer from an invented phone
+  inventory, at a duration and pitch no speaker produced;
+* the transcript is the script the renderer was handed, so it is exact by
+  construction rather than transcribed by a human;
+* any error rate is therefore a measure of the *pipeline* -- features, decoder,
+  latency budget, scorer -- under a clean, fully specified acoustic condition.
+
+It never means a model was evaluated on speech, and no result here should be read
+as evidence about one.
 """
 
 __all__: list[str] = []
