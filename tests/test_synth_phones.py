@@ -5,7 +5,14 @@ from __future__ import annotations
 import pytest
 
 from echoscribe.errors import ConfigError
-from echoscribe.synth.phones import ENGLISH_PHONES, MANNERS, Phone
+from echoscribe.synth.phones import (
+    ENGLISH_PHONES,
+    FINALS,
+    INITIALS,
+    MANNERS,
+    ZERO_INITIAL,
+    Phone,
+)
 
 
 def _vowel(symbol: str = "iy", **overrides) -> Phone:
@@ -145,3 +152,52 @@ def test_every_formant_centre_is_below_nyquist_at_16k() -> None:
         for centre, bandwidth in phone.formants:
             assert centre < 8000.0, name
             assert bandwidth < centre, name
+
+
+def test_the_initial_table_covers_the_usual_onsets() -> None:
+    assert {"b", "p", "m", "d", "t", "n", "l", "g", "k", "h"} <= set(INITIALS)
+    assert len(INITIALS) == 20
+
+
+def test_the_final_table_covers_the_usual_nuclei() -> None:
+    assert {"a", "o", "e", "i", "u", "ai", "ei", "ao", "ou", "an", "en"} <= set(FINALS)
+    assert len(FINALS) == 15
+
+
+def test_no_initial_is_also_a_final() -> None:
+    assert not set(INITIALS) & set(FINALS)
+
+
+def test_every_final_is_a_voiced_vowel() -> None:
+    for symbol, phone in FINALS.items():
+        assert phone.manner == "vowel", symbol
+        assert phone.voiced, symbol
+        assert not phone.turbulent, symbol
+
+
+def test_finals_outlast_initials() -> None:
+    longest_initial = max(phone.duration_ms for phone in INITIALS.values())
+    shortest_final = min(phone.duration_ms for phone in FINALS.values())
+    assert longest_initial < shortest_final
+
+
+def test_the_zero_initial_is_the_empty_spelling() -> None:
+    assert ZERO_INITIAL == ""
+    assert ZERO_INITIAL not in INITIALS
+
+
+def test_affricates_are_turbulent_and_voiceless() -> None:
+    affricates = [p for p in INITIALS.values() if p.manner == "affricate"]
+    assert len(affricates) == 6
+    for phone in affricates:
+        assert phone.turbulent
+        assert not phone.voiced
+
+
+def test_every_initial_and_final_survives_phone_validation() -> None:
+    # Building the tables already ran __post_init__; assert the invariants the
+    # synthesizer depends on rather than trusting construction alone.
+    for phone in [*INITIALS.values(), *FINALS.values()]:
+        assert phone.duration_ms > 0.0
+        assert 0.0 < phone.gain <= 1.0
+        assert all(centre > bandwidth > 0.0 for centre, bandwidth in phone.formants)
