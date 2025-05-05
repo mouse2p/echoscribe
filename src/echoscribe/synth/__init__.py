@@ -24,4 +24,16 @@ It never means a model was evaluated on speech, and no result here should be rea
 as evidence about one.
 """
 
-__all__: list[str] = []
+from echoscribe.synth.phones import ENGLISH_PHONES, FINALS, INITIALS, MANNERS, Phone
+from echoscribe.synth.tone import TONES, ToneContour, tone_by_index
+
+__all__ = [
+    "ENGLISH_PHONES",
+    "FINALS",
+    "INITIALS",
+    "MANNERS",
+    "TONES",
+    "Phone",
+    "ToneContour",
+    "tone_by_index",
+]

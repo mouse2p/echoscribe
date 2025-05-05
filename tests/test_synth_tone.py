@@ -139,3 +139,13 @@ def test_lookup_returns_the_registered_object() -> None:
 def test_lookup_rejects_an_unknown_index() -> None:
     with pytest.raises(ConfigError, match="unknown tone index 7"):
         tone_by_index(7)
+
+
+def test_the_subpackage_re_exports_the_inventory_and_tones() -> None:
+    from echoscribe import synth
+    from echoscribe.synth.phones import Phone
+
+    assert synth.Phone is Phone
+    assert synth.TONES is TONES
+    assert synth.ENGLISH_PHONES["iy"].manner == "vowel"
+    assert set(synth.__all__) >= {"TONES", "Phone", "ENGLISH_PHONES", "INITIALS", "FINALS"}
