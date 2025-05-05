@@ -19,6 +19,7 @@ aware:
 
 from __future__ import annotations
 
+from collections.abc import Sequence
 from dataclasses import dataclass
 
 from echoscribe.errors import ConfigError, require, require_in
@@ -203,3 +204,45 @@ INITIALS: dict[str, Phone] = _build_initials()
 
 #: Tone-bearing syllable nuclei, keyed by their romanised symbol.
 FINALS: dict[str, Phone] = _build_finals()
+
+
+#: The phone used between words and at utterance boundaries.
+SILENCE = ENGLISH_PHONES["sil"]
+
+
+def english_phone(symbol: str) -> Phone:
+    """Look up an English-style phone by symbol."""
+    require(
+        symbol in ENGLISH_PHONES,
+        f"unknown phone {symbol!r}; the English inventory holds {sorted(ENGLISH_PHONES)}",
+        ConfigError,
+    )
+    return ENGLISH_PHONES[symbol]
+
+
+def syllable_phones(initial: str, final: str) -> tuple[Phone, ...]:
+    """Return the phones of one tone-language syllable.
+
+    ``initial`` may be :data:`ZERO_INITIAL`, in which case the syllable starts on
+    its nucleus.  An unknown spelling is an error rather than a silent skip: a
+    corpus generator that misspells a syllable should fail at render time, not
+    produce audio that quietly disagrees with its transcript.
+    """
+    require(
+        final in FINALS,
+        f"unknown final {final!r}; the inventory holds {sorted(FINALS)}",
+        ConfigError,
+    )
+    if initial == ZERO_INITIAL:
+        return (FINALS[final],)
+    require(
+        initial in INITIALS,
+        f"unknown initial {initial!r}; the inventory holds {sorted(INITIALS)}",
+        ConfigError,
+    )
+    return (INITIALS[initial], FINALS[final])
+
+
+def total_duration_ms(phones: Sequence[Phone]) -> float:
+    """Sum of the declared phone durations, in milliseconds."""
+    return float(sum(phone.duration_ms for phone in phones))
