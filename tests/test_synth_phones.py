@@ -10,8 +10,12 @@ from echoscribe.synth.phones import (
     FINALS,
     INITIALS,
     MANNERS,
+    SILENCE,
     ZERO_INITIAL,
     Phone,
+    english_phone,
+    syllable_phones,
+    total_duration_ms,
 )
 
 
@@ -201,3 +205,45 @@ def test_every_initial_and_final_survives_phone_validation() -> None:
         assert phone.duration_ms > 0.0
         assert 0.0 < phone.gain <= 1.0
         assert all(centre > bandwidth > 0.0 for centre, bandwidth in phone.formants)
+
+
+def test_english_lookup_returns_the_table_entry() -> None:
+    assert english_phone("iy") is ENGLISH_PHONES["iy"]
+    assert english_phone("sil") is SILENCE
+
+
+def test_english_lookup_rejects_an_unknown_symbol() -> None:
+    with pytest.raises(ConfigError, match="unknown phone 'xx'"):
+        english_phone("xx")
+
+
+def test_a_syllable_with_an_initial_renders_two_phones() -> None:
+    phones = syllable_phones("m", "a")
+    assert [phone.symbol for phone in phones] == ["m", "a"]
+
+
+def test_a_zero_initial_syllable_renders_its_nucleus_alone() -> None:
+    phones = syllable_phones(ZERO_INITIAL, "ai")
+    assert [phone.symbol for phone in phones] == ["ai"]
+
+
+def test_an_unknown_initial_or_final_is_rejected() -> None:
+    with pytest.raises(ConfigError, match="unknown initial 'zz'"):
+        syllable_phones("zz", "a")
+    with pytest.raises(ConfigError, match="unknown final 'uu'"):
+        syllable_phones("m", "uu")
+
+
+def test_total_duration_sums_the_declared_durations() -> None:
+    phones = syllable_phones("sh", "ang")
+    expected = INITIALS["sh"].duration_ms + FINALS["ang"].duration_ms
+    assert total_duration_ms(phones) == pytest.approx(expected)
+
+
+def test_total_duration_of_nothing_is_zero() -> None:
+    assert total_duration_ms(()) == 0.0
+
+
+def test_the_silence_phone_is_the_one_from_the_table() -> None:
+    assert SILENCE.is_silent
+    assert SILENCE.symbol == "sil"
