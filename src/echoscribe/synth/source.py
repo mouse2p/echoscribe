@@ -101,3 +101,46 @@ def glottal_source(
     check_f0_track(track, num_samples)
     pulse = glottal_pulse(phase_track(track, sample_rate, initial_phase))
     return pulse - pulse.mean()
+
+
+def noise_source(
+    num_samples: int,
+    rng: np.random.Generator,
+    tilt_hz: float | None = None,
+    sample_rate: int = 16000,
+) -> FloatArray:
+    """Render ``num_samples`` of Gaussian turbulence, optionally low-pass tilted.
+
+    The output is scaled so its largest absolute sample is exactly one, which
+    guarantees it cannot push a mixed waveform out of range.  That makes the
+    standard deviation about 0.29 for white noise rather than 1.0 -- the peak, not
+    the variance, is what a renderer has to control.
+
+    ``tilt_hz`` applies a single-pole low-pass so a fricative can be given a darker
+    spectrum than a plosive burst without a second code path.  ``None`` leaves the
+    noise white.
+    """
+    require(
+        isinstance(num_samples, int) and num_samples >= 0,
+        f"num_samples must be a non-negative integer, got {num_samples!r}",
+        ConfigError,
+    )
+    if num_samples == 0:
+        return np.zeros(0, dtype=FEATURE_DTYPE)
+    raw = rng.standard_normal(num_samples)
+    if tilt_hz is not None:
+        require_positive("tilt_hz", tilt_hz, ConfigError)
+        raw = _one_pole_lowpass(raw, tilt_hz, sample_rate)
+    peak = float(np.max(np.abs(raw)))
+    return raw / peak if peak > 1e-12 else raw
+
+
+def _one_pole_lowpass(values: np.ndarray, corner_hz: float, sample_rate: int) -> np.ndarray:
+    """A causal single-pole low-pass, the cheapest useful spectral tilt."""
+    coefficient = float(np.exp(-2.0 * np.pi * corner_hz / sample_rate))
+    output = []
+    previous = 0.0
+    for value in values.tolist():
+        previous = value + coefficient * previous
+        output.append(previous)
+    return np.asarray(output, dtype=FEATURE_DTYPE)

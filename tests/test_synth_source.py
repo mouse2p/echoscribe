@@ -10,6 +10,7 @@ from echoscribe.synth.source import (
     GLOTTAL_OPEN_FRACTION,
     glottal_pulse,
     glottal_source,
+    noise_source,
     phase_track,
 )
 
@@ -121,3 +122,39 @@ def test_glottal_source_validates_its_arguments() -> None:
 
 def test_zero_samples_gives_an_empty_source() -> None:
     assert glottal_source(0, RATE, 100.0).shape == (0,)
+
+
+def test_seeded_noise_replays_identically() -> None:
+    left = noise_source(1024, np.random.default_rng(7))
+    right = noise_source(1024, np.random.default_rng(7))
+    assert np.array_equal(left, right)
+
+
+def test_different_seeds_give_different_noise() -> None:
+    left = noise_source(1024, np.random.default_rng(7))
+    right = noise_source(1024, np.random.default_rng(8))
+    assert not np.array_equal(left, right)
+
+
+def test_noise_is_peak_normalised_and_close_to_zero_mean() -> None:
+    noise = noise_source(20000, np.random.default_rng(3))
+    assert float(np.max(np.abs(noise))) == pytest.approx(1.0)
+    assert abs(float(noise.mean())) < 0.05
+    # Peak-normalised Gaussian noise has a standard deviation well below one.
+    assert 0.2 < float(noise.std()) < 0.4
+
+
+def test_noise_consumes_the_generator_so_calls_do_not_repeat() -> None:
+    rng = np.random.default_rng(2)
+    assert not np.array_equal(noise_source(256, rng), noise_source(256, rng))
+
+
+def test_noise_of_zero_samples_is_empty() -> None:
+    assert noise_source(0, np.random.default_rng(1)).shape == (0,)
+
+
+def test_noise_rejects_bad_arguments() -> None:
+    with pytest.raises(ConfigError, match="num_samples must be a non-negative integer"):
+        noise_source(-4, np.random.default_rng(1))
+    with pytest.raises(ConfigError, match="tilt_hz must be positive"):
+        noise_source(16, np.random.default_rng(1), tilt_hz=0.0)
