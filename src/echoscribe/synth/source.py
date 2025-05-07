@@ -144,3 +144,35 @@ def _one_pole_lowpass(values: np.ndarray, corner_hz: float, sample_rate: int) ->
         previous = value + coefficient * previous
         output.append(previous)
     return np.asarray(output, dtype=FEATURE_DTYPE)
+
+
+def phone_envelope(num_samples: int, attack: int = 24, release: int = 48) -> FloatArray:
+    """A raised-cosine attack, a flat body and a raised-cosine release.
+
+    Without an envelope, switching from one phone's resonator settings to the next
+    produces a click: the output is discontinuous even when the source is not.
+    Tapering both ends keeps the concatenation smooth while leaving the middle of
+    the phone -- the part a decoder actually identifies -- untouched.
+
+    Both ends are exactly zero and the tapers are shortened to fit when the phone
+    is shorter than their sum, so a brief plosive burst still gets a valid shape.
+    """
+    require(
+        isinstance(num_samples, int) and num_samples >= 0,
+        f"num_samples must be a non-negative integer, got {num_samples!r}",
+        ConfigError,
+    )
+    require(attack >= 0 and release >= 0, "attack and release must not be negative", ConfigError)
+    if num_samples == 0:
+        return np.zeros(0, dtype=FEATURE_DTYPE)
+    span = min(attack + release, num_samples)
+    attack = min(attack, span)
+    release = span - attack
+    envelope = np.ones(num_samples, dtype=FEATURE_DTYPE)
+    if attack:
+        ramp = np.arange(attack, dtype=FEATURE_DTYPE) / attack
+        envelope[:attack] = 0.5 * (1.0 - np.cos(np.pi * ramp))
+    if release:
+        ramp = np.arange(1, release + 1, dtype=FEATURE_DTYPE) / release
+        envelope[num_samples - release :] = 0.5 * (1.0 + np.cos(np.pi * ramp))
+    return envelope

@@ -12,6 +12,7 @@ from echoscribe.synth.source import (
     glottal_source,
     noise_source,
     phase_track,
+    phone_envelope,
 )
 
 RATE = 16000
@@ -195,3 +196,48 @@ def test_the_tilt_is_causal_so_the_head_is_quieter() -> None:
     # A one-pole low-pass starting from a zero state needs a few hundred samples
     # to charge up; the head therefore carries less energy than the tail.
     assert float(np.mean(tilted[:64] ** 2)) < float(np.mean(tilted[-512:] ** 2))
+
+
+def test_the_envelope_is_flat_in_the_middle_of_a_long_phone() -> None:
+    envelope = phone_envelope(400, attack=24, release=48)
+    assert envelope.shape == (400,)
+    assert np.allclose(envelope[24:352], 1.0)
+
+
+def test_the_envelope_is_exactly_zero_at_both_ends() -> None:
+    envelope = phone_envelope(400, attack=24, release=48)
+    assert envelope[0] == 0.0
+    assert envelope[-1] == 0.0
+
+
+def test_the_envelope_is_monotonic_on_both_tapers() -> None:
+    envelope = phone_envelope(400, attack=40, release=40)
+    assert np.all(np.diff(envelope[:40]) >= 0.0)
+    assert np.all(np.diff(envelope[-40:]) <= 0.0)
+
+
+def test_the_envelope_never_exceeds_one() -> None:
+    for length in (1, 2, 10, 100, 400):
+        assert phone_envelope(length, attack=24, release=48).max() <= 1.0 + 1e-12
+
+
+def test_a_short_phone_shrinks_its_tapers_to_fit() -> None:
+    envelope = phone_envelope(10, attack=24, release=48)
+    assert envelope.shape == (10,)
+    assert envelope[0] == 0.0
+    assert np.all(np.diff(envelope) >= 0.0)
+
+
+def test_zero_tapers_give_a_rectangular_envelope() -> None:
+    assert np.allclose(phone_envelope(16, attack=0, release=0), 1.0)
+
+
+def test_the_envelope_of_nothing_is_empty() -> None:
+    assert phone_envelope(0).shape == (0,)
+
+
+def test_the_envelope_rejects_bad_arguments() -> None:
+    with pytest.raises(ConfigError, match="num_samples must be a non-negative integer"):
+        phone_envelope(-3)
+    with pytest.raises(ConfigError, match="must not be negative"):
+        phone_envelope(100, attack=-1)
