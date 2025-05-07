@@ -158,3 +158,40 @@ def test_noise_rejects_bad_arguments() -> None:
         noise_source(-4, np.random.default_rng(1))
     with pytest.raises(ConfigError, match="tilt_hz must be positive"):
         noise_source(16, np.random.default_rng(1), tilt_hz=0.0)
+
+
+def _high_share(signal: np.ndarray) -> float:
+    """Fraction of the spectral energy above half the Nyquist frequency."""
+    spectrum = np.abs(np.fft.rfft(signal)) ** 2
+    cut = len(spectrum) // 2
+    return float(spectrum[cut:].sum() / spectrum.sum())
+
+
+def test_a_tilt_moves_energy_out_of_the_high_band() -> None:
+    # Both draws start from the same seed, so the tilt is the only difference.
+    white = noise_source(8192, np.random.default_rng(11))
+    tilted = noise_source(8192, np.random.default_rng(11), tilt_hz=900.0)
+    assert _high_share(tilted) < _high_share(white)
+    assert _high_share(tilted) < 0.3
+    assert _high_share(white) == pytest.approx(0.5, abs=0.05)
+
+
+def test_a_lower_corner_tilts_further() -> None:
+    shares = [
+        _high_share(noise_source(8192, np.random.default_rng(4), tilt_hz=corner))
+        for corner in (3000.0, 1200.0, 400.0)
+    ]
+    assert shares[0] > shares[1] > shares[2]
+
+
+def test_the_tilt_keeps_the_peak_normalisation() -> None:
+    tilted = noise_source(4096, np.random.default_rng(5), tilt_hz=700.0)
+    assert float(np.max(np.abs(tilted))) == pytest.approx(1.0)
+    assert np.all(np.isfinite(tilted))
+
+
+def test_the_tilt_is_causal_so_the_head_is_quieter() -> None:
+    tilted = noise_source(4096, np.random.default_rng(6), tilt_hz=300.0)
+    # A one-pole low-pass starting from a zero state needs a few hundred samples
+    # to charge up; the head therefore carries less energy than the tail.
+    assert float(np.mean(tilted[:64] ** 2)) < float(np.mean(tilted[-512:] ** 2))
