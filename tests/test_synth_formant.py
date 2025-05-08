@@ -11,10 +11,12 @@ from echoscribe.errors import ConfigError
 from echoscribe.synth.formant import (
     apply_resonator,
     render_phone,
+    render_sequence,
     resonator_coefficients,
     samples_for_duration,
 )
 from echoscribe.synth.phones import ENGLISH_PHONES, FINALS, INITIALS
+from echoscribe.synth.tone import TONES
 
 RATE = 16000
 
@@ -235,4 +237,57 @@ def test_tone_language_finals_render(symbol: str) -> None:
     phone = FINALS[symbol]
     rendered = render_phone(phone, RATE, f0=110.0)
     assert rendered.size == samples_for_duration(phone.duration_ms, RATE)
+    assert np.all(np.isfinite(rendered))
+
+
+def test_a_sequence_is_the_concatenation_of_its_phones() -> None:
+    phones = [ENGLISH_PHONES["t"], ENGLISH_PHONES["ay"], ENGLISH_PHONES["m"]]
+    rendered = render_sequence(phones, RATE, rng=np.random.default_rng(2))
+    expected = sum(samples_for_duration(p.duration_ms, RATE) for p in phones)
+    assert rendered.shape == (expected,)
+
+
+def test_rendering_a_sequence_twice_with_one_seed_is_identical() -> None:
+    phones = [ENGLISH_PHONES["s"], ENGLISH_PHONES["ih"], ENGLISH_PHONES["t"]]
+    left = render_sequence(phones, RATE, rng=np.random.default_rng(6))
+    right = render_sequence(phones, RATE, rng=np.random.default_rng(6))
+    assert np.array_equal(left, right)
+
+
+def test_a_sequence_without_a_tone_matches_phone_by_phone_rendering() -> None:
+    phones = [ENGLISH_PHONES["m"], ENGLISH_PHONES["ow"]]
+    rng_left = np.random.default_rng(5)
+    rng_right = np.random.default_rng(5)
+    manual = np.concatenate([render_phone(p, RATE, rng=rng_left) for p in phones])
+    assert np.array_equal(render_sequence(phones, RATE, rng=rng_right), manual)
+
+
+def test_silence_contributes_zeros_to_a_sequence() -> None:
+    phones = [ENGLISH_PHONES["sil"], ENGLISH_PHONES["aa"]]
+    rendered = render_sequence(phones, RATE)
+    silence = samples_for_duration(ENGLISH_PHONES["sil"].duration_ms, RATE)
+    assert np.all(rendered[:silence] == 0.0)
+
+
+def test_a_tone_changes_the_rendered_nucleus() -> None:
+    rising = render_sequence([FINALS["a"]], RATE, base_f0=110.0, tone=TONES[1])
+    falling = render_sequence([FINALS["a"]], RATE, base_f0=110.0, tone=TONES[3])
+    assert rising.shape == falling.shape
+    assert not np.allclose(rising, falling)
+
+
+def test_a_tone_preserves_the_total_duration() -> None:
+    phones = [INITIALS["m"], FINALS["ang"]]
+    assert render_sequence(phones, RATE).shape == render_sequence(phones, RATE, tone=TONES[2]).shape
+
+
+def test_an_empty_sequence_is_rejected() -> None:
+    with pytest.raises(ConfigError, match="cannot render an empty phone sequence"):
+        render_sequence([], RATE)
+
+
+def test_a_rendered_sequence_stays_in_a_sane_amplitude_range() -> None:
+    phones = [ENGLISH_PHONES[s] for s in ("sh", "iy", "sil", "b", "aa")]
+    rendered = render_sequence(phones, RATE, rng=np.random.default_rng(12))
+    assert np.max(np.abs(rendered)) < 4.0
     assert np.all(np.isfinite(rendered))
