@@ -89,3 +89,48 @@ def test_coefficients_reject_impossible_formants() -> None:
 def test_the_resonator_rejects_a_matrix() -> None:
     with pytest.raises(ConfigError, match="must be 1-D"):
         apply_resonator(np.zeros((4, 2)), 500.0, 100.0, RATE)
+
+
+def test_the_loop_matches_a_reference_recursion() -> None:
+    rng = np.random.default_rng(4)
+    x = rng.standard_normal(600)
+    a0, b1, b2 = resonator_coefficients(1200.0, 130.0, RATE)
+    expected = np.empty(600)
+    y1 = y2 = 0.0
+    for index, value in enumerate(x):
+        y = a0 * value + b1 * y1 + b2 * y2
+        expected[index] = y
+        y2 = y1
+        y1 = y
+    assert np.allclose(apply_resonator(x, 1200.0, 130.0, RATE), expected, rtol=1e-12, atol=0.0)
+
+
+def test_an_empty_input_produces_an_empty_response() -> None:
+    assert apply_resonator(np.zeros(0), 500.0, 100.0, RATE).shape == (0,)
+
+
+def test_the_output_dtype_is_float64_for_float32_input() -> None:
+    result = apply_resonator(np.zeros(8, dtype=np.float32), 500.0, 100.0, RATE)
+    assert result.dtype == np.float64
+
+
+def test_cascading_resonators_sharpens_the_peak() -> None:
+    delta = np.zeros(4096)
+    delta[0] = 1.0
+    single = apply_resonator(delta, 500.0, 90.0, RATE)
+    cascade = apply_resonator(single, 500.0, 90.0, RATE)
+
+    def half_power_width(response: np.ndarray) -> int:
+        spectrum = np.abs(np.fft.rfft(response))
+        return int(np.count_nonzero(spectrum > spectrum.max() / 2.0))
+
+    assert half_power_width(cascade) < half_power_width(single)
+
+
+def test_a_cascade_keeps_the_peak_at_the_shared_centre() -> None:
+    delta = np.zeros(4096)
+    delta[0] = 1.0
+    cascade = apply_resonator(apply_resonator(delta, 1400.0, 120.0, RATE), 1400.0, 120.0, RATE)
+    spectrum = np.abs(np.fft.rfft(cascade))
+    peak = float(np.fft.rfftfreq(len(cascade), 1 / RATE)[int(np.argmax(spectrum))])
+    assert peak == pytest.approx(1400.0, abs=8.0)
