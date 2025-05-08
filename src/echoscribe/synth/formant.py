@@ -19,6 +19,7 @@ the slowest part of the laboratory, which is why the corpora here are short.
 from __future__ import annotations
 
 import math
+from collections.abc import Sequence
 
 import numpy as np
 
@@ -30,6 +31,7 @@ from echoscribe.synth.source import (
     noise_source,
     phone_envelope,
 )
+from echoscribe.synth.tone import ToneContour
 from echoscribe.types import FEATURE_DTYPE, FloatArray
 
 
@@ -135,3 +137,38 @@ def _tilt_for(phone: Phone) -> float:
     maintaining a second table.
     """
     return float(phone.formants[0][0])
+
+
+def render_sequence(
+    phones: Sequence[Phone],
+    sample_rate: int,
+    base_f0: float = DEFAULT_BASE_F0,
+    tone: ToneContour | None = None,
+    rng: np.random.Generator | None = None,
+) -> FloatArray:
+    """Render a phone sequence into one waveform.
+
+    When ``tone`` is given its trajectory spans the *voiced* part of the sequence
+    only.  Silence has no pitch, and folding a silent phone's duration into the
+    contour would flatten the tone at whichever end the silence sits on -- so the
+    contour is sampled over the voiced samples and each phone reads the slice that
+    belongs to it.
+    """
+    require(len(phones) > 0, "cannot render an empty phone sequence", ConfigError)
+    require_positive("sample_rate", sample_rate, ConfigError)
+    lengths = [samples_for_duration(phone.duration_ms, sample_rate) for phone in phones]
+    if tone is None:
+        return np.concatenate([render_phone(phone, sample_rate, base_f0, rng) for phone in phones])
+    voiced = sum(
+        length for phone, length in zip(phones, lengths, strict=True) if not phone.is_silent
+    )
+    multiplier = tone.trajectory(max(voiced, 1)) * base_f0
+    rendered = []
+    cursor = 0
+    for phone, length in zip(phones, lengths, strict=True):
+        if phone.is_silent:
+            rendered.append(np.zeros(length, dtype=FEATURE_DTYPE))
+            continue
+        rendered.append(render_phone(phone, sample_rate, multiplier[cursor : cursor + length], rng))
+        cursor += length
+    return np.concatenate(rendered)
