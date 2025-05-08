@@ -8,7 +8,13 @@ import numpy as np
 import pytest
 
 from echoscribe.errors import ConfigError
-from echoscribe.synth.formant import apply_resonator, resonator_coefficients
+from echoscribe.synth.formant import (
+    apply_resonator,
+    render_phone,
+    resonator_coefficients,
+    samples_for_duration,
+)
+from echoscribe.synth.phones import ENGLISH_PHONES, FINALS, INITIALS
 
 RATE = 16000
 
@@ -134,3 +140,99 @@ def test_a_cascade_keeps_the_peak_at_the_shared_centre() -> None:
     spectrum = np.abs(np.fft.rfft(cascade))
     peak = float(np.fft.rfftfreq(len(cascade), 1 / RATE)[int(np.argmax(spectrum))])
     assert peak == pytest.approx(1400.0, abs=8.0)
+
+
+def test_samples_for_duration_rounds_half_up() -> None:
+    assert samples_for_duration(25.0, RATE) == 400
+    assert samples_for_duration(10.0, RATE) == 160
+    assert samples_for_duration(0.03125, RATE) == 1
+    assert samples_for_duration(0.0, RATE) == 0
+
+
+@pytest.mark.parametrize("symbol", list(ENGLISH_PHONES))
+def test_every_english_phone_renders_its_declared_length(symbol: str) -> None:
+    phone = ENGLISH_PHONES[symbol]
+    rendered = render_phone(phone, RATE, rng=np.random.default_rng(1))
+    assert rendered.shape == (samples_for_duration(phone.duration_ms, RATE),)
+    assert np.all(np.isfinite(rendered))
+
+
+def test_silence_renders_as_exact_zeros() -> None:
+    rendered = render_phone(ENGLISH_PHONES["sil"], RATE)
+    assert np.all(rendered == 0.0)
+    assert rendered.size > 0
+
+
+def test_a_turbulent_phone_needs_a_generator() -> None:
+    with pytest.raises(ConfigError, match="needs a seeded generator"):
+        render_phone(ENGLISH_PHONES["s"], RATE)
+
+
+def test_a_voiced_phone_does_not_need_a_generator() -> None:
+    assert render_phone(ENGLISH_PHONES["iy"], RATE).size > 0
+
+
+def test_rendering_is_deterministic_for_a_fixed_seed() -> None:
+    phone = ENGLISH_PHONES["sh"]
+    left = render_phone(phone, RATE, rng=np.random.default_rng(9))
+    right = render_phone(phone, RATE, rng=np.random.default_rng(9))
+    assert np.array_equal(left, right)
+
+
+def test_a_different_seed_changes_a_turbulent_phone() -> None:
+    phone = ENGLISH_PHONES["sh"]
+    left = render_phone(phone, RATE, rng=np.random.default_rng(9))
+    right = render_phone(phone, RATE, rng=np.random.default_rng(10))
+    assert not np.array_equal(left, right)
+
+
+def test_a_different_seed_leaves_a_pure_vowel_alone() -> None:
+    phone = ENGLISH_PHONES["aa"]
+    left = render_phone(phone, RATE, rng=np.random.default_rng(9))
+    right = render_phone(phone, RATE, rng=np.random.default_rng(10))
+    assert np.array_equal(left, right)
+
+
+def test_the_envelope_tapers_a_rendered_vowel_to_zero() -> None:
+    rendered = render_phone(ENGLISH_PHONES["aa"], RATE)
+    assert rendered[0] == 0.0
+    assert rendered[-1] == pytest.approx(0.0, abs=1e-9)
+
+
+def test_a_voiced_vowel_is_periodic_at_the_given_f0() -> None:
+    rendered = render_phone(ENGLISH_PHONES["aa"], RATE, f0=100.0)
+    period = RATE // 100
+    middle = rendered[5 * period : len(rendered) - 5 * period]
+    shifted = rendered[6 * period : len(rendered) - 4 * period]
+    assert np.corrcoef(middle, shifted)[0, 1] > 0.98
+
+
+def test_an_f0_track_must_match_the_phone_length() -> None:
+    with pytest.raises(ConfigError, match="the phone needs"):
+        render_phone(ENGLISH_PHONES["iy"], RATE, f0=np.full(10, 110.0))
+
+
+def test_rendered_amplitudes_stay_in_a_sane_range() -> None:
+    worst = 0.0
+    for phone in ENGLISH_PHONES.values():
+        rendered = render_phone(phone, RATE, rng=np.random.default_rng(2))
+        worst = max(worst, float(np.max(np.abs(rendered))) if rendered.size else 0.0)
+    # A three-formant cascade has resonant gain, so the peak exceeds one; four is
+    # the bound beyond which the mix would clip on a normal utterance.
+    assert worst < 4.0
+
+
+@pytest.mark.parametrize("symbol", list(INITIALS)[:8])
+def test_tone_language_initials_render(symbol: str) -> None:
+    phone = INITIALS[symbol]
+    rendered = render_phone(phone, RATE, rng=np.random.default_rng(3))
+    assert rendered.size == samples_for_duration(phone.duration_ms, RATE)
+    assert np.all(np.isfinite(rendered))
+
+
+@pytest.mark.parametrize("symbol", list(FINALS)[:8])
+def test_tone_language_finals_render(symbol: str) -> None:
+    phone = FINALS[symbol]
+    rendered = render_phone(phone, RATE, f0=110.0)
+    assert rendered.size == samples_for_duration(phone.duration_ms, RATE)
+    assert np.all(np.isfinite(rendered))
