@@ -23,6 +23,13 @@ import math
 import numpy as np
 
 from echoscribe.errors import ConfigError, require, require_positive
+from echoscribe.synth.phones import Phone
+from echoscribe.synth.source import (
+    DEFAULT_BASE_F0,
+    glottal_source,
+    noise_source,
+    phone_envelope,
+)
 from echoscribe.types import FEATURE_DTYPE, FloatArray
 
 
@@ -64,3 +71,67 @@ def apply_resonator(
         y2 = y1
         y1 = y
     return np.asarray(output, dtype=FEATURE_DTYPE)
+
+
+def render_phone(
+    phone: Phone,
+    sample_rate: int,
+    f0: float | np.ndarray = DEFAULT_BASE_F0,
+    rng: np.random.Generator | None = None,
+    envelope_attack: int = 24,
+    envelope_release: int = 48,
+) -> FloatArray:
+    """Render one phone to a waveform of its declared duration.
+
+    The source is the glottal pulse train for a voiced phone, turbulence for a
+    voiceless one, and the sum of both when a phone is voiced *and* turbulent --
+    which is how a ``z`` or a ``v`` behaves.  The source passes through one
+    resonator per formant and is then scaled by the phone's gain and envelope.
+
+    Silence short-circuits to zeros: rendering it through the resonators would
+    only add rounding noise to what should be exactly quiet.
+    """
+    require_positive("sample_rate", sample_rate, ConfigError)
+    num_samples = samples_for_duration(phone.duration_ms, sample_rate)
+    if num_samples <= 0 or phone.is_silent:
+        return np.zeros(max(num_samples, 0), dtype=FEATURE_DTYPE)
+    if np.ndim(f0) == 0:
+        track: np.ndarray = np.full(num_samples, float(f0))
+    else:
+        track = np.asarray(f0, dtype=FEATURE_DTYPE)
+    require(
+        track.shape == (num_samples,),
+        f"f0 track has {track.shape[0]} samples but the phone needs {num_samples}",
+        ConfigError,
+    )
+    source = np.zeros(num_samples, dtype=FEATURE_DTYPE)
+    if phone.voiced:
+        source = source + glottal_source(num_samples, sample_rate, track)
+    if phone.turbulent:
+        require(
+            rng is not None,
+            f"{phone.symbol} is turbulent and needs a seeded generator",
+            ConfigError,
+        )
+        source = source + noise_source(
+            num_samples, rng, tilt_hz=_tilt_for(phone), sample_rate=sample_rate
+        )
+    for centre, bandwidth in phone.formants:
+        source = apply_resonator(source, centre, bandwidth, sample_rate)
+    return source * phone_envelope(num_samples, envelope_attack, envelope_release) * phone.gain
+
+
+def samples_for_duration(duration_ms: float, sample_rate: int) -> int:
+    """Whole samples covered by ``duration_ms``, rounded half up."""
+    require_positive("sample_rate", sample_rate, ConfigError)
+    return int(math.floor(duration_ms * sample_rate / 1000.0 + 0.5))
+
+
+def _tilt_for(phone: Phone) -> float:
+    """Tie the noise colour to the phone's own lowest resonance.
+
+    A fricative's spectrum is dominated by where its constriction sits, so reusing
+    the first formant as the tilt corner keeps ``s`` bright and ``sh`` dark without
+    maintaining a second table.
+    """
+    return float(phone.formants[0][0])
