@@ -23,7 +23,7 @@ from collections.abc import Sequence
 
 import numpy as np
 
-from echoscribe.errors import ConfigError, require, require_positive
+from echoscribe.errors import ConfigError, require, require_positive, require_range
 from echoscribe.synth.phones import Phone
 from echoscribe.synth.source import (
     DEFAULT_BASE_F0,
@@ -172,3 +172,21 @@ def render_sequence(
         rendered.append(render_phone(phone, sample_rate, multiplier[cursor : cursor + length], rng))
         cursor += length
     return np.concatenate(rendered)
+
+
+def normalize_peak(signal: np.ndarray, target: float = 0.9) -> FloatArray:
+    """Scale a waveform so its largest absolute sample equals ``target``.
+
+    The formant cascade has resonant gain, so a rendered utterance can peak above
+    one and clip on the way to 16-bit PCM.  Normalising per utterance rather than
+    per corpus keeps relative loudness inside an utterance intact -- which is what
+    an energy-based endpointer reads -- while guaranteeing the write is lossless.
+
+    An all-zero signal is returned unchanged rather than divided by zero.
+    """
+    require_range("target", target, 0.0, 1.0, ConfigError)
+    values = np.asarray(signal, dtype=FEATURE_DTYPE)
+    peak = float(np.max(np.abs(values))) if values.size else 0.0
+    if peak <= 1e-12:
+        return values.copy()
+    return values * (target / peak)

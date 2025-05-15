@@ -10,6 +10,7 @@ import pytest
 from echoscribe.errors import ConfigError
 from echoscribe.synth.formant import (
     apply_resonator,
+    normalize_peak,
     render_phone,
     render_sequence,
     resonator_coefficients,
@@ -291,3 +292,50 @@ def test_a_rendered_sequence_stays_in_a_sane_amplitude_range() -> None:
     rendered = render_sequence(phones, RATE, rng=np.random.default_rng(12))
     assert np.max(np.abs(rendered)) < 4.0
     assert np.all(np.isfinite(rendered))
+
+
+def test_normalisation_puts_the_peak_at_the_target() -> None:
+    signal = np.array([0.2, -4.0, 1.0])
+    assert float(np.max(np.abs(normalize_peak(signal, 0.9)))) == pytest.approx(0.9)
+
+
+def test_normalisation_preserves_the_shape() -> None:
+    rng = np.random.default_rng(8)
+    signal = rng.standard_normal(256) * 3.0
+    scaled = normalize_peak(signal, 0.5)
+    ratio = float(np.max(np.abs(signal))) / 0.5
+    assert np.allclose(scaled * ratio, signal, atol=1e-12)
+
+
+def test_normalisation_of_silence_is_silence() -> None:
+    assert np.all(normalize_peak(np.zeros(64)) == 0.0)
+
+
+def test_normalisation_of_an_empty_signal_is_empty() -> None:
+    assert normalize_peak(np.zeros(0)).shape == (0,)
+
+
+def test_the_default_target_leaves_headroom() -> None:
+    scaled = normalize_peak(np.array([0.0, 8.0, -8.0]))
+    assert float(np.max(np.abs(scaled))) == pytest.approx(0.9)
+
+
+@pytest.mark.parametrize("target", [-0.1, 1.5])
+def test_normalisation_rejects_an_out_of_range_target(target: float) -> None:
+    with pytest.raises(ConfigError, match="target must lie in"):
+        normalize_peak(np.ones(4), target)
+
+
+def test_normalisation_does_not_mutate_its_input() -> None:
+    signal = np.array([0.5, -2.0])
+    normalize_peak(signal, 0.8)
+    assert np.array_equal(signal, np.array([0.5, -2.0]))
+
+
+def test_a_normalised_render_survives_a_16bit_round_trip() -> None:
+    from echoscribe.audio import float32_to_pcm16, pcm16_to_float32
+
+    phones = [ENGLISH_PHONES[s] for s in ("sh", "iy", "sil", "b", "aa")]
+    rendered = normalize_peak(render_sequence(phones, RATE, rng=np.random.default_rng(13)))
+    recovered = pcm16_to_float32(float32_to_pcm16(rendered.astype(np.float32)))
+    assert np.max(np.abs(recovered.astype(np.float64) - rendered)) < 1e-3
