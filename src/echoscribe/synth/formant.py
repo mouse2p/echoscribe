@@ -14,6 +14,18 @@ The recursion is a plain Python loop rather than a blocked or FFT-based filter.
 That is deliberate: it has no block-boundary artefacts, it starts from an exactly
 zero state, and it is what a streaming synthesizer would run anyway.  It is also
 the slowest part of the laboratory, which is why the corpora here are short.
+
+What this renderer does *not* model, so nobody mistakes its output for speech:
+
+* coarticulation.  Formant targets jump between phones instead of transitioning,
+  so a decoder sees cleaner boundaries than any real speaker produces;
+* a vocal tract.  There is no tube, no radiation characteristic beyond the source
+  tilt, and no nasal coupling;
+* prosody above the syllable.  Stress, rhythm and intonation are not represented;
+* a speaker.  One base F0, one gain table, no jitter or shimmer.
+
+The consequence for evaluation is concrete: an error rate measured on this audio
+describes the pipeline, not an acoustic model's usefulness on speech.
 """
 
 from __future__ import annotations
