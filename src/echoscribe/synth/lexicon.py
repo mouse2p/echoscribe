@@ -20,6 +20,10 @@ inventory -- it does not need ten thousand words nobody will render.
 
 from __future__ import annotations
 
+from dataclasses import dataclass
+
+from echoscribe.errors import TokenizerError, require
+
 #: Broad phone spellings for the English-style vocabulary.
 ENGLISH_SPELLINGS: dict[str, tuple[str, ...]] = {
     "hello": ("hh", "ah", "l", "ow"),
@@ -73,3 +77,67 @@ ENGLISH_SPELLINGS: dict[str, tuple[str, ...]] = {
 def english_vocabulary() -> tuple[str, ...]:
     """Every English word the laboratory can render, in table order."""
     return tuple(ENGLISH_SPELLINGS)
+
+
+@dataclass(frozen=True)
+class MandarinSyllable:
+    """One character's pronunciation: an optional initial, a final and a tone."""
+
+    character: str
+    initial: str
+    final: str
+    tone: int
+
+    def __post_init__(self) -> None:
+        require(bool(self.character), "a syllable needs a character", TokenizerError)
+        require(
+            1 <= self.tone <= 4,
+            f"{self.character}: tone must be 1-4, got {self.tone}",
+            TokenizerError,
+        )
+
+    @property
+    def romanization(self) -> str:
+        """The syllable spelled as ``initial + final + tone``, e.g. ``ni3``."""
+        return f"{self.initial}{self.final}{self.tone}"
+
+
+#: Character-keyed pronunciations.  Finals are restricted to the synthesizer's
+#: table, so ``shuo1`` is rendered on ``o`` rather than ``uo`` and ``xiao3`` on
+#: ``ao`` rather than ``iao``.  Every syllable carries one of the four lexical
+#: tones; a character that is neutral in running speech is given its citation
+#: tone so the four-way contrast stays present in the corpus.
+MANDARIN_SYLLABLES: dict[str, MandarinSyllable] = {
+    syllable.character: syllable
+    for syllable in (
+        MandarinSyllable("你", "n", "i", 3),
+        MandarinSyllable("好", "h", "ao", 3),
+        MandarinSyllable("他", "t", "a", 1),
+        MandarinSyllable("她", "t", "a", 1),
+        MandarinSyllable("们", "m", "en", 2),
+        MandarinSyllable("这", "zh", "e", 4),
+        MandarinSyllable("那", "n", "a", 4),
+        MandarinSyllable("看", "k", "an", 4),
+        MandarinSyllable("来", "l", "ai", 2),
+        MandarinSyllable("去", "q", "v", 4),
+        MandarinSyllable("说", "sh", "o", 1),
+        MandarinSyllable("会", "h", "ei", 4),
+        MandarinSyllable("多", "d", "o", 1),
+        MandarinSyllable("大", "d", "a", 4),
+        MandarinSyllable("小", "x", "ao", 3),
+        MandarinSyllable("中", "zh", "ong", 1),
+        MandarinSyllable("人", "r", "en", 2),
+        MandarinSyllable("时", "sh", "i", 2),
+        MandarinSyllable("可", "k", "e", 3),
+        MandarinSyllable("很", "h", "en", 3),
+        MandarinSyllable("不", "b", "u", 4),
+        MandarinSyllable("在", "z", "ai", 4),
+        MandarinSyllable("声", "sh", "eng", 1),
+        MandarinSyllable("话", "h", "a", 4),
+    )
+}
+
+
+def mandarin_vocabulary() -> tuple[str, ...]:
+    """Every character the laboratory can render, in table order."""
+    return tuple(MANDARIN_SYLLABLES)
