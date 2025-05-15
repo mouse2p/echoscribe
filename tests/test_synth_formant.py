@@ -339,3 +339,57 @@ def test_a_normalised_render_survives_a_16bit_round_trip() -> None:
     rendered = normalize_peak(render_sequence(phones, RATE, rng=np.random.default_rng(13)))
     recovered = pcm16_to_float32(float32_to_pcm16(rendered.astype(np.float32)))
     assert np.max(np.abs(recovered.astype(np.float64) - rendered)) < 1e-3
+
+
+def _dominant_f0(signal: np.ndarray) -> float:
+    """Peak frequency in the voiced range, zero-padded for usable resolution.
+
+    A quarter of a 160 ms syllable is 640 samples, which on its own gives 25 Hz
+    of resolution -- coarser than the tone contours being measured.  Padding to
+    8192 points brings that down to about 2 Hz.
+    """
+    padded = np.zeros(8192)
+    padded[: len(signal)] = signal * np.hanning(len(signal))
+    spectrum = np.abs(np.fft.rfft(padded))
+    bins = np.fft.rfftfreq(len(padded), 1 / RATE)
+    voiced = (bins > 60.0) & (bins < 400.0)
+    return float(bins[voiced][int(np.argmax(spectrum[voiced]))])
+
+
+def test_a_rising_tone_ends_higher_than_it_starts() -> None:
+    length = samples_for_duration(FINALS["a"].duration_ms, RATE)
+    rising = render_sequence([FINALS["a"]], RATE, base_f0=100.0, tone=TONES[1])
+    assert rising.shape == (length,)
+    assert _dominant_f0(rising[3 * length // 4 :]) > _dominant_f0(rising[: length // 4])
+
+
+def test_a_falling_tone_ends_lower_than_it_starts() -> None:
+    length = samples_for_duration(FINALS["a"].duration_ms, RATE)
+    falling = render_sequence([FINALS["a"]], RATE, base_f0=100.0, tone=TONES[3])
+    assert _dominant_f0(falling[3 * length // 4 :]) < _dominant_f0(falling[: length // 4])
+
+
+def test_a_level_tone_keeps_its_pitch_across_the_syllable() -> None:
+    length = samples_for_duration(FINALS["a"].duration_ms, RATE)
+    level = render_sequence([FINALS["a"]], RATE, base_f0=100.0, tone=TONES[0])
+    head = _dominant_f0(level[: length // 4])
+    tail = _dominant_f0(level[3 * length // 4 :])
+    assert head == pytest.approx(tail, abs=4.0)
+
+
+def test_silence_is_not_counted_in_the_tone_trajectory() -> None:
+    nucleus = FINALS["a"]
+    alone = render_sequence([nucleus], RATE, base_f0=100.0, tone=TONES[3])
+    padded = render_sequence([nucleus, ENGLISH_PHONES["sil"]], RATE, base_f0=100.0, tone=TONES[3])
+    voiced = alone.shape[0]
+    # The nucleus is rendered against exactly the same contour in both cases.
+    assert np.allclose(padded[:voiced], alone, atol=1e-12)
+    assert padded.shape[0] > voiced
+
+
+def test_an_initial_and_a_final_share_one_contour_in_order() -> None:
+    phones = [INITIALS["m"], FINALS["ai"]]
+    rendered = render_sequence(phones, RATE, base_f0=110.0, tone=TONES[1])
+    expected = sum(samples_for_duration(p.duration_ms, RATE) for p in phones)
+    assert rendered.shape == (expected,)
+    assert np.all(np.isfinite(rendered))
