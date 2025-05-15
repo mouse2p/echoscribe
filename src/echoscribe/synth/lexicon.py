@@ -20,9 +20,10 @@ inventory -- it does not need ten thousand words nobody will render.
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 from echoscribe.errors import TokenizerError, require
+from echoscribe.synth.phones import FINALS, INITIALS, Phone, english_phone
 
 #: Broad phone spellings for the English-style vocabulary.
 ENGLISH_SPELLINGS: dict[str, tuple[str, ...]] = {
@@ -141,3 +142,56 @@ MANDARIN_SYLLABLES: dict[str, MandarinSyllable] = {
 def mandarin_vocabulary() -> tuple[str, ...]:
     """Every character the laboratory can render, in table order."""
     return tuple(MANDARIN_SYLLABLES)
+
+
+#: Script labels the lexicon assigns to a token.
+LANGUAGES = ("en", "zh")
+
+
+@dataclass(frozen=True)
+class Lexicon:
+    """Token lookup for both vocabularies behind one interface.
+
+    The defaults go through ``default_factory`` rather than naming the tables
+    directly.  ``dataclasses`` rejects an unhashable default, and copying also
+    stops one caller's edits from leaking into every other ``Lexicon`` in the
+    process.
+    """
+
+    english: dict[str, tuple[str, ...]] = field(default_factory=lambda: dict(ENGLISH_SPELLINGS))
+    mandarin: dict[str, MandarinSyllable] = field(default_factory=lambda: dict(MANDARIN_SYLLABLES))
+
+    def classify(self, token: str) -> str:
+        """Return ``"en"`` or ``"zh"`` for a token, based on which table holds it."""
+        if token in self.english:
+            return "en"
+        if token in self.mandarin:
+            return "zh"
+        raise TokenizerError(
+            f"unknown token {token!r}; the lexicon holds {len(self.english)} English words "
+            f"and {len(self.mandarin)} characters"
+        )
+
+    def word_phones(self, word: str) -> tuple[Phone, ...]:
+        """Phones of one English word."""
+        require(
+            word in self.english, f"not an English word in this lexicon: {word!r}", TokenizerError
+        )
+        return tuple(english_phone(symbol) for symbol in self.english[word])
+
+    def syllable_phones(self, character: str) -> tuple[Phone, ...]:
+        """Phones of one Mandarin syllable: its initial, if any, then its final."""
+        require(
+            character in self.mandarin,
+            f"not a character in this lexicon: {character!r}",
+            TokenizerError,
+        )
+        syllable = self.mandarin[character]
+        onset = (INITIALS[syllable.initial],) if syllable.initial else ()
+        return onset + (FINALS[syllable.final],)
+
+    def phones_for(self, token: str) -> tuple[Phone, ...]:
+        """Phones of one token, whichever vocabulary it belongs to."""
+        if self.classify(token) == "en":
+            return self.word_phones(token)
+        return self.syllable_phones(token)
