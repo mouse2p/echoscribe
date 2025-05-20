@@ -20,6 +20,7 @@ inventory -- it does not need ten thousand words nobody will render.
 
 from __future__ import annotations
 
+from collections.abc import Sequence
 from dataclasses import dataclass, field
 
 from echoscribe.errors import TokenizerError, require
@@ -195,3 +196,61 @@ class Lexicon:
         if self.classify(token) == "en":
             return self.word_phones(token)
         return self.syllable_phones(token)
+
+
+@dataclass(frozen=True)
+class TokenSpan:
+    """Where one surface token's phones sit in a flattened phone sequence."""
+
+    token: str
+    language: str
+    start: int
+    length: int
+
+    @property
+    def stop(self) -> int:
+        """Exclusive end index of the span."""
+        return self.start + self.length
+
+
+@dataclass(frozen=True)
+class PhoneSequence:
+    """A flattened phone stream plus the spans that produced it.
+
+    Keeping the spans next to the phones is what lets a decoder's token alignment
+    be turned back into a word alignment later: without them the boundary between
+    ``hello`` and ``world`` is unrecoverable, because the phones are concatenated
+    with no separator.
+    """
+
+    phones: tuple[Phone, ...]
+    spans: tuple[TokenSpan, ...]
+
+    def symbols(self) -> tuple[str, ...]:
+        """The phone symbols, which is the unit sequence a decoder consumes."""
+        return tuple(phone.symbol for phone in self.phones)
+
+    def tokens(self) -> tuple[str, ...]:
+        """The surface tokens, in order."""
+        return tuple(span.token for span in self.spans)
+
+    def phones_of(self, token: str) -> tuple[Phone, ...]:
+        """Phones belonging to one token of the sequence."""
+        for span in self.spans:
+            if span.token == token:
+                return self.phones[span.start : span.stop]
+        raise TokenizerError(f"{token!r} is not part of this sequence")
+
+
+def transcribe(tokens: Sequence[str], lexicon: Lexicon | None = None) -> PhoneSequence:
+    """Flatten a token sequence into phones, recording each token's span."""
+    table = Lexicon() if lexicon is None else lexicon
+    require(len(tokens) > 0, "cannot transcribe an empty token sequence", TokenizerError)
+    phones: list[Phone] = []
+    spans: list[TokenSpan] = []
+    for token in tokens:
+        language = table.classify(token)
+        resolved = table.phones_for(token)
+        spans.append(TokenSpan(token, language, len(phones), len(resolved)))
+        phones.extend(resolved)
+    return PhoneSequence(tuple(phones), tuple(spans))
