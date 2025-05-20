@@ -8,6 +8,7 @@ from echoscribe.errors import TokenizerError
 from echoscribe.synth.lexicon import (
     ENGLISH_SPELLINGS,
     MANDARIN_SYLLABLES,
+    Lexicon,
     MandarinSyllable,
     english_vocabulary,
     mandarin_vocabulary,
@@ -99,3 +100,63 @@ def test_two_characters_may_share_a_pronunciation() -> None:
 def test_the_syllable_table_covers_several_initials() -> None:
     initials = {syllable.initial for syllable in MANDARIN_SYLLABLES.values()}
     assert len(initials) >= 10
+
+
+def test_lookup_classifies_english_and_chinese_tokens() -> None:
+    lexicon = Lexicon()
+    assert lexicon.classify("hello") == "en"
+    assert lexicon.classify("你") == "zh"
+
+
+def test_lookup_rejects_an_unknown_token_with_the_table_sizes() -> None:
+    with pytest.raises(TokenizerError) as info:
+        Lexicon().classify("kazan")
+    message = str(info.value)
+    assert "unknown token 'kazan'" in message
+    assert str(len(ENGLISH_SPELLINGS)) in message
+    assert str(len(MANDARIN_SYLLABLES)) in message
+
+
+def test_word_phones_resolves_the_spelling() -> None:
+    phones = Lexicon().word_phones("hello")
+    assert [phone.symbol for phone in phones] == ["hh", "ah", "l", "ow"]
+
+
+def test_word_phones_rejects_a_chinese_token() -> None:
+    with pytest.raises(TokenizerError, match="not an English word"):
+        Lexicon().word_phones("你")
+
+
+def test_syllable_phones_puts_the_initial_before_the_final() -> None:
+    phones = Lexicon().syllable_phones("你")
+    assert [phone.symbol for phone in phones] == ["n", "i"]
+
+
+def test_syllable_phones_rejects_an_english_token() -> None:
+    with pytest.raises(TokenizerError, match="not a character"):
+        Lexicon().syllable_phones("hello")
+
+
+def test_phones_for_dispatches_on_the_token() -> None:
+    lexicon = Lexicon()
+    assert lexicon.phones_for("hello") == lexicon.word_phones("hello")
+    assert lexicon.phones_for("好") == lexicon.syllable_phones("好")
+
+
+def test_a_custom_lexicon_overrides_the_default_tables() -> None:
+    lexicon = Lexicon(english={"zog": ("z", "aa", "g")}, mandarin={})
+    assert [phone.symbol for phone in lexicon.phones_for("zog")] == ["z", "aa", "g"]
+    with pytest.raises(TokenizerError):
+        lexicon.classify("hello")
+
+
+def test_every_english_word_resolves() -> None:
+    lexicon = Lexicon()
+    for word in ENGLISH_SPELLINGS:
+        assert lexicon.word_phones(word)
+
+
+def test_every_character_resolves() -> None:
+    lexicon = Lexicon()
+    for character in MANDARIN_SYLLABLES:
+        assert lexicon.syllable_phones(character)
