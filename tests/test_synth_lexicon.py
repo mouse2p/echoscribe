@@ -10,8 +10,11 @@ from echoscribe.synth.lexicon import (
     MANDARIN_SYLLABLES,
     Lexicon,
     MandarinSyllable,
+    PhoneSequence,
+    TokenSpan,
     english_vocabulary,
     mandarin_vocabulary,
+    transcribe,
 )
 from echoscribe.synth.phones import ENGLISH_PHONES, FINALS, INITIALS
 
@@ -160,3 +163,79 @@ def test_every_character_resolves() -> None:
     lexicon = Lexicon()
     for character in MANDARIN_SYLLABLES:
         assert lexicon.syllable_phones(character)
+
+
+def test_transcribe_returns_a_phone_sequence_value() -> None:
+    sequence = transcribe(["hello"])
+    assert isinstance(sequence, PhoneSequence)
+    assert isinstance(sequence.spans[0], TokenSpan)
+
+
+def test_spans_cover_the_phone_sequence_exactly() -> None:
+    sequence = transcribe(["hello", "你", "好", "world"])
+    cursor = 0
+    for span in sequence.spans:
+        assert span.start == cursor
+        cursor = span.stop
+    assert cursor == len(sequence.phones)
+
+
+def test_spans_record_the_right_language() -> None:
+    sequence = transcribe(["hello", "你"])
+    assert [span.language for span in sequence.spans] == ["en", "zh"]
+
+
+def test_a_chinese_token_contributes_two_phones_and_an_english_word_more() -> None:
+    sequence = transcribe(["你", "hello"])
+    assert sequence.spans[0].length == 2
+    assert sequence.spans[1].length == 4
+    assert sequence.symbols() == ("n", "i", "hh", "ah", "l", "ow")
+
+
+def test_tokens_round_trip_through_the_spans() -> None:
+    tokens = ["please", "看", "这", "system", "好"]
+    sequence = transcribe(tokens)
+    assert sequence.tokens() == tuple(tokens)
+    for token in tokens:
+        expected = Lexicon().phones_for(token)
+        assert sequence.phones_of(token) == expected
+
+
+def test_phones_of_rejects_a_foreign_token() -> None:
+    sequence = transcribe(["hello"])
+    with pytest.raises(TokenizerError, match="is not part of this sequence"):
+        sequence.phones_of("world")
+
+
+def test_transcribe_rejects_an_empty_sequence() -> None:
+    with pytest.raises(TokenizerError, match="cannot transcribe an empty"):
+        transcribe([])
+
+
+def test_transcribe_rejects_an_unknown_token() -> None:
+    with pytest.raises(TokenizerError, match="unknown token"):
+        transcribe(["hello", "kazan"])
+
+
+def test_a_repeated_token_gets_two_spans() -> None:
+    sequence = transcribe(["好", "好"])
+    assert len(sequence.spans) == 2
+    assert sequence.spans[0].start == 0
+    assert sequence.spans[1].start == 2
+    assert len(sequence.phones) == 4
+
+
+def test_a_phone_sequence_is_immutable() -> None:
+    sequence = transcribe(["hello"])
+    with pytest.raises(AttributeError):
+        sequence.phones = ()  # type: ignore[misc]
+
+
+def test_a_token_span_reports_its_stop() -> None:
+    span = TokenSpan("hello", "en", 3, 4)
+    assert span.stop == 7
+
+
+def test_transcribe_is_deterministic() -> None:
+    tokens = ["start", "你", "test"]
+    assert transcribe(tokens).symbols() == transcribe(tokens).symbols()
