@@ -8,10 +8,12 @@ from echoscribe.errors import TokenizerError
 from echoscribe.synth.lexicon import (
     ENGLISH_SPELLINGS,
     MANDARIN_SYLLABLES,
+    Coverage,
     Lexicon,
     MandarinSyllable,
     PhoneSequence,
     TokenSpan,
+    coverage_of,
     english_vocabulary,
     mandarin_vocabulary,
     transcribe,
@@ -239,3 +241,47 @@ def test_a_token_span_reports_its_stop() -> None:
 def test_transcribe_is_deterministic() -> None:
     tokens = ["start", "你", "test"]
     assert transcribe(tokens).symbols() == transcribe(tokens).symbols()
+
+
+def test_coverage_is_a_small_value_object() -> None:
+    report = coverage_of(["hello", "你"])
+    assert isinstance(report, Coverage)
+    assert report.total == 2
+    assert report.known == ("hello", "你")
+
+
+def test_coverage_of_a_fully_known_list_is_complete() -> None:
+    report = coverage_of(["hello", "你", "好"])
+    assert report.total == 3
+    assert report.known == ("hello", "你", "好")
+    assert report.unknown == ()
+    assert report.ratio == pytest.approx(1.0)
+    assert report.complete
+
+
+def test_coverage_splits_known_from_unknown_in_order() -> None:
+    report = coverage_of(["hello", "kazan", "你", "zzz"])
+    assert report.known == ("hello", "你")
+    assert report.unknown == ("kazan", "zzz")
+    assert report.ratio == pytest.approx(0.5)
+    assert not report.complete
+
+
+def test_coverage_of_nothing_is_complete_by_convention() -> None:
+    report = coverage_of([])
+    assert report.total == 0
+    assert report.ratio == 1.0
+    assert report.complete
+
+
+def test_coverage_honours_a_custom_lexicon() -> None:
+    lexicon = Lexicon(english={"zog": ("z", "aa", "g")}, mandarin={})
+    report = coverage_of(["zog", "hello"], lexicon)
+    assert report.known == ("zog",)
+    assert report.unknown == ("hello",)
+
+
+def test_coverage_does_not_mutate_its_input() -> None:
+    tokens = ["hello", "kazan"]
+    coverage_of(tokens)
+    assert tokens == ["hello", "kazan"]
