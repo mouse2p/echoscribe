@@ -267,3 +267,42 @@ def transcribe(tokens: Sequence[str], lexicon: Lexicon | None = None) -> PhoneSe
         spans.append(TokenSpan(token, language, len(phones), len(resolved)))
         phones.extend(resolved)
     return PhoneSequence(tuple(phones), tuple(spans))
+
+
+@dataclass(frozen=True)
+class Coverage:
+    """How much of a token list this lexicon can actually render."""
+
+    total: int
+    known: tuple[str, ...]
+    unknown: tuple[str, ...]
+
+    @property
+    def ratio(self) -> float:
+        """Fraction of tokens that are known; 1.0 for an empty list."""
+        return len(self.known) / self.total if self.total else 1.0
+
+    @property
+    def complete(self) -> bool:
+        """True when nothing has to be dropped or replaced."""
+        return not self.unknown
+
+
+def coverage_of(tokens: Sequence[str], lexicon: Lexicon | None = None) -> Coverage:
+    """Split ``tokens`` into those the lexicon knows and those it does not.
+
+    A corpus generator calls this before rendering so that an out-of-vocabulary
+    word is reported once, up front, rather than surfacing as an exception halfway
+    through writing a manifest.
+    """
+    table = Lexicon() if lexicon is None else lexicon
+    known: list[str] = []
+    unknown: list[str] = []
+    for token in tokens:
+        try:
+            table.classify(token)
+        except TokenizerError:
+            unknown.append(token)
+        else:
+            known.append(token)
+    return Coverage(len(tokens), tuple(known), tuple(unknown))
