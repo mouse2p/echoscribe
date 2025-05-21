@@ -16,6 +16,19 @@ the renderer has to handle both in one utterance:
 Both lists are small on purpose.  The laboratory needs enough vocabulary for a
 decoder to have to choose, and every entry has to be checked against the phone
 inventory -- it does not need ten thousand words nobody will render.
+
+Two approximations are worth naming, because they are the reason a transcript can
+be exact while the audio is not a faithful pronunciation:
+
+* the English phone set has no affricates (``ch``, ``jh``) and no ``dh``, so words
+  that would need them are simply absent from the vocabulary rather than misspelt;
+* the Mandarin final set has fifteen entries, so ``shuo`` renders on ``o``,
+  ``xiao`` on ``ao`` and ``hui`` on ``ei``.
+
+A recognizer evaluated here is therefore learning a slightly idealised mapping.
+That is acceptable -- the transcript is still the exact ground truth for the audio
+that was generated -- but it is another reason no number from this package should
+be read as an accuracy claim about real speech.
 """
 
 from __future__ import annotations
