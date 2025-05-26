@@ -285,3 +285,13 @@ def test_coverage_does_not_mutate_its_input() -> None:
     tokens = ["hello", "kazan"]
     coverage_of(tokens)
     assert tokens == ["hello", "kazan"]
+
+
+def test_the_subpackage_re_exports_the_lexicon_api() -> None:
+    from echoscribe import synth
+
+    assert synth.Lexicon is Lexicon
+    assert synth.transcribe is transcribe
+    assert synth.render_sequence is not None
+    for name in ("ENGLISH_SPELLINGS", "MANDARIN_SYLLABLES", "transcribe", "Lexicon"):
+        assert name in synth.__all__

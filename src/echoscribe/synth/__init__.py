@@ -24,16 +24,50 @@ It never means a model was evaluated on speech, and no result here should be rea
 as evidence about one.
 """
 
+from echoscribe.synth.formant import (
+    normalize_peak,
+    render_phone,
+    render_sequence,
+    samples_for_duration,
+)
+from echoscribe.synth.lexicon import (
+    ENGLISH_SPELLINGS,
+    MANDARIN_SYLLABLES,
+    Coverage,
+    Lexicon,
+    MandarinSyllable,
+    PhoneSequence,
+    TokenSpan,
+    coverage_of,
+    transcribe,
+)
 from echoscribe.synth.phones import ENGLISH_PHONES, FINALS, INITIALS, MANNERS, Phone
+from echoscribe.synth.source import glottal_source, noise_source, phone_envelope
 from echoscribe.synth.tone import TONES, ToneContour, tone_by_index
 
 __all__ = [
     "ENGLISH_PHONES",
+    "ENGLISH_SPELLINGS",
     "FINALS",
     "INITIALS",
     "MANNERS",
+    "MANDARIN_SYLLABLES",
     "TONES",
+    "Coverage",
+    "Lexicon",
+    "MandarinSyllable",
     "Phone",
+    "PhoneSequence",
+    "TokenSpan",
     "ToneContour",
+    "coverage_of",
+    "glottal_source",
+    "noise_source",
+    "normalize_peak",
+    "phone_envelope",
+    "render_phone",
+    "render_sequence",
+    "samples_for_duration",
     "tone_by_index",
+    "transcribe",
 ]
