@@ -248,3 +248,17 @@ def test_serialized_totals_are_rounded_at_the_production_point() -> None:
     payload = statistics_to_dict(stats)
     assert payload["total"] == [0.333333333333]
     assert payload["squared_total"] == [0.111111111111]
+
+
+def test_an_empty_accumulator_is_filled_to_the_declared_width() -> None:
+    stats = CmvnStatistics(dimension=6, total=np.zeros(0), squared_total=np.zeros(0))
+    assert stats.total.shape == (6,)
+    assert stats.squared_total.shape == (6,)
+    stats.update(np.full((4, 6), 2.0))
+    assert np.allclose(stats.mean(), 2.0)
+
+
+def test_an_omitted_accumulator_behaves_like_a_fresh_one() -> None:
+    assert np.array_equal(
+        CmvnStatistics(dimension=3).total, CmvnStatistics(dimension=3).squared_total
+    )

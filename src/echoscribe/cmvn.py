@@ -20,7 +20,7 @@ acoustic condition.
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 import numpy as np
 
@@ -42,8 +42,8 @@ class CmvnStatistics:
 
     dimension: int = 0
     count: int = 0
-    total: np.ndarray | None = None
-    squared_total: np.ndarray | None = None
+    total: np.ndarray = field(default_factory=lambda: np.zeros(0, dtype=FEATURE_DTYPE))
+    squared_total: np.ndarray = field(default_factory=lambda: np.zeros(0, dtype=FEATURE_DTYPE))
 
     def __post_init__(self) -> None:
         require_positive("dimension", self.dimension, ConfigError)
@@ -52,11 +52,12 @@ class CmvnStatistics:
             f"count must be a non-negative integer, got {self.count!r}",
             ConfigError,
         )
+        # An empty accumulator means "not supplied", so it is filled to the right
+        # width here; a caller-supplied array of the wrong width is an error.
         for name in ("total", "squared_total"):
-            value = getattr(self, name)
-            if value is None:
+            value = np.asarray(getattr(self, name), dtype=FEATURE_DTYPE)
+            if value.size == 0:
                 value = np.zeros(self.dimension, dtype=FEATURE_DTYPE)
-            value = np.asarray(value, dtype=FEATURE_DTYPE)
             require(
                 value.shape == (self.dimension,),
                 f"{name} must have shape ({self.dimension},), got {value.shape}",
@@ -187,7 +188,6 @@ STATISTICS_SCHEMA_VERSION = 1
 
 def statistics_to_dict(statistics: CmvnStatistics) -> dict:
     """Render statistics as a JSON-ready mapping, including the schema version."""
-    assert statistics.total is not None and statistics.squared_total is not None
     return {
         "schema": STATISTICS_SCHEMA_VERSION,
         "dimension": statistics.dimension,
