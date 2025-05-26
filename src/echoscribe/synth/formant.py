@@ -75,7 +75,7 @@ def apply_resonator(
     require(x.ndim == 1, f"resonator input must be 1-D, got shape {x.shape}", ConfigError)
     # The recursion is inherently sequential; the only speed available without a
     # compiled filter is to stay in plain Python floats and append to a list.
-    output = []
+    output: list[float] = []
     append = output.append
     y1 = 0.0
     y2 = 0.0
@@ -122,11 +122,8 @@ def render_phone(
     if phone.voiced:
         source = source + glottal_source(num_samples, sample_rate, track)
     if phone.turbulent:
-        require(
-            rng is not None,
-            f"{phone.symbol} is turbulent and needs a seeded generator",
-            ConfigError,
-        )
+        if rng is None:
+            raise ConfigError(f"{phone.symbol} is turbulent and needs a seeded generator")
         source = source + noise_source(
             num_samples, rng, tilt_hz=_tilt_for(phone), sample_rate=sample_rate
         )
