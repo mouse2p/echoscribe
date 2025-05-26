@@ -31,3 +31,13 @@ def test_the_exported_names_cover_the_front_end() -> None:
         "write_wav",
     ):
         assert name in echoscribe.__all__
+
+
+def test_the_package_declares_itself_typed() -> None:
+    # py.typed is what tells a downstream mypy run to check these sources at all.
+    from pathlib import Path
+
+    import echoscribe
+
+    marker = Path(echoscribe.__file__).parent / "py.typed"
+    assert marker.is_file()
