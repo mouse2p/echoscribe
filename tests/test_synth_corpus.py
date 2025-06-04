@@ -2,11 +2,18 @@
 
 from __future__ import annotations
 
+import numpy as np
 import pytest
 
 from echoscribe.errors import ConfigError
 from echoscribe.seeds import DEFAULT_ROOT, Seed
-from echoscribe.synth.corpus import CorpusConfig, Utterance, surface_text
+from echoscribe.synth.corpus import (
+    CorpusConfig,
+    Utterance,
+    sample_tokens,
+    surface_text,
+)
+from echoscribe.synth.lexicon import ENGLISH_SPELLINGS, MANDARIN_SYLLABLES, Lexicon
 
 
 def test_defaults_describe_a_small_two_language_corpus() -> None:
@@ -130,3 +137,72 @@ def test_malformed_utterances_are_rejected(tokens, languages) -> None:
 def test_an_utterance_needs_an_id() -> None:
     with pytest.raises(ConfigError, match="needs an id"):
         Utterance("", ("a",), ("en",), "a", Seed(1, "x"))
+
+
+def test_sampled_tokens_come_from_the_lexicon() -> None:
+    rng = np.random.default_rng(0)
+    config = CorpusConfig(min_tokens=3, max_tokens=9)
+    for _ in range(20):
+        for token in sample_tokens(rng, config):
+            assert token in ENGLISH_SPELLINGS or token in MANDARIN_SYLLABLES
+
+
+def test_the_token_count_stays_inside_the_configured_range() -> None:
+    rng = np.random.default_rng(1)
+    config = CorpusConfig(min_tokens=2, max_tokens=6)
+    lengths = {len(sample_tokens(rng, config)) for _ in range(200)}
+    assert lengths <= set(range(2, 7))
+    assert len(lengths) > 1
+
+
+def test_a_pure_english_probability_never_draws_a_character() -> None:
+    rng = np.random.default_rng(2)
+    config = CorpusConfig(english_probability=1.0, min_tokens=4, max_tokens=4)
+    tokens = sample_tokens(rng, config)
+    assert all(token in ENGLISH_SPELLINGS for token in tokens)
+
+
+def test_a_zero_english_probability_draws_only_characters() -> None:
+    rng = np.random.default_rng(3)
+    config = CorpusConfig(english_probability=0.0, min_tokens=4, max_tokens=4)
+    tokens = sample_tokens(rng, config)
+    assert all(token in MANDARIN_SYLLABLES for token in tokens)
+
+
+def test_sampling_is_reproducible_from_the_seed() -> None:
+    config = CorpusConfig()
+    left = sample_tokens(np.random.default_rng(11), config)
+    right = sample_tokens(np.random.default_rng(11), config)
+    assert left == right
+
+
+def test_a_balanced_mix_actually_mixes() -> None:
+    rng = np.random.default_rng(4)
+    config = CorpusConfig(english_probability=0.5, min_tokens=8, max_tokens=8)
+    languages = []
+    for _ in range(50):
+        tokens = sample_tokens(rng, config)
+        languages.extend("en" if token in ENGLISH_SPELLINGS else "zh" for token in tokens)
+    share = languages.count("en") / len(languages)
+    assert 0.35 < share < 0.65
+
+
+def test_sampling_from_an_english_only_lexicon_works() -> None:
+    lexicon = Lexicon(english={"zog": ("z", "aa", "g")}, mandarin={})
+    config = CorpusConfig(english_probability=0.5, min_tokens=3, max_tokens=3)
+    assert sample_tokens(np.random.default_rng(5), config, lexicon) == ("zog", "zog", "zog")
+
+
+def test_sampling_from_an_empty_lexicon_is_rejected() -> None:
+    lexicon = Lexicon(english={}, mandarin={})
+    with pytest.raises(ConfigError, match="holds no tokens"):
+        sample_tokens(np.random.default_rng(6), CorpusConfig(), lexicon)
+
+
+def test_zero_weight_for_the_only_available_language_is_rejected() -> None:
+    # The lexicon has only English words, but the config asks for English with
+    # probability zero, so there is no language left to draw from.
+    lexicon = Lexicon(english={"zog": ("z",)}, mandarin={})
+    config = CorpusConfig(english_probability=0.0, min_tokens=1, max_tokens=1)
+    with pytest.raises(ConfigError, match="leave nothing to sample"):
+        sample_tokens(np.random.default_rng(7), config, lexicon)
