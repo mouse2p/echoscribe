@@ -16,9 +16,11 @@ from __future__ import annotations
 from collections.abc import Sequence
 from dataclasses import dataclass
 
+import numpy as np
+
 from echoscribe.errors import ConfigError, require, require_range
 from echoscribe.seeds import DEFAULT_ROOT, Seed
-from echoscribe.synth.lexicon import LANGUAGES
+from echoscribe.synth.lexicon import LANGUAGES, Lexicon
 
 
 @dataclass(frozen=True)
@@ -118,3 +120,35 @@ class Utterance:
         """How many of this utterance's tokens are in ``language``."""
         require(language in LANGUAGES, f"unknown language {language!r}", ConfigError)
         return sum(1 for label in self.languages if label == language)
+
+
+def sample_tokens(
+    rng: np.random.Generator,
+    config: CorpusConfig,
+    lexicon: Lexicon | None = None,
+) -> tuple[str, ...]:
+    """Draw one utterance's token list.
+
+    Each token's language is drawn from a Bernoulli with ``english_probability``,
+    then a token is picked uniformly from that language's vocabulary.  A language
+    whose vocabulary is empty is dropped from the draw rather than raising, so a
+    caller can generate an English-only corpus from a lexicon that has no
+    characters in it.
+    """
+    table = Lexicon() if lexicon is None else lexicon
+    pools = {"en": list(table.english), "zh": list(table.mandarin)}
+    available = [language for language in LANGUAGES if pools[language]]
+    require(bool(available), "the lexicon holds no tokens to sample from", ConfigError)
+    weights = [
+        config.english_probability if language == "en" else 1.0 - config.english_probability
+        for language in available
+    ]
+    total = sum(weights)
+    require(total > 0.0, "the language probabilities leave nothing to sample", ConfigError)
+    probabilities = [weight / total for weight in weights]
+    count = int(rng.integers(config.min_tokens, config.max_tokens + 1))
+    choices = rng.choice(len(available), size=count, p=probabilities)
+    return tuple(
+        pools[available[int(index)]][int(rng.integers(len(pools[available[int(index)]])))]
+        for index in choices
+    )
