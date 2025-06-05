@@ -13,13 +13,13 @@ the utterance count does not reshuffle the ones before it.
 
 from __future__ import annotations
 
-from collections.abc import Sequence
+from collections.abc import Iterator, Sequence
 from dataclasses import dataclass
 
 import numpy as np
 
 from echoscribe.errors import ConfigError, require, require_range
-from echoscribe.seeds import DEFAULT_ROOT, Seed
+from echoscribe.seeds import DEFAULT_ROOT, Seed, new_rng
 from echoscribe.synth.lexicon import LANGUAGES, Lexicon
 
 
@@ -152,3 +152,61 @@ def sample_tokens(
         pools[available[int(index)]][int(rng.integers(len(pools[available[int(index)]])))]
         for index in choices
     )
+
+
+@dataclass(frozen=True)
+class Corpus:
+    """A generated corpus and the configuration that produced it."""
+
+    utterances: tuple[Utterance, ...]
+    config: CorpusConfig
+
+    def __len__(self) -> int:
+        return len(self.utterances)
+
+    def __iter__(self) -> Iterator[Utterance]:
+        return iter(self.utterances)
+
+    def transcript(self) -> str:
+        """Every transcript, one per line, in corpus order."""
+        return "\n".join(utterance.text for utterance in self.utterances)
+
+    def language_mix(self) -> dict[str, int]:
+        """Token counts per language across the whole corpus."""
+        counts = dict.fromkeys(LANGUAGES, 0)
+        for utterance in self.utterances:
+            for language in utterance.languages:
+                counts[language] += 1
+        return counts
+
+    def code_switched_share(self) -> float:
+        """Fraction of utterances that switch script at least once."""
+        if not self.utterances:
+            return 0.0
+        switched = sum(1 for utterance in self.utterances if utterance.is_code_switched)
+        return switched / len(self.utterances)
+
+
+def generate_corpus(config: CorpusConfig, lexicon: Lexicon | None = None) -> Corpus:
+    """Generate ``config.utterances`` utterances from ``config.seed``.
+
+    Each utterance forks its own seed from the corpus seed, so appending utterances
+    to a corpus leaves the ones already generated untouched -- which matters when a
+    feature or model test caches results against an utterance id.
+    """
+    table = Lexicon() if lexicon is None else lexicon
+    utterances = []
+    for index in range(config.utterances):
+        seed = config.seed.fork("utterance", index)
+        tokens = sample_tokens(new_rng(seed), config, table)
+        languages = tuple(table.classify(token) for token in tokens)
+        utterances.append(
+            Utterance(
+                utterance_id=f"utt-{index:05d}",
+                tokens=tokens,
+                languages=languages,
+                text=surface_text(tokens, languages),
+                seed=seed,
+            )
+        )
+    return Corpus(tuple(utterances), config)
