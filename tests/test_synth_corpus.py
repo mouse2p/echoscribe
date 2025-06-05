@@ -8,8 +8,10 @@ import pytest
 from echoscribe.errors import ConfigError
 from echoscribe.seeds import DEFAULT_ROOT, Seed
 from echoscribe.synth.corpus import (
+    Corpus,
     CorpusConfig,
     Utterance,
+    generate_corpus,
     sample_tokens,
     surface_text,
 )
@@ -206,3 +208,67 @@ def test_zero_weight_for_the_only_available_language_is_rejected() -> None:
     config = CorpusConfig(english_probability=0.0, min_tokens=1, max_tokens=1)
     with pytest.raises(ConfigError, match="leave nothing to sample"):
         sample_tokens(np.random.default_rng(7), config, lexicon)
+
+
+def test_generation_is_reproducible_from_the_seed() -> None:
+    config = CorpusConfig(utterances=12)
+    left = generate_corpus(config)
+    right = generate_corpus(config)
+    assert [u.tokens for u in left] == [u.tokens for u in right]
+    assert left.transcript() == right.transcript()
+
+
+def test_a_different_seed_gives_a_different_corpus() -> None:
+    left = generate_corpus(CorpusConfig(utterances=12, seed=Seed(1, "a")))
+    right = generate_corpus(CorpusConfig(utterances=12, seed=Seed(2, "a")))
+    assert left.transcript() != right.transcript()
+
+
+def test_ids_are_sequential_and_unique() -> None:
+    corpus = generate_corpus(CorpusConfig(utterances=7))
+    ids = [utterance.utterance_id for utterance in corpus]
+    assert ids == [f"utt-{index:05d}" for index in range(7)]
+
+
+def test_extending_the_corpus_leaves_earlier_utterances_alone() -> None:
+    short = generate_corpus(CorpusConfig(utterances=5))
+    long = generate_corpus(CorpusConfig(utterances=20))
+    assert [u.tokens for u in short] == [u.tokens for u in long][:5]
+
+
+def test_every_transcript_is_recoverable_from_its_tokens() -> None:
+    for utterance in generate_corpus(CorpusConfig(utterances=16)):
+        assert utterance.text == surface_text(utterance.tokens, utterance.languages)
+
+
+def test_a_balanced_corpus_produces_both_languages_and_some_switches() -> None:
+    corpus = generate_corpus(CorpusConfig(utterances=40, min_tokens=4, max_tokens=8))
+    mix = corpus.language_mix()
+    assert mix["en"] > 0
+    assert mix["zh"] > 0
+    assert corpus.code_switched_share() > 0.5
+
+
+def test_an_english_only_corpus_has_no_switches() -> None:
+    corpus = generate_corpus(CorpusConfig(utterances=10, english_probability=1.0))
+    assert corpus.language_mix()["zh"] == 0
+    assert corpus.code_switched_share() == 0.0
+
+
+def test_corpus_length_and_iteration_agree() -> None:
+    corpus = generate_corpus(CorpusConfig(utterances=9))
+    assert len(corpus) == 9
+    assert len(list(iter(corpus))) == 9
+    assert isinstance(corpus, Corpus)
+
+
+def test_the_transcript_has_one_line_per_utterance() -> None:
+    corpus = generate_corpus(CorpusConfig(utterances=6))
+    assert len(corpus.transcript().splitlines()) == 6
+
+
+def test_every_utterance_carries_its_own_seed() -> None:
+    corpus = generate_corpus(CorpusConfig(utterances=4))
+    seeds = {utterance.seed.value for utterance in corpus}
+    assert len(seeds) == 4
+    assert all(utterance.seed.label.startswith("echoscribe/") for utterance in corpus)
