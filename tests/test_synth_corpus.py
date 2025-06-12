@@ -8,11 +8,13 @@ import pytest
 from echoscribe.errors import ConfigError
 from echoscribe.seeds import DEFAULT_ROOT, Seed
 from echoscribe.synth.corpus import (
+    DEFAULT_SPLIT_NAMES,
     Corpus,
     CorpusConfig,
     Utterance,
     generate_corpus,
     sample_tokens,
+    split_corpus,
     surface_text,
 )
 from echoscribe.synth.lexicon import ENGLISH_SPELLINGS, MANDARIN_SYLLABLES, Lexicon
@@ -272,3 +274,78 @@ def test_every_utterance_carries_its_own_seed() -> None:
     seeds = {utterance.seed.value for utterance in corpus}
     assert len(seeds) == 4
     assert all(utterance.seed.label.startswith("echoscribe/") for utterance in corpus)
+
+
+def test_a_split_is_disjoint_and_complete() -> None:
+    corpus = generate_corpus(CorpusConfig(utterances=40))
+    parts = split_corpus(corpus)
+    seen = [utterance.utterance_id for part in parts.values() for utterance in part]
+    assert len(seen) == 40
+    assert len(set(seen)) == 40
+    assert set(seen) == {utterance.utterance_id for utterance in corpus}
+
+
+def test_a_split_is_reproducible() -> None:
+    config = CorpusConfig(utterances=30)
+    left = split_corpus(generate_corpus(config))
+    right = split_corpus(generate_corpus(config))
+    assert {name: part.transcript() for name, part in left.items()} == {
+        name: part.transcript() for name, part in right.items()
+    }
+
+
+def test_split_sizes_follow_the_ratios() -> None:
+    corpus = generate_corpus(CorpusConfig(utterances=100))
+    parts = split_corpus(corpus, (0.7, 0.15, 0.15))
+    assert [len(parts[name]) for name in ("train", "dev", "test")] == [70, 15, 15]
+
+
+def test_ratios_are_normalised() -> None:
+    corpus = generate_corpus(CorpusConfig(utterances=20))
+    parts = split_corpus(corpus, (2.0, 2.0), names=("left", "right"))
+    assert len(parts["left"]) == len(parts["right"]) == 10
+
+
+def test_the_default_split_names_are_train_dev_test() -> None:
+    assert DEFAULT_SPLIT_NAMES == ("train", "dev", "test")
+
+
+def test_a_remainder_is_distributed_without_losing_utterances() -> None:
+    corpus = generate_corpus(CorpusConfig(utterances=10))
+    parts = split_corpus(corpus, (1.0, 1.0, 1.0))
+    assert sum(len(part) for part in parts.values()) == 10
+
+
+def test_custom_names_are_honoured() -> None:
+    corpus = generate_corpus(CorpusConfig(utterances=10))
+    parts = split_corpus(corpus, (0.5, 0.5), names=("a", "b"))
+    assert set(parts) == {"a", "b"}
+
+
+def test_a_two_way_split_leaves_the_test_partition_empty_when_asked() -> None:
+    corpus = generate_corpus(CorpusConfig(utterances=10))
+    parts = split_corpus(corpus, (1.0, 0.0), names=("all", "none"))
+    assert len(parts["all"]) == 10
+    assert len(parts["none"]) == 0
+
+
+@pytest.mark.parametrize(
+    ("ratios", "names"),
+    [
+        ((0.5, 0.5), ("a",)),
+        ((0.5,), ("a", "b")),
+        ((), ()),
+        ((-0.5, 1.5), ("a", "b")),
+        ((0.0, 0.0), ("a", "b")),
+    ],
+)
+def test_bad_split_arguments_are_rejected(ratios, names) -> None:
+    corpus = generate_corpus(CorpusConfig(utterances=6))
+    with pytest.raises(ConfigError):
+        split_corpus(corpus, ratios, names)
+
+
+def test_splitting_needs_at_least_one_utterance_per_partition() -> None:
+    corpus = generate_corpus(CorpusConfig(utterances=2))
+    with pytest.raises(ConfigError, match="cannot split 2 utterances into 3"):
+        split_corpus(corpus)
