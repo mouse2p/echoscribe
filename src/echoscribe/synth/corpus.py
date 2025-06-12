@@ -210,3 +210,61 @@ def generate_corpus(config: CorpusConfig, lexicon: Lexicon | None = None) -> Cor
             )
         )
     return Corpus(tuple(utterances), config)
+
+
+DEFAULT_SPLIT_NAMES = ("train", "dev", "test")
+
+
+def split_corpus(
+    corpus: Corpus,
+    ratios: Sequence[float] = (0.7, 0.15, 0.15),
+    names: Sequence[str] = DEFAULT_SPLIT_NAMES,
+) -> dict[str, Corpus]:
+    """Partition a corpus by a seeded shuffle, then contiguous slices.
+
+    The shuffle is seeded from the corpus seed rather than from the caller's RNG so
+    that the same corpus always splits the same way -- a decoder tuned on one run
+    of the dev split has to see the same dev split next time.  Ratios are
+    normalised, and each non-empty partition gets at least one utterance.
+    """
+    require(
+        len(ratios) == len(names),
+        f"{len(ratios)} ratios cannot name {len(names)} splits",
+        ConfigError,
+    )
+    require(len(ratios) > 0, "a split needs at least one partition", ConfigError)
+    require(
+        all(ratio >= 0.0 for ratio in ratios),
+        f"split ratios must not be negative, got {tuple(ratios)}",
+        ConfigError,
+    )
+    total = float(sum(ratios))
+    require(total > 0.0, "split ratios must sum to something positive", ConfigError)
+    require(
+        len(corpus) >= len(ratios),
+        f"cannot split {len(corpus)} utterances into {len(ratios)} partitions",
+        ConfigError,
+    )
+    order = np.argsort(new_rng(corpus.config.seed.fork("split")).random(len(corpus)))
+    shuffled = [corpus.utterances[int(index)] for index in order]
+    counts = _allocate(len(shuffled), [ratio / total for ratio in ratios])
+    partitions: dict[str, Corpus] = {}
+    cursor = 0
+    for name, count in zip(names, counts, strict=True):
+        partitions[name] = Corpus(tuple(shuffled[cursor : cursor + count]), corpus.config)
+        cursor += count
+    return partitions
+
+
+def _allocate(total: int, shares: Sequence[float]) -> list[int]:
+    """Turn normalised shares into counts that add up to ``total`` exactly.
+
+    Largest-remainder rounding, so no utterance is lost or duplicated by the split.
+    """
+    exact = [total * share for share in shares]
+    floors = [int(value) for value in exact]
+    remainder = total - sum(floors)
+    order = sorted(range(len(exact)), key=lambda index: exact[index] - floors[index], reverse=True)
+    for index in order[:remainder]:
+        floors[index] += 1
+    return floors
