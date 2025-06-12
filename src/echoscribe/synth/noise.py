@@ -29,6 +29,10 @@ import numpy as np
 
 from echoscribe.errors import ConfigError, require
 from echoscribe.types import FEATURE_DTYPE, FloatArray
+from echoscribe.waveform import Audio
+
+#: Sample rate the generators assume when none is given.
+RATE_DEFAULT = 16000
 
 #: Background noise kinds the laboratory can generate.
 NOISE_KINDS = ("white", "pink", "modulated")
@@ -73,3 +77,50 @@ def _peak_normalise(values: np.ndarray) -> FloatArray:
     """Scale so the largest absolute sample is exactly one."""
     peak = float(np.max(np.abs(values)))
     return values / peak if peak > 1e-12 else np.asarray(values, dtype=FEATURE_DTYPE)
+
+
+def signal_to_noise_db(clean: np.ndarray, noisy: np.ndarray) -> float:
+    """Measured SNR in dB between a clean signal and its noisy version.
+
+    The noise is taken as the *difference*, not as a separately recorded track, so
+    this also measures whatever a denoiser left behind.  A difference of exactly
+    zero returns ``inf`` rather than dividing by zero.
+    """
+    reference = np.asarray(clean, dtype=FEATURE_DTYPE)
+    measured = np.asarray(noisy, dtype=FEATURE_DTYPE)
+    require(
+        reference.shape == measured.shape,
+        f"cannot compare shapes {reference.shape} and {measured.shape}",
+        ConfigError,
+    )
+    require(reference.size > 0, "SNR of an empty signal is undefined", ConfigError)
+    signal_power = float(np.mean(reference**2))
+    noise_power = float(np.mean((measured - reference) ** 2))
+    if noise_power <= 1e-24:
+        return float("inf")
+    if signal_power <= 1e-24:
+        return float("-inf")
+    return 10.0 * float(np.log10(signal_power / noise_power))
+
+
+def mix_at_snr(
+    clean: Audio, noise: np.ndarray, snr_db: float, rng: np.random.Generator | None = None
+) -> Audio:
+    """Return ``clean`` with ``noise`` added at the requested SNR in dB.
+
+    The noise is rescaled, never the signal, so the clean part keeps its original
+    level and a measured SNR on the result matches the request.  Noise shorter than
+    the signal is tiled; longer noise is truncated.  ``rng`` is unused by the mix
+    itself and exists so a caller can thread one generator through a whole corpus.
+    """
+    require(clean.num_frames > 0, "cannot add noise to an empty signal", ConfigError)
+    track = np.asarray(noise, dtype=FEATURE_DTYPE)
+    require(track.size > 0, "cannot mix with an empty noise track", ConfigError)
+    repeats = -(-clean.num_frames // track.size)
+    tiled = np.tile(track, repeats)[: clean.num_frames]
+    signal_power = float(np.mean(clean.samples.astype(FEATURE_DTYPE) ** 2))
+    noise_power = float(np.mean(tiled**2))
+    require(noise_power > 1e-24, "the noise track is silent, so any SNR is infinite", ConfigError)
+    target = signal_power / (noise_power * 10.0 ** (snr_db / 10.0))
+    mixed = clean.samples.astype(FEATURE_DTYPE) + tiled * float(np.sqrt(target))
+    return Audio(mixed.astype(np.float32), clean.sample_rate)
