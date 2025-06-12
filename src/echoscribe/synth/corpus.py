@@ -9,6 +9,13 @@ Generation is driven entirely by :class:`~echoscribe.seeds.Seed` derivation, so 
 corpus is identified by one integer.  Two runs with the same seed produce the same
 token lists in the same order, and per-utterance seeds are forked so that changing
 the utterance count does not reshuffle the ones before it.
+
+The transcripts are *planted*: the audio is rendered from the token list, so the
+list is ground truth by construction rather than by annotation.  That makes the
+data ideal for checking a pipeline -- a mismatch can only come from the feature
+stage, the decoder, the latency budget or the scorer -- and it makes the data
+useless for claiming anything about real speech, where the transcript is itself an
+estimate.
 """
 
 from __future__ import annotations
