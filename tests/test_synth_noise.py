@@ -8,7 +8,10 @@ import pytest
 from echoscribe.errors import ConfigError
 from echoscribe.synth.noise import (
     NOISE_KINDS,
+    generate_noise,
     mix_at_snr,
+    modulated_noise,
+    moving_average,
     pink_noise,
     signal_to_noise_db,
     white_noise,
@@ -154,3 +157,83 @@ def test_a_higher_snr_leaves_the_signal_cleaner() -> None:
     assert np.max(np.abs(quiet.samples - clean.samples)) < np.max(
         np.abs(loud.samples - clean.samples)
     )
+
+
+def test_a_moving_average_of_a_constant_is_that_constant() -> None:
+    assert np.allclose(moving_average(np.full(64, 2.5), 8), 2.5)
+
+
+def test_a_moving_average_preserves_the_length() -> None:
+    values = np.arange(50, dtype=np.float64)
+    assert moving_average(values, 7).shape == (50,)
+
+
+def test_a_moving_average_smooths_a_spike() -> None:
+    values = np.zeros(64)
+    values[32] = 64.0
+    smoothed = moving_average(values, 8)
+    assert float(smoothed.max()) == pytest.approx(8.0)
+    assert float(smoothed.sum()) == pytest.approx(64.0, rel=1e-9)
+
+
+def test_a_moving_average_rejects_bad_arguments() -> None:
+    with pytest.raises(ConfigError, match="width must be positive"):
+        moving_average(np.zeros(8), 0)
+    with pytest.raises(ConfigError, match="needs 1-D input"):
+        moving_average(np.zeros((4, 2)), 2)
+
+
+def _block_rms(noise: np.ndarray, width: int = 160) -> np.ndarray:
+    blocks = noise[: len(noise) // width * width].reshape(-1, width)
+    return np.sqrt(np.mean(blocks**2, axis=1))
+
+
+def test_modulated_noise_fluctuates_more_than_white_noise() -> None:
+    seconds = 2.0
+    white = _block_rms(white_noise(int(RATE * seconds), np.random.default_rng(9)))
+    modulated = _block_rms(modulated_noise(int(RATE * seconds), np.random.default_rng(9)))
+    # White noise is stationary, so its 10 ms block levels all look alike; the
+    # envelope is what an energy endpointer mistakes for speech coming and going.
+    assert float(np.std(white)) < 0.05
+    assert float(np.std(modulated)) > 3.0 * float(np.std(white))
+
+
+def test_modulated_noise_has_a_wider_energy_dynamic_range() -> None:
+    def spread(rms: np.ndarray) -> float:
+        return float(np.percentile(rms, 90) / np.percentile(rms, 10))
+
+    seconds = 4.0
+    white = spread(_block_rms(white_noise(int(RATE * seconds), np.random.default_rng(15))))
+    modulated = spread(_block_rms(modulated_noise(int(RATE * seconds), np.random.default_rng(15))))
+    assert white == pytest.approx(1.0, abs=0.25)
+    assert modulated > 1.5 * white
+
+
+def test_modulated_noise_is_peak_normalised() -> None:
+    noise = modulated_noise(4096, np.random.default_rng(10))
+    assert float(np.max(np.abs(noise))) == pytest.approx(1.0)
+
+
+def test_modulated_noise_keeps_a_flat_carrier_spectrum() -> None:
+    noise = modulated_noise(RATE, np.random.default_rng(11))
+    power = np.abs(np.fft.rfft(noise)) ** 2
+    low = float(power[200:400].mean())
+    high = float(power[2000:4000].mean())
+    # The envelope is slow, so it adds energy near DC but leaves the carrier flat.
+    assert 0.2 < low / high < 5.0
+
+
+def test_generate_noise_dispatches_on_the_kind() -> None:
+    for kind in NOISE_KINDS:
+        noise = generate_noise(kind, 512, np.random.default_rng(12))
+        assert noise.shape == (512,)
+        assert np.all(np.isfinite(noise))
+
+
+def test_generate_noise_rejects_an_unknown_kind() -> None:
+    with pytest.raises(ConfigError, match="kind must be one of"):
+        generate_noise("babble", 128, np.random.default_rng(13))
+
+
+def test_modulated_noise_of_zero_samples_is_empty() -> None:
+    assert modulated_noise(0, np.random.default_rng(14)).shape == (0,)
