@@ -6,12 +6,14 @@ import hashlib
 
 import pytest
 
-from echoscribe.errors import CorpusError
+from echoscribe.errors import CorpusError, SchemaError
 from echoscribe.synth.manifest import (
     REQUIRED_FIELDS,
     ManifestRecord,
     checksum_of_bytes,
     checksum_of_file,
+    record_from_dict,
+    record_to_dict,
 )
 
 
@@ -90,3 +92,46 @@ def test_a_record_is_immutable() -> None:
     record = _record()
     with pytest.raises(AttributeError):
         record.duration = 2.0  # type: ignore[misc]
+
+
+def test_serialization_round_trips() -> None:
+    record = _record()
+    assert record_from_dict(record_to_dict(record)) == record
+
+
+def test_a_serialized_record_names_its_schema() -> None:
+    payload = record_to_dict(_record())
+    assert payload["schema"] == 1
+    assert set(payload) == set(REQUIRED_FIELDS)
+
+
+def test_a_serialized_record_is_json_encodable() -> None:
+    import json
+
+    text = json.dumps(record_to_dict(_record()), ensure_ascii=False)
+    assert "你好" in text
+
+
+def test_a_foreign_schema_version_is_refused() -> None:
+    payload = record_to_dict(_record())
+    payload["schema"] = 99
+    with pytest.raises(SchemaError, match="is not supported"):
+        record_from_dict(payload)
+
+
+def test_a_missing_field_is_reported_by_name() -> None:
+    payload = record_to_dict(_record())
+    del payload["checksum"]
+    with pytest.raises(SchemaError, match=r"missing \['checksum'\]"):
+        record_from_dict(payload)
+
+
+def test_a_list_field_comes_back_as_a_tuple() -> None:
+    restored = record_from_dict(record_to_dict(_record()))
+    assert isinstance(restored.tokens, tuple)
+    assert isinstance(restored.languages, tuple)
+
+
+def test_the_duration_is_rounded_where_it_is_produced() -> None:
+    record = _record(duration=1.0 / 3.0)
+    assert record_to_dict(record)["duration"] == 0.333333333

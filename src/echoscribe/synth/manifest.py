@@ -21,10 +21,10 @@ corpus can be appended to without rewriting what is already there.
 from __future__ import annotations
 
 import hashlib
-from dataclasses import dataclass
+from dataclasses import asdict, dataclass
 from pathlib import Path
 
-from echoscribe.errors import CorpusError, require
+from echoscribe.errors import CorpusError, SchemaError, require
 
 #: Bumped whenever the shape of a manifest line changes.
 MANIFEST_SCHEMA_VERSION = 1
@@ -100,3 +100,37 @@ def checksum_of_file(path: str | Path) -> str:
         for block in iter(lambda: handle.read(1 << 20), b""):
             digest.update(block)
     return digest.hexdigest()
+
+
+def record_to_dict(record: ManifestRecord) -> dict:
+    """Render a record as a JSON-ready mapping, tagged with the schema version."""
+    payload = asdict(record)
+    payload["tokens"] = list(record.tokens)
+    payload["languages"] = list(record.languages)
+    payload["duration"] = round(float(record.duration), 9)
+    return {"schema": MANIFEST_SCHEMA_VERSION, **payload}
+
+
+def record_from_dict(payload: dict) -> ManifestRecord:
+    """Rebuild a record, refusing a schema this build does not read."""
+    version = payload.get("schema")
+    require(
+        version == MANIFEST_SCHEMA_VERSION,
+        f"manifest schema {version!r} is not supported; this build reads {MANIFEST_SCHEMA_VERSION}",
+        SchemaError,
+    )
+    missing = [name for name in REQUIRED_FIELDS if name not in payload]
+    require(not missing, f"manifest line is missing {missing}", SchemaError)
+    return ManifestRecord(
+        utterance_id=str(payload["utterance_id"]),
+        text=str(payload["text"]),
+        tokens=tuple(payload["tokens"]),
+        languages=tuple(payload["languages"]),
+        wav_path=str(payload["wav_path"]),
+        sample_rate=int(payload["sample_rate"]),
+        num_samples=int(payload["num_samples"]),
+        duration=float(payload["duration"]),
+        seed=int(payload["seed"]),
+        checksum=str(payload["checksum"]),
+        condition=dict(payload["condition"]),
+    )
