@@ -23,8 +23,9 @@ from dataclasses import dataclass
 import numpy as np
 
 from echoscribe.errors import ConfigError, require, require_positive
-from echoscribe.seeds import DEFAULT_ROOT, Seed
+from echoscribe.seeds import DEFAULT_ROOT, Seed, new_rng
 from echoscribe.types import FEATURE_DTYPE, FloatArray
+from echoscribe.waveform import Audio
 
 #: ``ln(1000)``: the decay constant that makes an envelope reach -60 dB at RT60.
 RT60_DECAY_CONSTANT = math.log(1000.0)
@@ -68,3 +69,67 @@ def require_non_negative_samples(num_samples: int) -> None:
         f"num_samples must be a non-negative integer, got {num_samples!r}",
         ConfigError,
     )
+
+
+def impulse_response(
+    config: RoomConfig, sample_rate: int, num_samples: int | None = None
+) -> FloatArray:
+    """Render the room's impulse response: direct path, early reflections, tail.
+
+    The response starts with the direct path at ``config.direct_gain`` so that
+    convolution does not delay the signal, and its length defaults to slightly more
+    than one RT60 -- past that point the tail is below -60 dB and contributes
+    nothing but cost.
+    """
+    require_positive("sample_rate", sample_rate, ConfigError)
+    length = num_samples
+    if length is None:
+        length = int(math.ceil(config.rt60_ms / 1000.0 * sample_rate * 1.2)) + 1
+    require_non_negative_samples(length)
+    if length == 0:
+        return np.zeros(0, dtype=FEATURE_DTYPE)
+    response = np.zeros(max(length, 1), dtype=FEATURE_DTYPE)
+    response[0] = config.direct_gain
+    rng = new_rng(config.seed.fork("room"))
+    if config.early_reflections:
+        # Reflections land between 3 and 25 ms, each weaker than the last, which
+        # is the shape a small room produces before the diffuse tail takes over.
+        earliest = max(1, int(0.003 * sample_rate))
+        latest = max(earliest + 1, int(0.025 * sample_rate))
+        starts = rng.integers(earliest, latest, size=config.early_reflections)
+        for index, delay in enumerate(sorted(int(value) for value in starts)):
+            position = min(delay, length - 1)
+            response[position] += config.direct_gain * 0.5 ** (index + 1)
+    tail = rng.standard_normal(length) * decay_envelope(config.rt60_ms, sample_rate, length)
+    return response + tail * config.tail_gain
+
+
+def fft_convolve(signal: np.ndarray, kernel: np.ndarray) -> FloatArray:
+    """Full linear convolution through the frequency domain.
+
+    Zero-padded to the next power of two at least ``len(signal) + len(kernel) - 1``
+    so the circular convolution the FFT computes is indistinguishable from the
+    linear one.  For a 4000-tap room response this is orders of magnitude faster
+    than ``numpy.convolve`` and, unlike an overlap-add implementation, has no block
+    boundaries to get wrong.
+    """
+    x = np.asarray(signal, dtype=FEATURE_DTYPE)
+    h = np.asarray(kernel, dtype=FEATURE_DTYPE)
+    require(x.ndim == 1 and h.ndim == 1, "fft_convolve needs two 1-D inputs", ConfigError)
+    if x.size == 0 or h.size == 0:
+        return np.zeros(0, dtype=FEATURE_DTYPE)
+    length = x.size + h.size - 1
+    size = 1 << max(1, (length - 1).bit_length())
+    return np.fft.irfft(np.fft.rfft(x, size) * np.fft.rfft(h, size), n=size)[:length]
+
+
+def apply_room(audio: Audio, config: RoomConfig) -> Audio:
+    """Return ``audio`` convolved with the room's impulse response.
+
+    The result is longer than the input by ``len(response) - 1`` samples, which is
+    what a linear convolution has to be: the reverb tail outlives the utterance.
+    """
+    require(audio.num_frames > 0, "cannot reverberate an empty waveform", ConfigError)
+    response = impulse_response(config, audio.sample_rate)
+    reverberant = fft_convolve(audio.samples.astype(FEATURE_DTYPE), response)
+    return Audio(reverberant.astype(np.float32), audio.sample_rate)
