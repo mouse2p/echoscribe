@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import hashlib
+import json
 
 import pytest
 
@@ -13,8 +14,11 @@ from echoscribe.synth.manifest import (
     ManifestRecord,
     checksum_of_bytes,
     checksum_of_file,
+    manifest_digest,
+    read_manifest,
     record_from_dict,
     record_to_dict,
+    write_manifest,
 )
 
 
@@ -147,3 +151,79 @@ def test_serialization_does_not_mutate_the_record() -> None:
     before = record_to_dict(record)
     record_to_dict(record)
     assert record_to_dict(record) == before
+
+
+def test_a_manifest_round_trips(tmp_path) -> None:
+    target = tmp_path / "corpus" / "manifest.jsonl"
+    records = [
+        _record(utterance_id="utt-00000", checksum=hashlib.sha256(b"a").hexdigest()),
+        _record(utterance_id="utt-00001", checksum=hashlib.sha256(b"b").hexdigest()),
+    ]
+    digest = write_manifest(target, records)
+    assert read_manifest(target) == records
+    assert digest == manifest_digest(records)
+
+
+def test_a_manifest_has_one_line_per_record(tmp_path) -> None:
+    target = tmp_path / "manifest.jsonl"
+    write_manifest(target, [_record(utterance_id=f"utt-{index:05d}") for index in range(5)])
+    assert len(target.read_text(encoding="utf-8").splitlines()) == 5
+
+
+def test_a_manifest_keeps_non_ascii_transcripts(tmp_path) -> None:
+    target = tmp_path / "manifest.jsonl"
+    write_manifest(target, [_record(text="你好 world")])
+    assert "你好 world" in target.read_text(encoding="utf-8")
+    assert read_manifest(target)[0].text == "你好 world"
+
+
+def test_the_digest_changes_when_a_checksum_changes() -> None:
+    left = [_record(checksum=hashlib.sha256(b"a").hexdigest())]
+    right = [_record(checksum=hashlib.sha256(b"b").hexdigest())]
+    assert manifest_digest(left) != manifest_digest(right)
+
+
+def test_the_digest_depends_on_the_order() -> None:
+    first = _record(utterance_id="utt-00000", checksum=hashlib.sha256(b"a").hexdigest())
+    second = _record(utterance_id="utt-00001", checksum=hashlib.sha256(b"b").hexdigest())
+    assert manifest_digest([first, second]) != manifest_digest([second, first])
+
+
+def test_the_digest_ignores_the_condition_metadata() -> None:
+    left = [_record(condition={"noise_kind": None})]
+    right = [_record(condition={"noise_kind": "white", "noise_snr_db": 10.0})]
+    assert manifest_digest(left) == manifest_digest(right)
+
+
+def test_writing_an_empty_manifest_is_refused(tmp_path) -> None:
+    with pytest.raises(CorpusError, match="refusing to write an empty manifest"):
+        write_manifest(tmp_path / "m.jsonl", [])
+
+
+def test_reading_a_missing_manifest_is_refused(tmp_path) -> None:
+    with pytest.raises(CorpusError, match="manifest not found"):
+        read_manifest(tmp_path / "absent.jsonl")
+
+
+def test_a_broken_line_is_reported_with_its_number(tmp_path) -> None:
+    target = tmp_path / "manifest.jsonl"
+    write_manifest(target, [_record()])
+    target.write_text(target.read_text(encoding="utf-8") + "{not json}\n", encoding="utf-8")
+    with pytest.raises(CorpusError, match=":2: not valid JSON"):
+        read_manifest(target)
+
+
+def test_a_foreign_schema_line_is_reported_with_its_number(tmp_path) -> None:
+    target = tmp_path / "manifest.jsonl"
+    payload = record_to_dict(_record())
+    payload["schema"] = 7
+    target.write_text(json.dumps(payload) + "\n", encoding="utf-8")
+    with pytest.raises(CorpusError, match=":1: manifest schema 7"):
+        read_manifest(target)
+
+
+def test_a_manifest_of_only_blank_lines_is_refused(tmp_path) -> None:
+    target = tmp_path / "manifest.jsonl"
+    target.write_text("\n\n", encoding="utf-8")
+    with pytest.raises(CorpusError, match="holds no records"):
+        read_manifest(target)
