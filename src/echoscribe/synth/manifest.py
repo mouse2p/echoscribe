@@ -21,6 +21,8 @@ corpus can be appended to without rewriting what is already there.
 from __future__ import annotations
 
 import hashlib
+import json
+from collections.abc import Sequence
 from dataclasses import asdict, dataclass
 from pathlib import Path
 
@@ -134,3 +136,59 @@ def record_from_dict(payload: dict) -> ManifestRecord:
         checksum=str(payload["checksum"]),
         condition=dict(payload["condition"]),
     )
+
+
+def write_manifest(path: str | Path, records: Sequence[ManifestRecord]) -> str:
+    """Write one JSON line per record and return the corpus digest.
+
+    The digest covers the ordered ``(utterance_id, checksum)`` pairs rather than the
+    file bytes, so reformatting a manifest -- different key order, different float
+    rendering -- does not change it, while replacing or reordering an utterance
+    does.
+    """
+    require(len(records) > 0, "refusing to write an empty manifest", CorpusError)
+    resolved = Path(path)
+    resolved.parent.mkdir(parents=True, exist_ok=True)
+    with resolved.open("w", encoding="utf-8") as handle:
+        for record in records:
+            handle.write(json.dumps(record_to_dict(record), ensure_ascii=False, sort_keys=True))
+            handle.write("\n")
+    return manifest_digest(records)
+
+
+def manifest_digest(records: Sequence[ManifestRecord]) -> str:
+    """A single hex digest identifying an ordered collection of records."""
+    digest = hashlib.sha256()
+    for record in records:
+        digest.update(record.utterance_id.encode("utf-8"))
+        digest.update(b"\x00")
+        digest.update(record.checksum.encode("utf-8"))
+        digest.update(b"\n")
+    return digest.hexdigest()
+
+
+def read_manifest(path: str | Path) -> list[ManifestRecord]:
+    """Read a manifest back, reporting the offending line number on any failure."""
+    resolved = Path(path)
+    require(resolved.is_file(), f"manifest not found: {resolved}", CorpusError)
+    records = []
+    with resolved.open("r", encoding="utf-8") as handle:
+        for number, line in enumerate(handle, start=1):
+            stripped = line.strip()
+            if not stripped:
+                continue
+            try:
+                payload = json.loads(stripped)
+            except json.JSONDecodeError as error:
+                raise CorpusError(f"{resolved}:{number}: not valid JSON ({error})") from error
+            require(
+                isinstance(payload, dict),
+                f"{resolved}:{number}: a manifest line must be a JSON object",
+                CorpusError,
+            )
+            try:
+                records.append(record_from_dict(payload))
+            except SchemaError as error:
+                raise CorpusError(f"{resolved}:{number}: {error}") from error
+    require(bool(records), f"{resolved}: the manifest holds no records", CorpusError)
+    return records
