@@ -86,3 +86,37 @@ def test_both_configs_are_frozen() -> None:
         RenderConfig().sample_rate = 8000  # type: ignore[misc]
     with pytest.raises(AttributeError):
         AcousticCondition().volume_db = 3.0  # type: ignore[misc]
+
+
+def test_a_condition_is_hashable_so_it_can_key_a_cache() -> None:
+    first = AcousticCondition(noise_kind="white", noise_snr_db=15.0)
+    second = AcousticCondition(noise_kind="white", noise_snr_db=15.0)
+    assert hash(first) == hash(second)
+    assert len({first, second}) == 1
+
+
+def test_the_dict_form_has_a_stable_key_order() -> None:
+    payload = AcousticCondition(noise_kind="white").to_dict()
+    assert list(payload) == [
+        "noise_kind",
+        "noise_snr_db",
+        "rt60_ms",
+        "speed_factor",
+        "volume_db",
+    ]
+
+
+def test_a_render_config_carries_its_condition_through() -> None:
+    condition = AcousticCondition(rt60_ms=400.0)
+    assert RenderConfig(condition=condition).condition is condition
+
+
+def test_the_default_condition_is_shared_but_immutable() -> None:
+    assert RenderConfig().condition is RenderConfig().condition
+    assert RenderConfig().condition.to_dict() == AcousticCondition().to_dict()
+
+
+def test_a_condition_label_is_stable_for_the_same_settings() -> None:
+    left = AcousticCondition(noise_kind="white", noise_snr_db=20.0, rt60_ms=150.0)
+    right = AcousticCondition(noise_kind="white", noise_snr_db=20.0, rt60_ms=150.0)
+    assert left.label == right.label == "rt60-150ms+white-20dB"
