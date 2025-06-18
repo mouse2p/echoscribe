@@ -8,6 +8,7 @@ import pytest
 
 from echoscribe.errors import CorpusError, SchemaError
 from echoscribe.synth.manifest import (
+    MANIFEST_SCHEMA_VERSION,
     REQUIRED_FIELDS,
     ManifestRecord,
     checksum_of_bytes,
@@ -135,3 +136,14 @@ def test_a_list_field_comes_back_as_a_tuple() -> None:
 def test_the_duration_is_rounded_where_it_is_produced() -> None:
     record = _record(duration=1.0 / 3.0)
     assert record_to_dict(record)["duration"] == 0.333333333
+
+
+def test_the_schema_version_is_the_one_the_lines_carry() -> None:
+    assert MANIFEST_SCHEMA_VERSION == record_to_dict(_record())["schema"]
+
+
+def test_serialization_does_not_mutate_the_record() -> None:
+    record = _record()
+    before = record_to_dict(record)
+    record_to_dict(record)
+    assert record_to_dict(record) == before
