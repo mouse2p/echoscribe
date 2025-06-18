@@ -22,8 +22,15 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
+import numpy as np
+
 from echoscribe.errors import ConfigError, require, require_positive
+from echoscribe.seeds import Seed, new_rng
+from echoscribe.synth.formant import render_sequence
+from echoscribe.synth.lexicon import Lexicon
 from echoscribe.synth.noise import NOISE_KINDS
+from echoscribe.synth.tone import tone_by_index
+from echoscribe.waveform import Audio
 
 
 @dataclass(frozen=True)
@@ -126,3 +133,31 @@ class RenderConfig:
             f"condition must be an AcousticCondition, got {self.condition!r}",
             ConfigError,
         )
+
+
+def render_token(
+    token: str,
+    language: str,
+    seed: Seed,
+    config: RenderConfig,
+    lexicon: Lexicon | None = None,
+) -> Audio:
+    """Render one surface token -- an English word or one Chinese character.
+
+    A Chinese character is rendered under its lexical tone; an English word is
+    rendered at a flat ``base_f0``.  The turbulence generator is forked from the
+    token's own seed, so re-rendering one token does not disturb the noise in any
+    other.
+    """
+    table = Lexicon() if lexicon is None else lexicon
+    rng = new_rng(seed.fork("source"))
+    if language == "en":
+        phones = table.word_phones(token)
+        samples = render_sequence(phones, config.sample_rate, config.base_f0, None, rng)
+    else:
+        syllable = table.mandarin[token]
+        phones = table.syllable_phones(token)
+        samples = render_sequence(
+            phones, config.sample_rate, config.base_f0, tone_by_index(syllable.tone), rng
+        )
+    return Audio(samples.astype(np.float32), config.sample_rate)
