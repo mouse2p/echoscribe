@@ -192,3 +192,19 @@ def read_manifest(path: str | Path) -> list[ManifestRecord]:
                 raise CorpusError(f"{resolved}:{number}: {error}") from error
     require(bool(records), f"{resolved}: the manifest holds no records", CorpusError)
     return records
+
+
+def verify_manifest(root: str | Path, records: Sequence[ManifestRecord]) -> list[str]:
+    """Re-hash every referenced wav and return the ids that no longer match.
+
+    A missing file counts as a mismatch, and is reported under the same key as a
+    changed one: from a manifest's point of view both mean "this line does not
+    describe the audio on disk".
+    """
+    base = Path(root)
+    broken = []
+    for record in records:
+        path = base / record.wav_path
+        if not path.is_file() or checksum_of_file(path) != record.checksum:
+            broken.append(record.utterance_id)
+    return broken

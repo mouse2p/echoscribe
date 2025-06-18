@@ -18,6 +18,7 @@ from echoscribe.synth.manifest import (
     read_manifest,
     record_from_dict,
     record_to_dict,
+    verify_manifest,
     write_manifest,
 )
 
@@ -227,3 +228,34 @@ def test_a_manifest_of_only_blank_lines_is_refused(tmp_path) -> None:
     target.write_text("\n\n", encoding="utf-8")
     with pytest.raises(CorpusError, match="holds no records"):
         read_manifest(target)
+
+
+def test_verification_passes_for_untouched_audio(tmp_path) -> None:
+    audio = tmp_path / "wav" / "utt-00001.wav"
+    audio.parent.mkdir(parents=True)
+    audio.write_bytes(b"RIFF....")
+    record = _record(wav_path="wav/utt-00001.wav", checksum=checksum_of_file(audio))
+    assert verify_manifest(tmp_path, [record]) == []
+
+
+def test_verification_reports_a_changed_file(tmp_path) -> None:
+    audio = tmp_path / "a.wav"
+    audio.write_bytes(b"original")
+    record = _record(wav_path="a.wav", checksum=checksum_of_file(audio))
+    audio.write_bytes(b"re-rendered")
+    assert verify_manifest(tmp_path, [record]) == ["utt-00001"]
+
+
+def test_verification_reports_a_missing_file(tmp_path) -> None:
+    record = _record(wav_path="gone.wav", checksum=hashlib.sha256(b"x").hexdigest())
+    assert verify_manifest(tmp_path, [record]) == ["utt-00001"]
+
+
+def test_verification_checks_every_record(tmp_path) -> None:
+    good = tmp_path / "good.wav"
+    good.write_bytes(b"good")
+    records = [
+        _record(utterance_id="ok", wav_path="good.wav", checksum=checksum_of_file(good)),
+        _record(utterance_id="bad", wav_path="bad.wav", checksum="0" * 64),
+    ]
+    assert verify_manifest(tmp_path, records) == ["bad"]
