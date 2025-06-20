@@ -26,11 +26,12 @@ import numpy as np
 
 from echoscribe.errors import ConfigError, require, require_positive
 from echoscribe.seeds import Seed, new_rng
-from echoscribe.synth.formant import render_sequence
+from echoscribe.synth.corpus import Utterance
+from echoscribe.synth.formant import normalize_peak, render_sequence, samples_for_duration
 from echoscribe.synth.lexicon import Lexicon
 from echoscribe.synth.noise import NOISE_KINDS
 from echoscribe.synth.tone import tone_by_index
-from echoscribe.waveform import Audio
+from echoscribe.waveform import Audio, concatenate, silence
 
 
 @dataclass(frozen=True)
@@ -161,3 +162,52 @@ def render_token(
             phones, config.sample_rate, config.base_f0, tone_by_index(syllable.tone), rng
         )
     return Audio(samples.astype(np.float32), config.sample_rate)
+
+
+def render_utterance(
+    utterance: Utterance,
+    config: RenderConfig,
+    lexicon: Lexicon | None = None,
+) -> Audio:
+    """Render a whole utterance: leading silence, tokens, trailing silence.
+
+    Boundary silence is not cosmetic.  An endpointer needs quiet to detect the
+    start of speech, a feature pipeline needs a frame or two to warm up, and a
+    decoder needs trailing silence to emit its final hypothesis.  The lengths are
+    therefore part of the render configuration rather than something a caller has
+    to remember to pad.
+
+    The result is peak-normalised, so the degradation stage that follows always
+    starts from a known level.
+    """
+    rate = config.sample_rate
+    pieces = [silence(config.leading_silence_ms / 1000.0, rate)]
+    for index, (token, language) in enumerate(
+        zip(utterance.tokens, utterance.languages, strict=True)
+    ):
+        if index:
+            pieces.append(silence(config.boundary_silence_ms / 1000.0, rate))
+        pieces.append(
+            render_token(token, language, utterance.seed.fork("token", index), config, lexicon)
+        )
+    pieces.append(silence(config.trailing_silence_ms / 1000.0, rate))
+    joined = concatenate(pieces)
+    scaled = normalize_peak(joined.samples.astype(np.float64), config.peak_target)
+    return Audio(scaled.astype(np.float32), rate)
+
+
+def utterance_audio_length(utterance: Utterance, config: RenderConfig, lexicon: Lexicon) -> int:
+    """Predict an utterance's rendered length without rendering it.
+
+    Useful for a latency budget: a streaming test can size its chunk schedule from
+    the number alone.
+    """
+    rate = config.sample_rate
+    total = samples_for_duration(config.leading_silence_ms, rate)
+    total += samples_for_duration(config.trailing_silence_ms, rate)
+    for index, token in enumerate(utterance.tokens):
+        if index:
+            total += samples_for_duration(config.boundary_silence_ms, rate)
+        phones = lexicon.phones_for(token)
+        total += sum(samples_for_duration(phone.duration_ms, rate) for phone in phones)
+    return total
