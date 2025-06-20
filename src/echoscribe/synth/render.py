@@ -29,7 +29,9 @@ from echoscribe.seeds import Seed, new_rng
 from echoscribe.synth.corpus import Utterance
 from echoscribe.synth.formant import normalize_peak, render_sequence, samples_for_duration
 from echoscribe.synth.lexicon import Lexicon
-from echoscribe.synth.noise import NOISE_KINDS
+from echoscribe.synth.noise import NOISE_KINDS, generate_noise, mix_at_snr
+from echoscribe.synth.perturb import speed_perturb, volume_perturb
+from echoscribe.synth.room import RoomConfig, apply_room
 from echoscribe.synth.tone import tone_by_index
 from echoscribe.waveform import Audio, concatenate, silence
 
@@ -211,3 +213,38 @@ def utterance_audio_length(utterance: Utterance, config: RenderConfig, lexicon: 
         phones = lexicon.phones_for(token)
         total += sum(samples_for_duration(phone.duration_ms, rate) for phone in phones)
     return total
+
+
+def apply_condition(audio: Audio, condition: AcousticCondition, seed: Seed) -> Audio:
+    """Degrade ``audio`` according to ``condition``, in the documented order.
+
+    Room first, then noise, then perturbation.  A room colours the signal before a
+    microphone adds its floor, and speed or volume changes are a property of the
+    recording rather than of the acoustics, so they come last.  Mixing noise before
+    the room would reverberate the noise too, which is a different -- and much less
+    common -- condition.
+
+    A final limiter scales down only if the chain would clip.  It scales signal and
+    noise together, so the SNR the caller asked for survives it.
+    """
+    result = audio
+    if condition.rt60_ms is not None:
+        room = RoomConfig(rt60_ms=condition.rt60_ms, seed=seed.fork("room"))
+        result = apply_room(result, room)
+    if condition.noise_kind is not None:
+        noise = generate_noise(
+            condition.noise_kind,
+            result.num_frames,
+            new_rng(seed.fork("noise")),
+            result.sample_rate,
+        )
+        result = mix_at_snr(result, noise, condition.noise_snr_db)
+    if condition.speed_factor != 1.0:
+        result = speed_perturb(result, condition.speed_factor)
+    if condition.volume_db != 0.0:
+        result = volume_perturb(result, condition.volume_db).audio
+    peak = float(np.max(np.abs(result.samples))) if result.num_frames else 0.0
+    if peak > 1.0:
+        limited = result.samples.astype(np.float64) / peak
+        result = Audio(limited.astype(np.float32), result.sample_rate)
+    return result
