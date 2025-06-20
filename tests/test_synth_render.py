@@ -2,10 +2,14 @@
 
 from __future__ import annotations
 
+import numpy as np
 import pytest
 
 from echoscribe.errors import ConfigError
-from echoscribe.synth.render import AcousticCondition, RenderConfig
+from echoscribe.seeds import DEFAULT_ROOT
+from echoscribe.synth.formant import samples_for_duration
+from echoscribe.synth.lexicon import Lexicon
+from echoscribe.synth.render import AcousticCondition, RenderConfig, render_token
 
 
 def test_the_default_condition_is_clean() -> None:
@@ -120,3 +124,58 @@ def test_a_condition_label_is_stable_for_the_same_settings() -> None:
     left = AcousticCondition(noise_kind="white", noise_snr_db=20.0, rt60_ms=150.0)
     right = AcousticCondition(noise_kind="white", noise_snr_db=20.0, rt60_ms=150.0)
     assert left.label == right.label == "rt60-150ms+white-20dB"
+
+
+def _expected_length(phones, rate: int) -> int:
+    return sum(samples_for_duration(phone.duration_ms, rate) for phone in phones)
+
+
+def test_an_english_word_renders_to_its_phones_total_length() -> None:
+    lexicon = Lexicon()
+    config = RenderConfig()
+    audio = render_token("hello", "en", DEFAULT_ROOT, config, lexicon)
+    assert audio.num_frames == _expected_length(lexicon.word_phones("hello"), config.sample_rate)
+
+
+def test_a_chinese_character_renders_initial_plus_final() -> None:
+    lexicon = Lexicon()
+    config = RenderConfig()
+    audio = render_token("你", "zh", DEFAULT_ROOT, config, lexicon)
+    assert audio.num_frames == _expected_length(lexicon.syllable_phones("你"), config.sample_rate)
+
+
+def test_a_rendered_token_is_finite_and_quiet_enough_to_mix() -> None:
+    audio = render_token("stream", "en", DEFAULT_ROOT, RenderConfig())
+    assert np.all(np.isfinite(audio.samples))
+    assert float(np.max(np.abs(audio.samples))) < 4.0
+
+
+def test_the_same_seed_renders_the_same_audio() -> None:
+    left = render_token("world", "en", DEFAULT_ROOT, RenderConfig())
+    right = render_token("world", "en", DEFAULT_ROOT, RenderConfig())
+    assert np.array_equal(left.samples, right.samples)
+
+
+def test_a_different_seed_changes_a_turbulent_token() -> None:
+    from echoscribe.seeds import Seed
+
+    left = render_token("session", "en", Seed(1, "a"), RenderConfig())
+    right = render_token("session", "en", Seed(2, "a"), RenderConfig())
+    assert not np.array_equal(left.samples, right.samples)
+
+
+def test_a_tone_changes_a_rendered_character() -> None:
+    from echoscribe.synth.lexicon import MandarinSyllable
+
+    lexicon = Lexicon(mandarin={"X": MandarinSyllable("X", "h", "a", 1)})
+    rising = Lexicon(mandarin={"X": MandarinSyllable("X", "h", "a", 2)})
+    config = RenderConfig()
+    first = render_token("X", "zh", DEFAULT_ROOT, config, lexicon)
+    second = render_token("X", "zh", DEFAULT_ROOT, config, rising)
+    assert first.num_frames == second.num_frames
+    assert not np.allclose(first.samples, second.samples)
+
+
+def test_rendering_respects_the_configured_sample_rate() -> None:
+    audio = render_token("code", "en", DEFAULT_ROOT, RenderConfig(sample_rate=8000))
+    assert audio.sample_rate == 8000
