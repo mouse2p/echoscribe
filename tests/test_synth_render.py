@@ -7,9 +7,16 @@ import pytest
 
 from echoscribe.errors import ConfigError
 from echoscribe.seeds import DEFAULT_ROOT
+from echoscribe.synth.corpus import Utterance
 from echoscribe.synth.formant import samples_for_duration
 from echoscribe.synth.lexicon import Lexicon
-from echoscribe.synth.render import AcousticCondition, RenderConfig, render_token
+from echoscribe.synth.render import (
+    AcousticCondition,
+    RenderConfig,
+    render_token,
+    render_utterance,
+    utterance_audio_length,
+)
 
 
 def test_the_default_condition_is_clean() -> None:
@@ -179,3 +186,70 @@ def test_a_tone_changes_a_rendered_character() -> None:
 def test_rendering_respects_the_configured_sample_rate() -> None:
     audio = render_token("code", "en", DEFAULT_ROOT, RenderConfig(sample_rate=8000))
     assert audio.sample_rate == 8000
+
+
+def _utterance(tokens=("hello", "你", "好")) -> Utterance:
+    lexicon = Lexicon()
+    languages = tuple(lexicon.classify(token) for token in tokens)
+    return Utterance("utt-test", tokens, languages, " ".join(tokens), DEFAULT_ROOT)
+
+
+def test_the_rendered_length_matches_the_prediction() -> None:
+    utterance = _utterance()
+    config = RenderConfig()
+    assert render_utterance(utterance, config).num_frames == utterance_audio_length(
+        utterance, config, Lexicon()
+    )
+
+
+def test_the_leading_and_trailing_silence_are_exact() -> None:
+    config = RenderConfig(leading_silence_ms=200.0, trailing_silence_ms=150.0)
+    audio = render_utterance(_utterance(("code",)), config)
+    lead = samples_for_duration(200.0, config.sample_rate)
+    trail = samples_for_duration(150.0, config.sample_rate)
+    assert np.all(audio.samples[:lead] == 0.0)
+    assert np.all(audio.samples[-trail:] == 0.0)
+    assert np.max(np.abs(audio.samples[lead:-trail])) > 0.1
+
+
+def test_tokens_are_separated_by_exactly_the_boundary_silence() -> None:
+    config = RenderConfig(leading_silence_ms=0.0, trailing_silence_ms=0.0, boundary_silence_ms=50.0)
+    lexicon = Lexicon()
+    audio = render_utterance(_utterance(("hello", "world")), config)
+    first = _expected_length(lexicon.word_phones("hello"), config.sample_rate)
+    second = _expected_length(lexicon.word_phones("world"), config.sample_rate)
+    gap = samples_for_duration(50.0, config.sample_rate)
+    assert audio.num_frames == first + gap + second
+    assert np.all(audio.samples[first : first + gap] == 0.0)
+
+
+def test_the_render_is_peak_normalised_to_the_target() -> None:
+    config = RenderConfig(peak_target=0.7)
+    audio = render_utterance(_utterance(), config)
+    assert float(np.max(np.abs(audio.samples))) == pytest.approx(0.7, abs=1e-5)
+
+
+def test_a_render_is_reproducible() -> None:
+    utterance = _utterance()
+    left = render_utterance(utterance, RenderConfig())
+    right = render_utterance(utterance, RenderConfig())
+    assert np.array_equal(left.samples, right.samples)
+
+
+def test_a_longer_token_list_gives_a_longer_render() -> None:
+    config = RenderConfig()
+    short = render_utterance(_utterance(("hello",)), config)
+    long = render_utterance(_utterance(("hello", "world", "你")), config)
+    assert long.num_frames > short.num_frames
+
+
+@pytest.mark.slow
+def test_a_whole_generated_corpus_renders() -> None:
+    from echoscribe.synth.corpus import CorpusConfig, generate_corpus
+
+    corpus = generate_corpus(CorpusConfig(utterances=6, min_tokens=2, max_tokens=4))
+    config = RenderConfig()
+    for utterance in corpus:
+        audio = render_utterance(utterance, config)
+        assert audio.num_frames == utterance_audio_length(utterance, config, Lexicon())
+        assert np.all(np.isfinite(audio.samples))
