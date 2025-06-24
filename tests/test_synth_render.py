@@ -10,9 +10,11 @@ from echoscribe.seeds import DEFAULT_ROOT
 from echoscribe.synth.corpus import Utterance
 from echoscribe.synth.formant import samples_for_duration
 from echoscribe.synth.lexicon import Lexicon
+from echoscribe.synth.noise import signal_to_noise_db
 from echoscribe.synth.render import (
     AcousticCondition,
     RenderConfig,
+    apply_condition,
     render_token,
     render_utterance,
     utterance_audio_length,
@@ -253,3 +255,74 @@ def test_a_whole_generated_corpus_renders() -> None:
         audio = render_utterance(utterance, config)
         assert audio.num_frames == utterance_audio_length(utterance, config, Lexicon())
         assert np.all(np.isfinite(audio.samples))
+
+
+def test_a_clean_condition_leaves_the_audio_alone() -> None:
+    audio = render_utterance(_utterance(("hello",)), RenderConfig())
+    assert np.array_equal(
+        apply_condition(audio, AcousticCondition(), DEFAULT_ROOT).samples, audio.samples
+    )
+
+
+def test_reverberation_lengthens_the_utterance() -> None:
+    audio = render_utterance(_utterance(("hello",)), RenderConfig())
+    reverberant = apply_condition(audio, AcousticCondition(rt60_ms=300.0), DEFAULT_ROOT)
+    assert reverberant.num_frames > audio.num_frames
+
+
+@pytest.mark.parametrize("target", [20.0, 10.0])
+def test_mixing_noise_measures_close_to_the_requested_snr(target: float) -> None:
+    # A low peak target keeps the limiter out of the measurement: the SNR check
+    # compares the degraded render against the clean one, which only works while
+    # nothing has been rescaled.
+    audio = render_utterance(_utterance(("hello", "world")), RenderConfig(peak_target=0.3))
+    condition = AcousticCondition(noise_kind="white", noise_snr_db=target)
+    noisy = apply_condition(audio, condition, DEFAULT_ROOT)
+    measured = signal_to_noise_db(audio.samples, noisy.samples)
+    assert measured == pytest.approx(target, abs=0.5)
+
+
+def test_the_limiter_keeps_a_noisy_render_inside_the_pcm_range() -> None:
+    audio = render_utterance(_utterance(("hello", "world")), RenderConfig(peak_target=0.95))
+    condition = AcousticCondition(noise_kind="white", noise_snr_db=-10.0)
+    degraded = apply_condition(audio, condition, DEFAULT_ROOT)
+    assert float(np.max(np.abs(degraded.samples))) <= 1.0
+
+
+def test_the_limiter_is_a_uniform_gain_so_the_snr_survives_it() -> None:
+    condition = AcousticCondition(noise_kind="white", noise_snr_db=-10.0)
+    # mix_at_snr scales the noise with the signal, so a quiet render and a loud
+    # render of the same utterance differ only by a constant -- unless one of them
+    # hits the limiter.  Proportionality is therefore the limiter's whole contract.
+    quiet = render_utterance(_utterance(("hello", "world")), RenderConfig(peak_target=0.05))
+    loud = render_utterance(_utterance(("hello", "world")), RenderConfig(peak_target=0.95))
+    soft = apply_condition(quiet, condition, DEFAULT_ROOT).samples.astype(np.float64)
+    hard = apply_condition(loud, condition, DEFAULT_ROOT).samples.astype(np.float64)
+    assert float(np.max(np.abs(soft))) <= 1.0
+    assert float(np.max(np.abs(hard))) == pytest.approx(1.0, abs=1e-5)
+    ratio = float(np.dot(soft, hard) / np.dot(soft, soft))
+    assert np.allclose(hard, soft * ratio, rtol=1e-4, atol=1e-6)
+
+
+def test_speed_perturbation_changes_the_rendered_duration() -> None:
+    audio = render_utterance(_utterance(("hello",)), RenderConfig())
+    slower = apply_condition(audio, AcousticCondition(speed_factor=1.2), DEFAULT_ROOT)
+    assert slower.num_frames == pytest.approx(audio.num_frames * 1.2, abs=3)
+
+
+def test_a_condition_is_reproducible_from_the_seed() -> None:
+    audio = render_utterance(_utterance(("hello",)), RenderConfig())
+    condition = AcousticCondition(noise_kind="pink", noise_snr_db=8.0, rt60_ms=200.0)
+    left = apply_condition(audio, condition, DEFAULT_ROOT)
+    right = apply_condition(audio, condition, DEFAULT_ROOT)
+    assert np.array_equal(left.samples, right.samples)
+
+
+def test_a_different_seed_gives_different_noise() -> None:
+    from echoscribe.seeds import Seed
+
+    audio = render_utterance(_utterance(("hello",)), RenderConfig())
+    condition = AcousticCondition(noise_kind="white", noise_snr_db=10.0)
+    left = apply_condition(audio, condition, Seed(1, "a"))
+    right = apply_condition(audio, condition, Seed(2, "a"))
+    assert not np.array_equal(left.samples, right.samples)
