@@ -21,14 +21,21 @@ written into the manifest so a result can always be attributed to a condition.
 from __future__ import annotations
 
 from dataclasses import dataclass
+from pathlib import Path
 
 import numpy as np
 
+from echoscribe.audio import write_wav
 from echoscribe.errors import ConfigError, require, require_positive
 from echoscribe.seeds import Seed, new_rng
-from echoscribe.synth.corpus import Utterance
+from echoscribe.synth.corpus import Corpus, Utterance
 from echoscribe.synth.formant import normalize_peak, render_sequence, samples_for_duration
 from echoscribe.synth.lexicon import Lexicon
+from echoscribe.synth.manifest import (
+    ManifestRecord,
+    checksum_of_file,
+    write_manifest,
+)
 from echoscribe.synth.noise import NOISE_KINDS, generate_noise, mix_at_snr
 from echoscribe.synth.perturb import speed_perturb, volume_perturb
 from echoscribe.synth.room import RoomConfig, apply_room
@@ -248,3 +255,48 @@ def apply_condition(audio: Audio, condition: AcousticCondition, seed: Seed) -> A
         limited = result.samples.astype(np.float64) / peak
         result = Audio(limited.astype(np.float32), result.sample_rate)
     return result
+
+
+MANIFEST_NAME = "manifest.jsonl"
+WAV_DIRECTORY = "wav"
+
+
+def render_corpus(
+    corpus: Corpus,
+    config: RenderConfig,
+    directory: str | Path,
+    lexicon: Lexicon | None = None,
+) -> list[ManifestRecord]:
+    """Render every utterance to ``directory/wav`` and write ``directory/manifest.jsonl``.
+
+    Each wav is checksummed after it is written, so the manifest describes the bytes
+    that are actually on disk rather than the array that was in memory.  The corpus
+    digest is returned through :func:`write_manifest` for a caller that wants to
+    record it; the records themselves come back so a test can inspect them without
+    re-reading the file.
+    """
+    base = Path(directory)
+    base.mkdir(parents=True, exist_ok=True)
+    records = []
+    for utterance in corpus:
+        clean = render_utterance(utterance, config, lexicon)
+        audio = apply_condition(clean, config.condition, utterance.seed)
+        relative = f"{WAV_DIRECTORY}/{utterance.utterance_id}.wav"
+        write_wav(base / relative, audio)
+        records.append(
+            ManifestRecord(
+                utterance_id=utterance.utterance_id,
+                text=utterance.text,
+                tokens=utterance.tokens,
+                languages=utterance.languages,
+                wav_path=relative,
+                sample_rate=audio.sample_rate,
+                num_samples=audio.num_frames,
+                duration=audio.duration,
+                seed=utterance.seed.value,
+                checksum=checksum_of_file(base / relative),
+                condition=config.condition.to_dict(),
+            )
+        )
+    write_manifest(base / MANIFEST_NAME, records)
+    return records
