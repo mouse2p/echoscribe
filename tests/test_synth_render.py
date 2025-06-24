@@ -7,14 +7,16 @@ import pytest
 
 from echoscribe.errors import ConfigError
 from echoscribe.seeds import DEFAULT_ROOT
-from echoscribe.synth.corpus import Utterance
+from echoscribe.synth.corpus import CorpusConfig, Utterance, generate_corpus
 from echoscribe.synth.formant import samples_for_duration
 from echoscribe.synth.lexicon import Lexicon
+from echoscribe.synth.manifest import read_manifest, verify_manifest
 from echoscribe.synth.noise import signal_to_noise_db
 from echoscribe.synth.render import (
     AcousticCondition,
     RenderConfig,
     apply_condition,
+    render_corpus,
     render_token,
     render_utterance,
     utterance_audio_length,
@@ -326,3 +328,64 @@ def test_a_different_seed_gives_different_noise() -> None:
     left = apply_condition(audio, condition, Seed(1, "a"))
     right = apply_condition(audio, condition, Seed(2, "a"))
     assert not np.array_equal(left.samples, right.samples)
+
+
+def _small_corpus(count: int = 3):
+    return generate_corpus(CorpusConfig(utterances=count, min_tokens=2, max_tokens=3))
+
+
+def test_rendering_a_corpus_writes_wavs_and_a_manifest(tmp_path) -> None:
+    records = render_corpus(_small_corpus(), RenderConfig(), tmp_path)
+    assert len(records) == 3
+    assert (tmp_path / "manifest.jsonl").is_file()
+    for record in records:
+        assert (tmp_path / record.wav_path).is_file()
+
+
+def test_the_manifest_reads_back_as_written(tmp_path) -> None:
+    records = render_corpus(_small_corpus(), RenderConfig(), tmp_path)
+    assert read_manifest(tmp_path / "manifest.jsonl") == records
+
+
+def test_a_rendered_corpus_verifies_clean(tmp_path) -> None:
+    records = render_corpus(_small_corpus(), RenderConfig(), tmp_path)
+    assert verify_manifest(tmp_path, records) == []
+
+
+def test_tampering_with_one_wav_is_detected(tmp_path) -> None:
+    records = render_corpus(_small_corpus(), RenderConfig(), tmp_path)
+    target = tmp_path / records[1].wav_path
+    target.write_bytes(target.read_bytes() + b"\x00\x00")
+    assert verify_manifest(tmp_path, records) == [records[1].utterance_id]
+
+
+def test_records_carry_the_planted_transcript(tmp_path) -> None:
+    corpus = _small_corpus()
+    records = render_corpus(corpus, RenderConfig(), tmp_path)
+    assert [record.text for record in records] == [u.text for u in corpus]
+    assert [record.tokens for record in records] == [u.tokens for u in corpus]
+
+
+def test_records_carry_the_acoustic_condition(tmp_path) -> None:
+    config = RenderConfig(condition=AcousticCondition(noise_kind="pink", noise_snr_db=12.0))
+    records = render_corpus(_small_corpus(2), config, tmp_path)
+    assert all(record.condition["noise_kind"] == "pink" for record in records)
+    assert all(record.condition["noise_snr_db"] == 12.0 for record in records)
+
+
+def test_rendering_the_same_corpus_twice_gives_the_same_bytes(tmp_path) -> None:
+    config = RenderConfig()
+    left = render_corpus(_small_corpus(2), config, tmp_path / "a")
+    right = render_corpus(_small_corpus(2), config, tmp_path / "b")
+    assert [record.checksum for record in left] == [record.checksum for record in right]
+
+
+def test_record_durations_match_the_written_audio(tmp_path) -> None:
+    from echoscribe.audio import read_wav
+
+    records = render_corpus(_small_corpus(2), RenderConfig(), tmp_path)
+    for record in records:
+        audio = read_wav(tmp_path / record.wav_path)
+        assert audio.num_frames == record.num_samples
+        assert audio.duration == pytest.approx(record.duration, abs=1e-9)
+        assert audio.sample_rate == record.sample_rate
