@@ -109,3 +109,47 @@ def test_the_fold_table_has_no_identity_entries() -> None:
 
 def test_folding_leaves_ascii_punctuation_alone() -> None:
     assert fold_punctuation("a, b. c! d?") == "a, b. c! d?"
+
+
+CORPUS_STRINGS = [
+    "Hello, world!",
+    "你好，世界！",
+    "please open the FILE",
+    "混合 code-switch 句子",
+    "  spaced   out  ",
+    "café naïve résumé",
+    "ＨＥＬＬＯ　ＷＯＲＬＤ",
+    "",
+    "3.14159",
+    "「quoted」…",
+]
+
+
+@pytest.mark.parametrize("text", CORPUS_STRINGS)
+def test_normalising_twice_changes_nothing(text: str) -> None:
+    once = normalize_text(text)
+    assert normalize_text(once) == once
+
+
+@pytest.mark.parametrize("form", list(NORMALIZATION_FORMS))
+def test_every_form_is_idempotent(form: str) -> None:
+    config = NormalizeConfig(form=form)
+    for text in CORPUS_STRINGS:
+        once = normalize_text(text, config)
+        assert normalize_text(once, config) == once
+
+
+def test_normalisation_never_introduces_a_newline() -> None:
+    for text in CORPUS_STRINGS:
+        assert "\n" not in normalize_text(text)
+
+
+def test_a_code_switched_sentence_keeps_both_scripts_separated() -> None:
+    assert normalize_text("混合code-switch句子") == "混合code-switch句子"
+    assert normalize_text("混合 code-switch 句子") == "混合 code-switch 句子"
+
+
+def test_folding_runs_before_case_and_collapse() -> None:
+    # The middle dot becomes a space, which the collapse stage then absorbs;
+    # reversing the two would leave a doubled space behind.
+    assert normalize_text("A\u00b7\u00b7B") == "a b"
