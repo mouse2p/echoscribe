@@ -5,7 +5,7 @@ from __future__ import annotations
 import pytest
 
 from echoscribe.errors import TokenizerError
-from echoscribe.text.script import SCRIPTS, is_han, script_of
+from echoscribe.text.script import SCRIPTS, ScriptRun, is_han, script_of, script_runs
 
 
 @pytest.mark.parametrize(
@@ -70,3 +70,67 @@ def test_hebrew_and_devanagari_fall_through_to_other() -> None:
     # instead of per character.
     assert script_of("\u05d0") == "other"
     assert script_of("\u0915") == "other"
+
+
+def test_runs_cover_the_string_without_gaps_or_overlaps() -> None:
+    text = "hello 你好 world 世界"
+    cursor = 0
+    for run in script_runs(text):
+        assert run.start == cursor
+        assert text[run.start : run.stop] == run.text
+        cursor = run.stop
+    assert cursor == len(text)
+
+
+def test_a_code_switched_sentence_splits_at_every_switch() -> None:
+    runs = script_runs("hello你好world")
+    assert [(run.script, run.text) for run in runs] == [
+        ("latin", "hello"),
+        ("han", "你好"),
+        ("latin", "world"),
+    ]
+
+
+def test_whitespace_merges_into_the_previous_run_by_default() -> None:
+    runs = script_runs("hello 你")
+    assert [(run.script, run.text) for run in runs] == [("latin", "hello "), ("han", "你")]
+
+
+def test_whitespace_can_be_kept_as_its_own_run() -> None:
+    runs = script_runs("hello 你", merge_space=False)
+    assert [run.script for run in runs] == ["latin", "space", "han"]
+
+
+def test_leading_whitespace_has_nothing_to_merge_into() -> None:
+    runs = script_runs(" 你好")
+    assert runs[0].script == "space"
+    assert runs[1].text == "你好"
+
+
+def test_digits_form_their_own_run() -> None:
+    runs = script_runs("room 42 floor")
+    assert [run.script for run in runs] == ["latin", "digit", "latin"]
+
+
+def test_punctuation_attaches_to_neither_neighbour() -> None:
+    runs = script_runs("你好,world")
+    assert [run.script for run in runs] == ["han", "punctuation", "latin"]
+
+
+def test_an_empty_string_has_no_runs() -> None:
+    assert script_runs("") == ()
+
+
+def test_a_run_reports_its_stop_offset() -> None:
+    assert ScriptRun("latin", 3, "hello").stop == 8
+
+
+def test_runs_are_immutable() -> None:
+    run = ScriptRun("latin", 0, "a")
+    with pytest.raises(AttributeError):
+        run.text = "b"  # type: ignore[misc]
+
+
+def test_a_non_string_is_rejected() -> None:
+    with pytest.raises(TokenizerError, match="needs a string"):
+        script_runs(None)  # type: ignore[arg-type]
