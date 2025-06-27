@@ -389,3 +389,13 @@ def test_record_durations_match_the_written_audio(tmp_path) -> None:
         assert audio.num_frames == record.num_samples
         assert audio.duration == pytest.approx(record.duration, abs=1e-9)
         assert audio.sample_rate == record.sample_rate
+
+
+def test_the_subpackage_re_exports_the_renderer() -> None:
+    from echoscribe import synth
+
+    assert synth.render_corpus is render_corpus
+    assert synth.RenderConfig is RenderConfig
+    assert synth.AcousticCondition is AcousticCondition
+    for name in ("render_utterance", "render_token", "apply_condition", "render_corpus"):
+        assert name in synth.__all__

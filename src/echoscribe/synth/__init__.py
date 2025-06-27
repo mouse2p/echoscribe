@@ -61,6 +61,14 @@ from echoscribe.synth.noise import (
 )
 from echoscribe.synth.perturb import VolumeResult, speed_perturb, volume_perturb
 from echoscribe.synth.phones import ENGLISH_PHONES, FINALS, INITIALS, MANNERS, Phone
+from echoscribe.synth.render import (
+    AcousticCondition,
+    RenderConfig,
+    apply_condition,
+    render_corpus,
+    render_token,
+    render_utterance,
+)
 from echoscribe.synth.room import RoomConfig, apply_room, fft_convolve, impulse_response
 from echoscribe.synth.source import glottal_source, noise_source, phone_envelope
 from echoscribe.synth.tone import TONES, ToneContour, tone_by_index
@@ -76,16 +84,19 @@ __all__ = [
     "TONES",
     "Corpus",
     "CorpusConfig",
+    "AcousticCondition",
     "Coverage",
     "Lexicon",
     "MandarinSyllable",
     "Phone",
     "PhoneSequence",
+    "RenderConfig",
     "RoomConfig",
     "TokenSpan",
     "ToneContour",
     "Utterance",
     "VolumeResult",
+    "apply_condition",
     "apply_room",
     "coverage_of",
     "fft_convolve",
@@ -95,6 +106,9 @@ __all__ = [
     "mix_at_snr",
     "modulated_noise",
     "pink_noise",
+    "render_corpus",
+    "render_token",
+    "render_utterance",
     "sample_tokens",
     "signal_to_noise_db",
     "speed_perturb",
