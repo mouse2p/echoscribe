@@ -7,8 +7,10 @@ import pytest
 from echoscribe.errors import ConfigError
 from echoscribe.text.normalize import (
     NORMALIZATION_FORMS,
+    PUNCTUATION_FOLD,
     NormalizeConfig,
     collapse_whitespace,
+    fold_punctuation,
     normalize_text,
 )
 
@@ -70,3 +72,40 @@ def test_config_is_frozen() -> None:
     config = NormalizeConfig()
     with pytest.raises(AttributeError):
         config.lower = False  # type: ignore[misc]
+
+
+def test_the_ideographic_comma_becomes_an_ascii_comma() -> None:
+    assert fold_punctuation("你、好") == "你,好"
+    assert normalize_text("你、好") == "你,好"
+
+
+def test_the_ideographic_full_stop_becomes_a_period() -> None:
+    assert normalize_text("你好。") == "你好."
+
+
+def test_a_corner_bracket_pair_becomes_quotes() -> None:
+    assert normalize_text("「你好」") == '"你好"'
+
+
+def test_an_ellipsis_becomes_three_periods() -> None:
+    assert fold_punctuation("wait…") == "wait..."
+
+
+def test_a_middle_dot_becomes_a_space_and_then_collapses() -> None:
+    assert fold_punctuation("a\u00b7b") == "a b"
+    assert normalize_text("a\u00b7\u00b7b") == "a b"
+
+
+def test_folding_can_be_switched_off() -> None:
+    config = NormalizeConfig(fold_punctuation=False)
+    assert normalize_text("你好。", config) == "你好。"
+
+
+def test_the_fold_table_has_no_identity_entries() -> None:
+    for source, target in PUNCTUATION_FOLD.items():
+        assert len(source) == 1
+        assert target != source
+
+
+def test_folding_leaves_ascii_punctuation_alone() -> None:
+    assert fold_punctuation("a, b. c! d?") == "a, b. c! d?"

@@ -29,6 +29,7 @@ class NormalizeConfig:
 
     form: str = "NFKC"
     lower: bool = True
+    fold_punctuation: bool = True
     collapse_spaces: bool = True
 
     def __post_init__(self) -> None:
@@ -54,8 +55,34 @@ def normalize_text(text: str, config: NormalizeConfig | None = None) -> str:
     )
     settings = NormalizeConfig() if config is None else config
     result = unicodedata.normalize(settings.form, text)
+    if settings.fold_punctuation:
+        result = fold_punctuation(result)
     if settings.lower:
         result = result.lower()
     if settings.collapse_spaces:
         result = collapse_whitespace(result)
     return result
+
+
+#: Punctuation that NFKC leaves alone but a scorer should treat as its ASCII
+#: equivalent.  The ideographic comma and full stop have no compatibility
+#: decomposition at all, so folding them is a decision this toolkit makes
+#: explicitly rather than something Unicode does for it.
+PUNCTUATION_FOLD = {
+    "\u3001": ",",  # ideographic comma
+    "\u3002": ".",  # ideographic full stop
+    "\u00b7": " ",  # middle dot, used to separate syllables in transliteration
+    "\u2014": "-",  # em dash
+    "\u2013": "-",  # en dash
+    "\u2026": "...",  # horizontal ellipsis
+    "\u300c": '"',  # left corner bracket
+    "\u300d": '"',  # right corner bracket
+    "\u300e": '"',  # left white corner bracket
+    "\u300f": '"',  # right white corner bracket
+    "\uff5e": "~",  # fullwidth tilde, which NFKC maps to a different tilde
+}
+
+
+def fold_punctuation(text: str) -> str:
+    """Replace the CJK and typographic punctuation that NFKC does not touch."""
+    return "".join(PUNCTUATION_FOLD.get(character, character) for character in text)
