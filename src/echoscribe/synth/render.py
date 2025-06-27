@@ -16,6 +16,17 @@ The pipeline order is fixed and matters:
 
 Every stage is optional except the first two, and the settings that were used are
 written into the manifest so a result can always be attributed to a condition.
+
+The order is fixed rather than configurable on purpose.  A caller who mixed noise
+before the room would get a reverberant noise floor, which is a legitimate acoustic
+condition but a different one, and a result labelled "20 dB SNR" would no longer
+mean what it says.  Keeping the order in one place means the label on a result and
+the signal it describes cannot drift apart.
+
+The limiter at the end is the one exception to "degrade, then write".  It exists
+because 16-bit PCM cannot hold a sample above 1.0, and silently clipping would
+introduce distortion the manifest does not record.  Scaling the whole signal down
+instead is inaudible in the features and leaves the SNR untouched.
 """
 
 from __future__ import annotations
