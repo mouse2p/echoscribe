@@ -14,6 +14,7 @@ Latin.
 from __future__ import annotations
 
 import unicodedata
+from dataclasses import dataclass
 
 from echoscribe.errors import TokenizerError, require
 
@@ -66,3 +67,42 @@ def _in_ranges(code: int, ranges: tuple[tuple[int, int], ...]) -> bool:
 def is_han(character: str) -> bool:
     """Convenience predicate the scoring code uses on every character."""
     return script_of(character) == "han"
+
+
+@dataclass(frozen=True)
+class ScriptRun:
+    """A maximal substring whose characters all share one script class."""
+
+    script: str
+    start: int
+    text: str
+
+    @property
+    def stop(self) -> int:
+        """Exclusive end offset in the source string."""
+        return self.start + len(self.text)
+
+
+def script_runs(text: str, merge_space: bool = True) -> tuple[ScriptRun, ...]:
+    """Split ``text`` into maximal runs of one script.
+
+    ``merge_space`` attaches a run of whitespace to the run before it, which is what
+    a segmenter wants: ``"hello 你"`` then yields a Latin run whose text ends in the
+    separating space, instead of a third run that carries no information.  Spaces
+    at the very start of the string have nothing to merge into and stay their own
+    run.
+    """
+    require(
+        isinstance(text, str),
+        f"script_runs needs a string, got {type(text).__name__}",
+        TokenizerError,
+    )
+    runs: list[ScriptRun] = []
+    for index, character in enumerate(text):
+        script = script_of(character)
+        if runs and (script == runs[-1].script or (merge_space and script == "space")):
+            previous = runs[-1]
+            runs[-1] = ScriptRun(previous.script, previous.start, previous.text + character)
+            continue
+        runs.append(ScriptRun(script, index, character))
+    return tuple(runs)
