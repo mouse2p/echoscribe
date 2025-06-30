@@ -12,6 +12,7 @@ from echoscribe.text.normalize import (
     collapse_whitespace,
     fold_punctuation,
     normalize_text,
+    strip_accents,
 )
 
 
@@ -153,3 +154,53 @@ def test_folding_runs_before_case_and_collapse() -> None:
     # The middle dot becomes a space, which the collapse stage then absorbs;
     # reversing the two would leave a doubled space behind.
     assert normalize_text("A\u00b7\u00b7B") == "a b"
+
+
+def test_strip_accents_folds_a_precomposed_latin_vowel() -> None:
+    assert strip_accents("café") == "cafe"
+    assert strip_accents("naïve résumé") == "naive resume"
+
+
+def test_strip_accents_folds_a_decomposed_latin_vowel() -> None:
+    assert strip_accents("cafe\u0301") == "cafe"
+
+
+def test_strip_accents_leaves_a_non_latin_mark_alone() -> None:
+    arabic = "\u0628\u064e"
+    assert strip_accents(arabic) == arabic
+    devanagari = "\u0915\u093c"
+    assert strip_accents(devanagari) == devanagari
+
+
+def test_strip_accents_can_be_unrestricted() -> None:
+    assert strip_accents("\u0628\u064e", latin_only=False) == "\u0628"
+
+
+def test_unrestricted_stripping_removes_stacked_marks() -> None:
+    assert strip_accents("e\u0301\u0300", latin_only=False) == "e"
+    assert strip_accents("e\u0301\u0300") == "e"
+
+
+def test_strip_accents_leaves_han_characters_untouched() -> None:
+    assert strip_accents("你好") == "你好"
+
+
+def test_a_leading_combining_mark_survives_restricted_stripping() -> None:
+    # With no base letter before it, the mark is all the information there is.
+    assert strip_accents("\u0301a") == "\u0301a"
+
+
+def test_the_configured_accent_stage_runs_before_collapse() -> None:
+    config = NormalizeConfig(strip_accents=True)
+    assert normalize_text("  Café  NAÏVE ", config) == "cafe naive"
+
+
+def test_accent_stripping_is_off_by_default() -> None:
+    assert normalize_text("café") == "café"
+
+
+@pytest.mark.parametrize("text", CORPUS_STRINGS)
+def test_normalising_twice_with_accents_stripped_changes_nothing(text: str) -> None:
+    config = NormalizeConfig(strip_accents=True)
+    once = normalize_text(text, config)
+    assert normalize_text(once, config) == once

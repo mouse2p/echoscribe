@@ -18,6 +18,7 @@ import unicodedata
 from dataclasses import dataclass
 
 from echoscribe.errors import ConfigError, require, require_in
+from echoscribe.text.script import script_of
 
 #: Unicode normalisation forms :func:`normalize_text` accepts.
 NORMALIZATION_FORMS = ("NFC", "NFKC", "NFD", "NFKD")
@@ -31,6 +32,7 @@ class NormalizeConfig:
     lower: bool = True
     fold_punctuation: bool = True
     collapse_spaces: bool = True
+    strip_accents: bool = False
 
     def __post_init__(self) -> None:
         require_in("form", self.form, NORMALIZATION_FORMS, ConfigError)
@@ -59,6 +61,8 @@ def normalize_text(text: str, config: NormalizeConfig | None = None) -> str:
         result = fold_punctuation(result)
     if settings.lower:
         result = result.lower()
+    if settings.strip_accents:
+        result = strip_accents(result)
     if settings.collapse_spaces:
         result = collapse_whitespace(result)
     return result
@@ -86,3 +90,30 @@ PUNCTUATION_FOLD = {
 def fold_punctuation(text: str) -> str:
     """Replace the CJK and typographic punctuation that NFKC does not touch."""
     return "".join(PUNCTUATION_FOLD.get(character, character) for character in text)
+
+
+#: Combining-mark category that a Latin accent decomposes into.  ``Mc`` and ``Me``
+#: are deliberately absent: in most scripts those marks are letters in their own
+#: right, not decoration.
+COMBINING_CATEGORIES = ("Mn",)
+
+
+def strip_accents(text: str, latin_only: bool = True) -> str:
+    """Remove combining accent marks, by default only after a Latin base letter.
+
+    The Latin-only restriction is the important part.  Decomposing and dropping
+    every ``Mn`` character is the usual one-liner, and it silently destroys scripts
+    where those marks are phonemic -- an Arabic fatha or a Devanagari nukta changes
+    the pronunciation.  Restricting the removal to marks that follow a Latin base
+    keeps ``café`` folding to ``cafe`` without touching anything else.
+    """
+    decomposed = unicodedata.normalize("NFD", text)
+    kept = []
+    previous = ""
+    for character in decomposed:
+        combining = unicodedata.category(character) in COMBINING_CATEGORIES
+        if combining and (not latin_only or (previous and script_of(previous) == "latin")):
+            continue
+        kept.append(character)
+        previous = character
+    return unicodedata.normalize("NFC", "".join(kept))
