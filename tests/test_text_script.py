@@ -134,3 +134,27 @@ def test_runs_are_immutable() -> None:
 def test_a_non_string_is_rejected() -> None:
     with pytest.raises(TokenizerError, match="needs a string"):
         script_runs(None)  # type: ignore[arg-type]
+
+
+@pytest.mark.parametrize(
+    ("character", "expected"),
+    [
+        ("\uff21", "latin"),  # fullwidth A
+        ("\uff5a", "latin"),  # fullwidth z
+        ("\uff10", "digit"),  # fullwidth 0
+        ("\uff0c", "punctuation"),  # fullwidth comma
+        ("\uff01", "punctuation"),  # fullwidth exclamation
+    ],
+)
+def test_fullwidth_forms_follow_their_ascii_equivalent(character: str, expected: str) -> None:
+    assert script_of(character) == expected
+
+
+def test_every_fullwidth_ascii_variant_matches_its_base() -> None:
+    for code in range(0xFF01, 0xFF5F):
+        assert script_of(chr(code)) == script_of(chr(code - 0xFEE0)), hex(code)
+
+
+def test_the_ideographic_space_still_reads_as_a_space() -> None:
+    # U+3000 is outside the fullwidth ASCII range and is caught by isspace first.
+    assert script_of("\u3000") == "space"

@@ -29,6 +29,10 @@ HAN_RANGES = (
     (0x20000, 0x2A6DF),  # CJK Unified Ideographs Extension B
 )
 
+#: The fullwidth ASCII variants, which mirror ``code - 0xFEE0`` in basic ASCII.
+FULLWIDTH_OFFSET = 0xFEE0
+FULLWIDTH_RANGE = (0xFF01, 0xFF5E)
+
 #: Blocks treated as Latin, including the extended ranges European names need.
 LATIN_RANGES = (
     (0x0041, 0x005A),
@@ -48,6 +52,10 @@ def script_of(character: str) -> str:
     code = ord(character)
     if character.isspace():
         return "space"
+    if FULLWIDTH_RANGE[0] <= code <= FULLWIDTH_RANGE[1]:
+        # An unnormalised string still carries fullwidth forms; classifying them by
+        # the ASCII character they mirror keeps them out of the "other" bucket.
+        return script_of(chr(code - FULLWIDTH_OFFSET))
     if _in_ranges(code, HAN_RANGES):
         return "han"
     if _in_ranges(code, LATIN_RANGES):
