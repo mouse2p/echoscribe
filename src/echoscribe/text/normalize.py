@@ -6,10 +6,22 @@ typed on a keyboard that emits a combining acute accent instead of a precomposed
 ``é``.  Normalisation removes those differences *before* anything is counted, so an
 error rate measures word choice rather than keyboard layout.
 
-The stage is deliberately conservative: it folds case, collapses runs of whitespace
-and -- with the stages added below -- folds CJK punctuation and strips Latin
-accents.  It does not translate, stem, selectively lowercase proper nouns, or drop
-punctuation that a scorer still needs to see.
+The stage is deliberately conservative: it folds case, folds CJK punctuation to its
+ASCII equivalent, collapses runs of whitespace and -- optionally -- strips Latin
+accent marks.  It does not translate, stem, selectively lowercase proper nouns, or
+drop punctuation that a scorer still needs to see.
+
+Why it has to run before anything else: every later stage makes a decision that
+normalisation would otherwise have made for it.  A segmenter splits on whitespace,
+so an ideographic space that was never folded produces one token instead of two.  A
+vocabulary lookup is exact, so a fullwidth digit misses its entry.  A scorer counts
+tokens, so a difference in capitalisation becomes a substitution error that has
+nothing to do with recognition.
+
+The same configuration must be applied to the reference and to the hypothesis.
+Scoring a normalised hypothesis against a raw reference measures the normaliser
+rather than the recognizer, which is why :class:`NormalizeConfig` belongs in a
+run's recorded metadata instead of being a per-call argument a scorer can forget.
 """
 
 from __future__ import annotations
