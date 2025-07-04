@@ -204,3 +204,40 @@ def test_normalising_twice_with_accents_stripped_changes_nothing(text: str) -> N
     config = NormalizeConfig(strip_accents=True)
     once = normalize_text(text, config)
     assert normalize_text(once, config) == once
+
+
+GOLDEN = {
+    "ＨＥＬＬＯ　ＷＯＲＬＤ": "hello world",
+    "你好，世界！": "你好,世界!",
+    "請開啟 the FILE": "請開啟 the file",
+    "a\u00b7b\u3000c": "a b c",
+    "Café  Naïve": "cafe naive",
+    "one\ttwo\n\nthree": "one two three",
+    "「quoted」": '"quoted"',
+    "wait…": "wait...",
+}
+
+
+@pytest.mark.parametrize(("source", "expected"), sorted(GOLDEN.items()))
+def test_golden_normalisation(source: str, expected: str) -> None:
+    assert normalize_text(source, NormalizeConfig(strip_accents=True)) == expected
+
+
+def test_the_golden_table_is_stable_under_a_second_pass() -> None:
+    config = NormalizeConfig(strip_accents=True)
+    for expected in GOLDEN.values():
+        assert normalize_text(expected, config) == expected
+
+
+def test_golden_outputs_never_contain_a_fullwidth_form() -> None:
+    config = NormalizeConfig(strip_accents=True)
+    for source in GOLDEN:
+        result = normalize_text(source, config)
+        assert not any(0xFF01 <= ord(character) <= 0xFF5E for character in result), source
+
+
+def test_golden_outputs_never_contain_a_folded_punctuation_character() -> None:
+    config = NormalizeConfig(strip_accents=True)
+    for source in GOLDEN:
+        result = normalize_text(source, config)
+        assert not any(character in PUNCTUATION_FOLD for character in result), source
