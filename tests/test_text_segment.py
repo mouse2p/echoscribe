@@ -92,3 +92,57 @@ def test_a_non_string_is_rejected() -> None:
 def test_segmentation_is_deterministic() -> None:
     text = "mixed 混合 text 文本 123"
     assert segment(text) == segment(text)
+
+
+def test_a_word_language_splits_on_whitespace() -> None:
+    assert [token.text for token in segment("hello there world")] == [
+        "hello",
+        "there",
+        "world",
+    ]
+
+
+def test_a_character_language_splits_per_character() -> None:
+    assert [token.text for token in segment("你好世界")] == ["你", "好", "世", "界"]
+
+
+def test_a_code_switch_without_spaces_still_splits() -> None:
+    assert [token.text for token in segment("hello你好world")] == [
+        "hello",
+        "你",
+        "好",
+        "world",
+    ]
+
+
+def test_an_apostrophe_stays_inside_its_word() -> None:
+    assert [token.text for token in segment("don't stop")] == ["don't", "stop"]
+
+
+def test_a_hyphen_stays_inside_its_word_by_default() -> None:
+    assert [token.text for token in segment("code-switch tools")] == ["code-switch", "tools"]
+
+
+def test_a_trailing_hyphen_ends_the_word() -> None:
+    assert [token.text for token in segment("well- known")] == ["well", "known"]
+
+
+def test_digits_next_to_letters_stay_separate() -> None:
+    assert [token.text for token in segment("room42")] == ["room", "42"]
+
+
+def test_a_decimal_number_splits_at_its_point() -> None:
+    assert [token.text for token in segment("3.14")] == ["3", "14"]
+
+
+def test_a_minimum_length_drops_short_tokens() -> None:
+    config = SegmentConfig(min_token_length=2)
+    # Single Han characters are one token each, so a minimum of two removes them
+    # along with the single-letter English word.  That is the documented effect of
+    # the flag, not an accident of the scan.
+    assert [token.text for token in segment("I am 你好 ok", config)] == ["am", "ok"]
+
+
+def test_a_minimum_length_never_drops_a_two_character_word() -> None:
+    config = SegmentConfig(min_token_length=2)
+    assert [token.text for token in segment("hi 你", config)] == ["hi"]
