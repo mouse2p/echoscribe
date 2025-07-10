@@ -7,6 +7,7 @@ import pytest
 from echoscribe.errors import ConfigError
 from echoscribe.text.normalize import (
     NORMALIZATION_FORMS,
+    NORMALIZATION_STAGES,
     PUNCTUATION_FOLD,
     NormalizeConfig,
     collapse_whitespace,
@@ -241,3 +242,33 @@ def test_golden_outputs_never_contain_a_folded_punctuation_character() -> None:
     for source in GOLDEN:
         result = normalize_text(source, config)
         assert not any(character in PUNCTUATION_FOLD for character in result), source
+
+
+def test_the_stage_order_is_the_documented_one() -> None:
+    assert [name for name, _ in NORMALIZATION_STAGES] == [
+        "fold_punctuation",
+        "lower",
+        "strip_accents",
+        "collapse_spaces",
+    ]
+
+
+def test_every_stage_has_a_matching_config_field() -> None:
+    for name, _ in NORMALIZATION_STAGES:
+        assert hasattr(NormalizeConfig(), name), name
+
+
+def test_the_stage_functions_are_the_public_ones() -> None:
+    stages = dict(NORMALIZATION_STAGES)
+    assert stages["fold_punctuation"] is fold_punctuation
+    assert stages["collapse_spaces"] is collapse_whitespace
+    assert stages["strip_accents"] is strip_accents
+
+
+def test_the_pipeline_still_matches_the_explicit_stage_order() -> None:
+    config = NormalizeConfig(strip_accents=True)
+    # No compatibility characters here, so NFKC is the identity and the manual
+    # chain below is exactly what normalize_text has to produce.
+    text = "  Café 「A」…  "
+    manual = collapse_whitespace(strip_accents(fold_punctuation(text).lower()))
+    assert normalize_text(text, config) == manual

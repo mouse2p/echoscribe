@@ -69,14 +69,9 @@ def normalize_text(text: str, config: NormalizeConfig | None = None) -> str:
     )
     settings = NormalizeConfig() if config is None else config
     result = unicodedata.normalize(settings.form, text)
-    if settings.fold_punctuation:
-        result = fold_punctuation(result)
-    if settings.lower:
-        result = result.lower()
-    if settings.strip_accents:
-        result = strip_accents(result)
-    if settings.collapse_spaces:
-        result = collapse_whitespace(result)
+    for name, stage in NORMALIZATION_STAGES:
+        if getattr(settings, name):
+            result = stage(result)
     return result
 
 
@@ -129,3 +124,15 @@ def strip_accents(text: str, latin_only: bool = True) -> str:
         kept.append(character)
         previous = character
     return unicodedata.normalize("NFC", "".join(kept))
+
+
+#: The stages :func:`normalize_text` applies, in order, paired with the
+#: :class:`NormalizeConfig` field that switches each one on.  Declaring the order
+#: as data is what makes it testable: a stage that was silently reordered would
+#: otherwise show up only as a wrong score.
+NORMALIZATION_STAGES = (
+    ("fold_punctuation", fold_punctuation),
+    ("lower", str.lower),
+    ("strip_accents", strip_accents),
+    ("collapse_spaces", collapse_whitespace),
+)
