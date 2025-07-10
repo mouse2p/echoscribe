@@ -10,6 +10,7 @@ from echoscribe.text.segment import (
     WORD_SCRIPTS,
     SegmentConfig,
     Token,
+    segment,
 )
 
 
@@ -51,3 +52,43 @@ def test_a_bad_minimum_length_is_rejected(bad) -> None:
 def test_config_is_frozen() -> None:
     with pytest.raises(AttributeError):
         SegmentConfig().keep_punctuation = True  # type: ignore[misc]
+
+
+def test_offsets_point_back_at_the_source_text() -> None:
+    text = "hello 你好 world"
+    for token in segment(text):
+        assert text[token.start : token.stop] == token.text
+
+
+def test_tokens_are_ordered_and_do_not_overlap() -> None:
+    text = "start 你 stop 好 end"
+    tokens = segment(text)
+    cursor = 0
+    for token in tokens:
+        assert token.start >= cursor
+        cursor = token.stop
+
+
+def test_scripts_are_recorded_per_token() -> None:
+    tokens = segment("hello 你好 42")
+    assert [(token.text, token.script) for token in tokens] == [
+        ("hello", "latin"),
+        ("你", "han"),
+        ("好", "han"),
+        ("42", "digit"),
+    ]
+
+
+def test_an_empty_string_has_no_tokens() -> None:
+    assert segment("") == ()
+    assert segment("   ") == ()
+
+
+def test_a_non_string_is_rejected() -> None:
+    with pytest.raises(ConfigError, match="needs a string"):
+        segment(42)  # type: ignore[arg-type]
+
+
+def test_segmentation_is_deterministic() -> None:
+    text = "mixed 混合 text 文本 123"
+    assert segment(text) == segment(text)
