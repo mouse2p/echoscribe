@@ -146,3 +146,45 @@ def test_a_minimum_length_drops_short_tokens() -> None:
 def test_a_minimum_length_never_drops_a_two_character_word() -> None:
     config = SegmentConfig(min_token_length=2)
     assert [token.text for token in segment("hi 你", config)] == ["hi"]
+
+
+def test_punctuation_is_kept_when_asked_for() -> None:
+    config = SegmentConfig(keep_punctuation=True)
+    tokens = segment("hello, 你好.", config)
+    assert [(token.text, token.script) for token in tokens] == [
+        ("hello", "latin"),
+        (",", "punctuation"),
+        ("你", "han"),
+        ("好", "han"),
+        (".", "punctuation"),
+    ]
+
+
+def test_punctuation_is_dropped_by_default() -> None:
+    assert [token.text for token in segment("hello, 你好.")] == ["hello", "你", "好"]
+
+
+def test_hyphen_splitting_separates_a_compound() -> None:
+    config = SegmentConfig(split_on_hyphen=True)
+    assert [token.text for token in segment("code-switch", config)] == ["code", "switch"]
+
+
+def test_hyphen_splitting_also_splits_an_apostrophe() -> None:
+    config = SegmentConfig(split_on_hyphen=True)
+    assert [token.text for token in segment("don't", config)] == ["don", "t"]
+
+
+def test_hyphen_splitting_leaves_a_single_word_alone() -> None:
+    config = SegmentConfig(split_on_hyphen=True)
+    assert [token.text for token in segment("hello world", config)] == ["hello", "world"]
+
+
+def test_both_flags_can_be_on_at_once() -> None:
+    config = SegmentConfig(keep_punctuation=True, split_on_hyphen=True)
+    assert [token.text for token in segment("code-switch, ok", config)] == [
+        "code",
+        "-",
+        "switch",
+        ",",
+        "ok",
+    ]
