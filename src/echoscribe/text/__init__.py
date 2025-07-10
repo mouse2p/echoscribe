@@ -8,4 +8,30 @@ Chinese character must not be glued to an English word by the time a scorer coun
 errors.
 """
 
-__all__: list[str] = []
+from echoscribe.text.normalize import (
+    NORMALIZATION_FORMS,
+    NORMALIZATION_STAGES,
+    PUNCTUATION_FOLD,
+    NormalizeConfig,
+    collapse_whitespace,
+    fold_punctuation,
+    normalize_text,
+    strip_accents,
+)
+from echoscribe.text.script import SCRIPTS, ScriptRun, is_han, script_of, script_runs
+
+__all__ = [
+    "NORMALIZATION_FORMS",
+    "NORMALIZATION_STAGES",
+    "PUNCTUATION_FOLD",
+    "SCRIPTS",
+    "NormalizeConfig",
+    "ScriptRun",
+    "collapse_whitespace",
+    "fold_punctuation",
+    "is_han",
+    "normalize_text",
+    "script_of",
+    "script_runs",
+    "strip_accents",
+]

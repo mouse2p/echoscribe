@@ -272,3 +272,13 @@ def test_the_pipeline_still_matches_the_explicit_stage_order() -> None:
     text = "  Café 「A」…  "
     manual = collapse_whitespace(strip_accents(fold_punctuation(text).lower()))
     assert normalize_text(text, config) == manual
+
+
+def test_the_text_subpackage_re_exports_its_public_names() -> None:
+    from echoscribe import text
+    from echoscribe.text.script import script_runs
+
+    assert text.normalize_text is normalize_text
+    assert text.script_runs is script_runs
+    assert text.NormalizeConfig is NormalizeConfig
+    assert set(text.__all__) >= {"normalize_text", "script_of", "script_runs", "SCRIPTS"}
