@@ -101,17 +101,27 @@ def segment(text: str, config: SegmentConfig | None = None) -> tuple[Token, ...]
         script = script_of(text[index])
         if script == "space":
             index += 1
-            continue
-        if script not in WORD_SCRIPTS:
-            if script == "punctuation" and not settings.keep_punctuation:
-                index += 1
-                continue
-            tokens.append(Token(text[index], script, index))
-            index += 1
-            continue
-        end = _word_end(text, index, script, settings)
-        tokens.append(Token(text[index:end], script, index))
-        index = end
+        elif script in WORD_SCRIPTS:
+            end = _word_end(text, index, script, settings)
+            tokens.append(Token(text[index:end], script, index))
+            index = end
+        else:
+            index = _append_singleton(tokens, text, index, script, settings)
+    return _filter_by_length(tokens, settings)
+
+
+def _append_singleton(
+    tokens: list[Token], text: str, index: int, script: str, settings: SegmentConfig
+) -> int:
+    """Emit one character as its own token -- or skip it -- and return the next index."""
+    if script == "punctuation" and not settings.keep_punctuation:
+        return index + 1
+    tokens.append(Token(text[index], script, index))
+    return index + 1
+
+
+def _filter_by_length(tokens: list[Token], settings: SegmentConfig) -> tuple[Token, ...]:
+    """Drop tokens shorter than the configured minimum."""
     return tuple(token for token in tokens if len(token.text) >= settings.min_token_length)
 
 
