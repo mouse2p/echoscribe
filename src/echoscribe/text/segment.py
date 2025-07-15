@@ -18,6 +18,7 @@ Two details matter more than they look:
 
 from __future__ import annotations
 
+from collections.abc import Sequence
 from dataclasses import dataclass
 
 from echoscribe.errors import ConfigError, require
@@ -129,3 +130,68 @@ def _continues_a_word(
         return False
     following = position + 1
     return following < len(text) and script_of(text[following]) == word_script
+
+
+def token_texts(tokens: Sequence[Token]) -> tuple[str, ...]:
+    """The token strings alone, which is what an error rate compares."""
+    return tuple(token.text for token in tokens)
+
+
+def count_by_script(tokens: Sequence[Token]) -> dict[str, int]:
+    """How many tokens fall in each script class present in ``tokens``."""
+    counts: dict[str, int] = {}
+    for token in tokens:
+        counts[token.script] = counts.get(token.script, 0) + 1
+    return counts
+
+
+def join_for_display(tokens: Sequence[Token]) -> str:
+    """Rebuild a readable transcript from tokens.
+
+    Words are separated by a space and Han characters are not, with a space at each
+    script switch -- the same convention the corpus generator writes its transcripts
+    with, so a segmented hypothesis and a planted reference look alike on screen.
+    Whitespace that segmentation dropped is not recoverable, and this makes no
+    attempt to recover it.
+    """
+    parts: list[str] = []
+    previous: str | None = None
+    for token in tokens:
+        if previous is not None and not (previous == "han" and token.script == "han"):
+            parts.append(" ")
+        parts.append(token.text)
+        previous = token.script
+    return "".join(parts)
+
+
+@dataclass(frozen=True)
+class SegmentationSummary:
+    """Counts a corpus report can quote without re-segmenting anything."""
+
+    utterances: int
+    tokens: int
+    words: int
+    characters: int
+    scripts: dict
+
+    @property
+    def tokens_per_utterance(self) -> float:
+        """Mean token count; zero for an empty corpus."""
+        return self.tokens / self.utterances if self.utterances else 0.0
+
+
+def summarize(texts: Sequence[str], config: SegmentConfig | None = None) -> SegmentationSummary:
+    """Segment every string in ``texts`` and total the results."""
+    settings = SegmentConfig() if config is None else config
+    total = 0
+    words = 0
+    characters = 0
+    counts: dict[str, int] = {}
+    for text in texts:
+        tokens = segment(text, settings)
+        total += len(tokens)
+        for script, count in count_by_script(tokens).items():
+            counts[script] = counts.get(script, 0) + count
+        words += sum(1 for token in tokens if token.is_word)
+        characters += sum(1 for token in tokens if token.script == "han")
+    return SegmentationSummary(len(texts), total, words, characters, counts)
