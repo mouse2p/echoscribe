@@ -14,6 +14,17 @@ Two details matter more than they look:
 * punctuation is dropped by default.  A transcript's commas are not recognition
   errors, and counting them would make the score depend on the transcriber's
   punctuation policy rather than on the words.
+
+What segmentation does *not* promise:
+
+* no Chinese word segmentation.  Splitting 你好世界 into 你好 / 世界 needs a
+  lexicon and a model of its own; the character split is the honest default and is
+  what CER measures.  A caller that wants words can pass them in already split.
+* no lossless round trip.  Dropped punctuation and collapsed whitespace are gone.
+  :func:`join_for_display` rebuilds something readable, not something identical.
+* no language identification.  The script of a character decides its treatment,
+  which is the right question for scoring but is not the same as knowing that a
+  Latin word is English rather than French.
 """
 
 from __future__ import annotations
