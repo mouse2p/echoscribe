@@ -8,9 +8,14 @@ from echoscribe.errors import ConfigError
 from echoscribe.text.segment import (
     INTERNAL_WORD_PUNCTUATION,
     WORD_SCRIPTS,
+    SegmentationSummary,
     SegmentConfig,
     Token,
+    count_by_script,
+    join_for_display,
     segment,
+    summarize,
+    token_texts,
 )
 
 
@@ -188,3 +193,64 @@ def test_both_flags_can_be_on_at_once() -> None:
         ",",
         "ok",
     ]
+
+
+def test_token_texts_is_the_projection_of_the_token_list() -> None:
+    tokens = segment("hello 你好 world")
+    assert token_texts(tokens) == tuple(token.text for token in tokens)
+    assert token_texts(tokens) == ("hello", "你", "好", "world")
+
+
+def test_count_by_script_totals_the_tokens() -> None:
+    counts = count_by_script(segment("hello 你好 42"))
+    assert counts == {"latin": 1, "han": 2, "digit": 1}
+    assert sum(counts.values()) == 4
+
+
+def test_count_by_script_of_nothing_is_empty() -> None:
+    assert count_by_script(()) == {}
+
+
+def test_join_for_display_puts_spaces_between_words_only() -> None:
+    assert join_for_display(segment("hello 你好 world")) == "hello 你好 world"
+    assert join_for_display(segment("你好世界")) == "你好世界"
+
+
+def test_join_for_display_agrees_with_the_corpus_convention() -> None:
+    from echoscribe.synth.corpus import surface_text
+
+    tokens = segment("hello 你好 world")
+    assert join_for_display(tokens) == surface_text(
+        ("hello", "你", "好", "world"), ("en", "zh", "zh", "en")
+    )
+
+
+def test_join_for_display_of_nothing_is_empty() -> None:
+    assert join_for_display(()) == ""
+
+
+def test_a_summary_totals_a_list_of_utterances() -> None:
+    summary = summarize(["hello 你好", "world 世界 42"])
+    assert isinstance(summary, SegmentationSummary)
+    assert summary.utterances == 2
+    assert summary.tokens == 7
+    assert summary.words == 3
+    assert summary.characters == 4
+    assert summary.scripts["han"] == 4
+
+
+def test_a_summary_of_nothing_reports_zero_means() -> None:
+    summary = summarize([])
+    assert summary.utterances == 0
+    assert summary.tokens_per_utterance == 0.0
+
+
+def test_tokens_per_utterance_divides_by_the_utterance_count() -> None:
+    summary = summarize(["a b c", "d e"])
+    assert summary.tokens_per_utterance == pytest.approx(2.5)
+
+
+def test_a_summary_honours_the_config() -> None:
+    summary = summarize(["hello, world"], SegmentConfig(keep_punctuation=True))
+    assert summary.scripts["punctuation"] == 1
+    assert summary.tokens == 3
