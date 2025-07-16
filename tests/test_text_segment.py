@@ -13,6 +13,7 @@ from echoscribe.text.segment import (
     Token,
     count_by_script,
     join_for_display,
+    script_share,
     segment,
     summarize,
     token_texts,
@@ -254,3 +255,19 @@ def test_a_summary_honours_the_config() -> None:
     summary = summarize(["hello, world"], SegmentConfig(keep_punctuation=True))
     assert summary.scripts["punctuation"] == 1
     assert summary.tokens == 3
+
+
+def test_script_share_sums_to_one() -> None:
+    share = script_share(segment("hello 你好 world 世界"))
+    assert sum(share.values()) == pytest.approx(1.0)
+    # Two English words and four Han characters: six tokens, so the split is 4/6.
+    assert share["han"] == pytest.approx(4 / 6)
+    assert share["latin"] == pytest.approx(2 / 6)
+
+
+def test_script_share_of_nothing_is_empty() -> None:
+    assert script_share(()) == {}
+
+
+def test_script_share_is_sorted_by_script_name() -> None:
+    assert list(script_share(segment("hello 你 42"))) == ["digit", "han", "latin"]

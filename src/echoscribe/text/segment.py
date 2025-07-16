@@ -216,3 +216,18 @@ def summarize(texts: Sequence[str], config: SegmentConfig | None = None) -> Segm
         words += sum(1 for token in tokens if token.is_word)
         characters += sum(1 for token in tokens if token.script == "han")
     return SegmentationSummary(len(texts), total, words, characters, counts)
+
+
+def script_share(tokens: Sequence[Token]) -> dict[str, float]:
+    """Fraction of ``tokens`` in each script, summing to one for a non-empty list.
+
+    A code-switch corpus report quotes this rather than raw counts, because the
+    interesting question is whether the corpus actually contains both languages in
+    a usable proportion -- a corpus that is 99% English measures nothing about
+    switching.
+    """
+    counts = count_by_script(tokens)
+    total = sum(counts.values())
+    if total == 0:
+        return {}
+    return {script: count / total for script, count in sorted(counts.items())}
