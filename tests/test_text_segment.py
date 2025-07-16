@@ -271,3 +271,13 @@ def test_script_share_of_nothing_is_empty() -> None:
 
 def test_script_share_is_sorted_by_script_name() -> None:
     assert list(script_share(segment("hello 你 42"))) == ["digit", "han", "latin"]
+
+
+def test_the_text_subpackage_re_exports_the_segmenter() -> None:
+    from echoscribe import text
+
+    assert text.segment is segment
+    assert text.Token is Token
+    assert text.SegmentConfig is SegmentConfig
+    for name in ("segment", "summarize", "join_for_display", "script_share"):
+        assert name in text.__all__

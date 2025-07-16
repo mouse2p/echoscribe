@@ -19,19 +19,41 @@ from echoscribe.text.normalize import (
     strip_accents,
 )
 from echoscribe.text.script import SCRIPTS, ScriptRun, is_han, script_of, script_runs
+from echoscribe.text.segment import (
+    WORD_SCRIPTS,
+    SegmentationSummary,
+    SegmentConfig,
+    Token,
+    count_by_script,
+    join_for_display,
+    script_share,
+    segment,
+    summarize,
+    token_texts,
+)
 
 __all__ = [
     "NORMALIZATION_FORMS",
     "NORMALIZATION_STAGES",
     "PUNCTUATION_FOLD",
     "SCRIPTS",
+    "WORD_SCRIPTS",
     "NormalizeConfig",
+    "SegmentConfig",
+    "SegmentationSummary",
+    "Token",
     "ScriptRun",
     "collapse_whitespace",
+    "count_by_script",
+    "join_for_display",
     "fold_punctuation",
     "is_han",
     "normalize_text",
     "script_of",
+    "script_share",
+    "segment",
+    "summarize",
     "script_runs",
     "strip_accents",
+    "token_texts",
 ]
