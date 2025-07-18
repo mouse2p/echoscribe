@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import pytest
 
-from echoscribe.errors import ConfigError
+from echoscribe.errors import ConfigError, TokenizerError
 from echoscribe.text.vocab import DEFAULT_RESERVED, Vocabulary
 
 
@@ -63,3 +63,65 @@ def test_a_vocabulary_is_immutable() -> None:
     vocab = Vocabulary.build(["a"])
     with pytest.raises(AttributeError):
         vocab.tokens = ()  # type: ignore[misc]
+
+
+def test_reserved_ids_are_the_first_four() -> None:
+    vocab = Vocabulary.build(["a", "b"])
+    assert (vocab.blank_id, vocab.unk_id, vocab.sos_id, vocab.eos_id) == (0, 1, 2, 3)
+
+
+def test_a_short_reserved_block_has_no_eos_slot() -> None:
+    vocab = Vocabulary.build(["x"], reserved=("<blank>", "<unk>"))
+    with pytest.raises(ConfigError, match="reserves only 2 slots"):
+        _ = vocab.eos_id
+
+
+def test_id_of_and_token_at_are_inverses() -> None:
+    vocab = Vocabulary.build(["hello", "world", "你", "好"])
+    for token in vocab.tokens:
+        assert vocab.token_at(vocab.id_of(token)) == token
+
+
+def test_every_id_round_trips() -> None:
+    vocab = Vocabulary.build(["a", "b", "c", "d"])
+    assert list(vocab.decode(range(len(vocab)))) == list(vocab.tokens)
+
+
+def test_id_of_raises_on_an_unknown_token() -> None:
+    vocab = Vocabulary.build(["a"])
+    with pytest.raises(TokenizerError, match="'z' is not in the vocabulary"):
+        vocab.id_of("z")
+
+
+def test_encode_substitutes_unk_by_default() -> None:
+    vocab = Vocabulary.build(["a", "b"])
+    assert vocab.encode(["a", "z", "b"]) == (4, 1, 5)
+
+
+def test_encode_can_be_made_strict() -> None:
+    vocab = Vocabulary.build(["a"])
+    with pytest.raises(TokenizerError, match="allow_unk is off"):
+        vocab.encode(["a", "z"], allow_unk=False)
+
+
+def test_encode_of_nothing_is_empty() -> None:
+    assert Vocabulary.build(["a"]).encode([]) == ()
+
+
+def test_token_at_rejects_an_out_of_range_id() -> None:
+    vocab = Vocabulary.build(["a"])
+    with pytest.raises(TokenizerError, match="is outside"):
+        vocab.token_at(99)
+    with pytest.raises(TokenizerError, match="is outside"):
+        vocab.token_at(-1)
+
+
+def test_token_at_rejects_a_non_integer_id() -> None:
+    with pytest.raises(TokenizerError, match="must be an int"):
+        Vocabulary.build(["a"]).token_at(1.0)  # type: ignore[arg-type]
+
+
+def test_encode_decode_round_trips_a_known_sequence() -> None:
+    vocab = Vocabulary.build(["hello", "world", "你", "好"])
+    tokens = ("hello", "你", "好", "world")
+    assert vocab.decode(vocab.encode(tokens)) == tokens
