@@ -23,10 +23,10 @@ records the order and the digest covers it.
 from __future__ import annotations
 
 from collections import Counter
-from collections.abc import Iterable
+from collections.abc import Iterable, Sequence
 from dataclasses import dataclass, field
 
-from echoscribe.errors import ConfigError, require
+from echoscribe.errors import ConfigError, TokenizerError, require
 
 #: Bumped when the serialized shape of a vocabulary changes.
 VOCAB_SCHEMA_VERSION = 1
@@ -90,3 +90,69 @@ class Vocabulary:
 
     def __contains__(self, token: object) -> bool:
         return token in self._index
+
+    @property
+    def blank_id(self) -> int:
+        """Id of the CTC blank / transducer no-output symbol."""
+        return self._reserved_id(0)
+
+    @property
+    def unk_id(self) -> int:
+        """Id an out-of-vocabulary piece is mapped to, when that is allowed."""
+        return self._reserved_id(1)
+
+    @property
+    def sos_id(self) -> int:
+        """Id of the predictor's start symbol."""
+        return self._reserved_id(2)
+
+    @property
+    def eos_id(self) -> int:
+        """Id of the predictor's stop symbol."""
+        return self._reserved_id(3)
+
+    def _reserved_id(self, position: int) -> int:
+        """Id of the reserved token at ``position``, or an error if there is none."""
+        require(
+            position < len(self.reserved),
+            f"this vocabulary reserves only {len(self.reserved)} slots, not {position + 1}",
+            ConfigError,
+        )
+        return position
+
+    def id_of(self, token: str) -> int:
+        """Id of ``token``; an unknown token is an error, not a silent ``<unk>``."""
+        try:
+            return self._index[token]
+        except KeyError:
+            raise TokenizerError(f"{token!r} is not in the vocabulary") from None
+
+    def token_at(self, index: int) -> str:
+        """Token at ``index``; an out-of-range id is an error."""
+        require(
+            isinstance(index, int) and not isinstance(index, bool),
+            f"a vocabulary id must be an int, got {index!r}",
+            TokenizerError,
+        )
+        if not 0 <= index < len(self.tokens):
+            raise TokenizerError(f"id {index} is outside [0, {len(self.tokens)})")
+        return self.tokens[index]
+
+    def encode(self, tokens: Sequence[str], allow_unk: bool = True) -> tuple[int, ...]:
+        """Map tokens to ids, substituting ``<unk>`` or raising as configured."""
+        ids = []
+        for token in tokens:
+            if token in self._index:
+                ids.append(self._index[token])
+                continue
+            require(
+                allow_unk,
+                f"{token!r} is not in the vocabulary and allow_unk is off",
+                TokenizerError,
+            )
+            ids.append(self.unk_id)
+        return tuple(ids)
+
+    def decode(self, ids: Sequence[int]) -> tuple[str, ...]:
+        """Map ids back to tokens."""
+        return tuple(self.token_at(index) for index in ids)
