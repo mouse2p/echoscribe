@@ -22,11 +22,12 @@ records the order and the digest covers it.
 
 from __future__ import annotations
 
+import hashlib
 from collections import Counter
 from collections.abc import Iterable, Sequence
 from dataclasses import dataclass, field
 
-from echoscribe.errors import ConfigError, TokenizerError, require
+from echoscribe.errors import ConfigError, SchemaError, TokenizerError, require
 
 #: Bumped when the serialized shape of a vocabulary changes.
 VOCAB_SCHEMA_VERSION = 1
@@ -156,3 +157,43 @@ class Vocabulary:
     def decode(self, ids: Sequence[int]) -> tuple[str, ...]:
         """Map ids back to tokens."""
         return tuple(self.token_at(index) for index in ids)
+
+    def digest(self) -> str:
+        """A short hex digest of the whole ordered token list.
+
+        Two vocabularies with the same digest are interchangeable for a trained
+        model; anything else -- one extra piece, one reordering -- is not.  Reports
+        quote this so a result can be tied to the exact table that produced it.
+        """
+        return hashlib.sha256("\n".join(self.tokens).encode("utf-8")).hexdigest()[:16]
+
+    def to_dict(self) -> dict:
+        """A JSON-ready mapping, tagged with the schema version."""
+        return {
+            "schema": VOCAB_SCHEMA_VERSION,
+            "reserved": list(self.reserved),
+            "tokens": list(self.tokens),
+            "digest": self.digest(),
+        }
+
+    @classmethod
+    def from_dict(cls, payload: dict) -> Vocabulary:
+        """Rebuild a vocabulary, refusing a schema or digest that does not match."""
+        version = payload.get("schema")
+        require(
+            version == VOCAB_SCHEMA_VERSION,
+            f"vocabulary schema {version!r} is not supported; this build reads "
+            f"{VOCAB_SCHEMA_VERSION}",
+            SchemaError,
+        )
+        for name in ("reserved", "tokens"):
+            require(name in payload, f"vocabulary payload is missing {name!r}", SchemaError)
+        vocab = cls(tuple(payload["tokens"]), tuple(payload["reserved"]))
+        recorded = payload.get("digest")
+        require(
+            recorded is None or recorded == vocab.digest(),
+            f"vocabulary digest mismatch: the file says {recorded!r}, the tokens hash to "
+            f"{vocab.digest()!r}",
+            SchemaError,
+        )
+        return vocab

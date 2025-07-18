@@ -4,8 +4,12 @@ from __future__ import annotations
 
 import pytest
 
-from echoscribe.errors import ConfigError, TokenizerError
-from echoscribe.text.vocab import DEFAULT_RESERVED, Vocabulary
+from echoscribe.errors import ConfigError, SchemaError, TokenizerError
+from echoscribe.text.vocab import (
+    DEFAULT_RESERVED,
+    VOCAB_SCHEMA_VERSION,
+    Vocabulary,
+)
 
 
 def test_build_puts_the_reserved_tokens_first_in_order() -> None:
@@ -125,3 +129,65 @@ def test_encode_decode_round_trips_a_known_sequence() -> None:
     vocab = Vocabulary.build(["hello", "world", "你", "好"])
     tokens = ("hello", "你", "好", "world")
     assert vocab.decode(vocab.encode(tokens)) == tokens
+
+
+def test_serialization_round_trips() -> None:
+    vocab = Vocabulary.build(["hello", "world", "你"])
+    assert Vocabulary.from_dict(vocab.to_dict()) == vocab
+
+
+def test_the_payload_names_its_schema_and_digest() -> None:
+    payload = Vocabulary.build(["a"]).to_dict()
+    assert payload["schema"] == VOCAB_SCHEMA_VERSION
+    assert set(payload) == {"schema", "reserved", "tokens", "digest"}
+    assert len(payload["digest"]) == 16
+
+
+def test_the_digest_covers_the_order() -> None:
+    forward = Vocabulary.build(["a", "b"])
+    backward = Vocabulary.build(["b", "a"])
+    assert forward.digest() != backward.digest()
+
+
+def test_the_digest_is_stable_across_calls() -> None:
+    vocab = Vocabulary.build(["a", "b", "c"])
+    assert vocab.digest() == Vocabulary.build(["a", "b", "c"]).digest()
+
+
+def test_the_digest_is_hexadecimal() -> None:
+    digest = Vocabulary.build(["a"]).digest()
+    assert all(character in "0123456789abcdef" for character in digest)
+
+
+def test_a_foreign_schema_is_refused() -> None:
+    payload = Vocabulary.build(["a"]).to_dict()
+    payload["schema"] = VOCAB_SCHEMA_VERSION + 1
+    with pytest.raises(SchemaError, match="is not supported"):
+        Vocabulary.from_dict(payload)
+
+
+def test_a_missing_field_is_refused() -> None:
+    payload = Vocabulary.build(["a"]).to_dict()
+    del payload["tokens"]
+    with pytest.raises(SchemaError, match="missing 'tokens'"):
+        Vocabulary.from_dict(payload)
+
+
+def test_a_tampered_token_list_fails_the_digest_check() -> None:
+    payload = Vocabulary.build(["a", "b"]).to_dict()
+    payload["tokens"][4] = "c"
+    with pytest.raises(SchemaError, match="digest mismatch"):
+        Vocabulary.from_dict(payload)
+
+
+def test_a_payload_without_a_digest_still_loads() -> None:
+    payload = Vocabulary.build(["a"]).to_dict()
+    del payload["digest"]
+    assert Vocabulary.from_dict(payload) == Vocabulary.build(["a"])
+
+
+def test_the_serialized_form_is_json_encodable() -> None:
+    import json
+
+    text = json.dumps(Vocabulary.build(["你好", "a"]).to_dict(), ensure_ascii=False)
+    assert "你好" in text
