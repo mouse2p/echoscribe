@@ -282,3 +282,13 @@ def test_the_text_subpackage_re_exports_its_public_names() -> None:
     assert text.script_runs is script_runs
     assert text.NormalizeConfig is NormalizeConfig
     assert set(text.__all__) >= {"normalize_text", "script_of", "script_runs", "SCRIPTS"}
+
+
+def test_the_form_field_is_one_of_the_literal_names() -> None:
+    # The runtime guard and the declared type have to agree, otherwise mypy would
+    # accept a form unicodedata.normalize rejects.
+    from echoscribe.text.normalize import NORMALIZATION_FORMS as FORMS
+
+    assert NormalizeConfig().form in FORMS
+    for form in FORMS:
+        assert NormalizeConfig(form=form).form == form

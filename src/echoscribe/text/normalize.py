@@ -28,19 +28,23 @@ from __future__ import annotations
 
 import unicodedata
 from dataclasses import dataclass
+from typing import Literal
 
 from echoscribe.errors import ConfigError, require, require_in
 from echoscribe.text.script import script_of
 
+#: A Unicode normalisation form name.
+NormalizationForm = Literal["NFC", "NFKC", "NFD", "NFKD"]
+
 #: Unicode normalisation forms :func:`normalize_text` accepts.
-NORMALIZATION_FORMS = ("NFC", "NFKC", "NFD", "NFKD")
+NORMALIZATION_FORMS: tuple[NormalizationForm, ...] = ("NFC", "NFKC", "NFD", "NFKD")
 
 
 @dataclass(frozen=True)
 class NormalizeConfig:
     """Which normalisation stages to apply."""
 
-    form: str = "NFKC"
+    form: NormalizationForm = "NFKC"
     lower: bool = True
     fold_punctuation: bool = True
     collapse_spaces: bool = True
