@@ -13,8 +13,10 @@ from echoscribe.text.units import (
     ZERO_INITIAL_MARK,
     ToneUnit,
     syllable_units,
+    unit_vocabulary,
     utterance_units,
 )
+from echoscribe.text.vocab import DEFAULT_RESERVED
 
 
 def test_a_unit_symbol_joins_its_three_parts() -> None:
@@ -166,3 +168,57 @@ def test_a_custom_lexicon_is_honoured() -> None:
 
     lexicon = Lexicon(english={"zog": ("z", "aa")}, mandarin={})
     assert utterance_units(("zog",), ("en",), lexicon) == ("z", "aa")
+
+
+def test_the_unit_vocabulary_starts_with_the_reserved_tokens() -> None:
+    vocab = unit_vocabulary()
+    assert vocab.tokens[:4] == DEFAULT_RESERVED
+
+
+def test_every_english_phone_is_in_the_vocabulary() -> None:
+    from echoscribe.synth.lexicon import ENGLISH_SPELLINGS
+
+    vocab = unit_vocabulary()
+    for spelling in ENGLISH_SPELLINGS.values():
+        for symbol in spelling:
+            assert symbol in vocab, symbol
+
+
+def test_every_tone_unit_is_in_the_vocabulary() -> None:
+    vocab = unit_vocabulary()
+    for syllable in MANDARIN_SYLLABLES.values():
+        assert ToneUnit.of(syllable).symbol in vocab
+
+
+def test_the_phone_level_vocabulary_trades_initials_for_sharing() -> None:
+    syllable_level = set(unit_vocabulary(level="syllable").tokens)
+    phone_level = set(unit_vocabulary(level="phone").tokens)
+    # A phone-level alphabet has to carry the bare initials as their own symbols,
+    # but it reuses one toned final across every initial that can precede it.  In
+    # this lexicon the sharing wins, so the alphabet is the smaller one.
+    assert {"zh", "q", "x", "h"} <= phone_level
+    assert not ({"zh", "q", "x", "h"} & syllable_level)
+    assert len(phone_level) < len(syllable_level)
+    assert len(phone_level) == len(syllable_level) - 1
+
+
+def test_every_utterance_encodes_against_the_unit_vocabulary() -> None:
+    vocab = unit_vocabulary()
+    units = utterance_units(("hello", "你", "好", "world"), ("en", "zh", "zh", "en"))
+    ids = vocab.encode(units, allow_unk=False)
+    assert vocab.decode(ids) == units
+
+
+def test_the_vocabulary_has_no_duplicate_pieces() -> None:
+    vocab = unit_vocabulary()
+    assert len(set(vocab.tokens)) == len(vocab)
+    # 33 phones actually used by the English spellings, 23 distinct toned
+    # syllables (homophones collapse) and the four reserved slots.
+    assert len(vocab) == len(DEFAULT_RESERVED) + 56
+
+
+def test_a_custom_lexicon_gives_a_custom_vocabulary() -> None:
+    from echoscribe.synth.lexicon import Lexicon
+
+    vocab = unit_vocabulary(Lexicon(english={"zog": ("z", "aa")}, mandarin={}))
+    assert vocab.tokens[4:] == ("z", "aa")
