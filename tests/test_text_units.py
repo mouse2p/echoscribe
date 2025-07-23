@@ -86,3 +86,31 @@ def test_the_declared_levels_are_syllable_and_phone() -> None:
 def test_a_unit_is_built_from_a_lexicon_syllable() -> None:
     syllable = MandarinSyllable("X", "sh", "ang", 2)
     assert ToneUnit.of(syllable) == ToneUnit("sh", "ang", 2)
+
+
+def test_distinct_pronunciations_give_distinct_symbols() -> None:
+    syllables = list(MANDARIN_SYLLABLES.values())
+    symbols = {ToneUnit.of(syllable).symbol for syllable in syllables}
+    pronunciations = {(s.initial, s.final, s.tone) for s in syllables}
+    # Homophones collapse onto one symbol, which is correct: a phone-level decoder
+    # cannot tell them apart either, and the transcript still records both.
+    assert len(symbols) == len(pronunciations)
+
+
+def test_homophones_share_a_symbol() -> None:
+    # 他 and 她 differ as characters but not as units, which is exactly what a
+    # phone-level decoder can distinguish and no more.
+    assert ToneUnit.of(MANDARIN_SYLLABLES["他"]) == ToneUnit.of(MANDARIN_SYLLABLES["她"])
+
+
+def test_the_four_tones_of_one_syllable_give_four_symbols() -> None:
+    symbols = {ToneUnit("h", "a", tone).symbol for tone in (1, 2, 3, 4)}
+    assert len(symbols) == 4
+
+
+def test_symbols_are_ascii_and_tokenizer_safe() -> None:
+    for syllable in MANDARIN_SYLLABLES.values():
+        symbol = ToneUnit.of(syllable).symbol
+        assert symbol.isascii()
+        assert " " not in symbol
+        assert symbol.strip() == symbol
