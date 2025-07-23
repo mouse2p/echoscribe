@@ -19,10 +19,11 @@ Both parse back unambiguously, which the numeric-only form does not.
 
 from __future__ import annotations
 
+from collections.abc import Sequence
 from dataclasses import dataclass
 
 from echoscribe.errors import ConfigError, TokenizerError, require, require_in
-from echoscribe.synth.lexicon import MandarinSyllable
+from echoscribe.synth.lexicon import Lexicon, MandarinSyllable
 
 #: Separates the three parts of a tone-language unit symbol.
 UNIT_SEPARATOR = "."
@@ -88,3 +89,46 @@ class ToneUnit:
             TokenizerError,
         )
         return cls(initial, parts[1], int(parts[2]))
+
+
+def syllable_units(syllable: MandarinSyllable, level: str = "syllable") -> tuple[str, ...]:
+    """The modelling units of one tone-language syllable.
+
+    ``"syllable"`` emits one toned unit; ``"phone"`` emits the initial (when there
+    is one) and the toned final separately, which is the finer decomposition a
+    phone-level acoustic model would use.
+    """
+    require_in("level", level, UNIT_LEVELS, ConfigError)
+    unit = ToneUnit.of(syllable)
+    if level == "syllable":
+        return (unit.symbol,)
+    final = ToneUnit("", syllable.final, syllable.tone).symbol
+    return (syllable.initial, final) if syllable.initial else (final,)
+
+
+def utterance_units(
+    tokens: Sequence[str],
+    languages: Sequence[str],
+    lexicon: Lexicon | None = None,
+    level: str = "syllable",
+) -> tuple[str, ...]:
+    """The modelling-unit sequence of a code-switched utterance.
+
+    English words expand to their phone symbols and Chinese characters to their tone
+    units, in transcript order.  The result is what a decoder is trained to emit and
+    what an alignment maps back onto words.
+    """
+    require_in("level", level, UNIT_LEVELS, ConfigError)
+    require(
+        len(tokens) == len(languages),
+        f"{len(tokens)} tokens cannot carry {len(languages)} language labels",
+        ConfigError,
+    )
+    table = Lexicon() if lexicon is None else lexicon
+    units: list[str] = []
+    for token, language in zip(tokens, languages, strict=True):
+        if language == "en":
+            units.extend(table.english[token])
+        else:
+            units.extend(syllable_units(table.mandarin[token], level))
+    return tuple(units)
