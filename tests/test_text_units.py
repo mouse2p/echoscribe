@@ -12,6 +12,8 @@ from echoscribe.text.units import (
     UNIT_SEPARATOR,
     ZERO_INITIAL_MARK,
     ToneUnit,
+    syllable_units,
+    utterance_units,
 )
 
 
@@ -114,3 +116,53 @@ def test_symbols_are_ascii_and_tokenizer_safe() -> None:
         assert symbol.isascii()
         assert " " not in symbol
         assert symbol.strip() == symbol
+
+
+def test_an_english_word_expands_to_its_phones() -> None:
+    assert utterance_units(("hello",), ("en",)) == ("hh", "ah", "l", "ow")
+
+
+def test_a_chinese_character_expands_to_one_toned_unit() -> None:
+    assert utterance_units(("你",), ("zh",)) == ("n.i.3",)
+
+
+def test_a_code_switched_utterance_concatenates_both() -> None:
+    units = utterance_units(("hello", "你", "好"), ("en", "zh", "zh"))
+    assert units == ("hh", "ah", "l", "ow", "n.i.3", "h.ao.3")
+
+
+def test_the_phone_level_splits_a_syllable_in_two() -> None:
+    assert syllable_units(MANDARIN_SYLLABLES["你"], "phone") == ("n", "_.i.3")
+
+
+def test_the_phone_level_of_a_zero_initial_syllable_is_one_unit() -> None:
+    syllable = MandarinSyllable("X", "", "a", 1)
+    assert syllable_units(syllable, "phone") == ("_.a.1",)
+
+
+def test_utterance_units_honour_the_level() -> None:
+    units = utterance_units(("你",), ("zh",), level="phone")
+    assert units == ("n", "_.i.3")
+
+
+def test_an_unknown_level_is_rejected() -> None:
+    with pytest.raises(ConfigError, match="level must be one of"):
+        syllable_units(MANDARIN_SYLLABLES["你"], "morpheme")
+    with pytest.raises(ConfigError, match="level must be one of"):
+        utterance_units(("你",), ("zh",), level="morpheme")
+
+
+def test_a_label_count_mismatch_is_rejected() -> None:
+    with pytest.raises(ConfigError, match="cannot carry"):
+        utterance_units(("hello", "你"), ("en",))
+
+
+def test_units_of_an_empty_utterance_are_empty() -> None:
+    assert utterance_units((), ()) == ()
+
+
+def test_a_custom_lexicon_is_honoured() -> None:
+    from echoscribe.synth.lexicon import Lexicon
+
+    lexicon = Lexicon(english={"zog": ("z", "aa")}, mandarin={})
+    assert utterance_units(("zog",), ("en",), lexicon) == ("z", "aa")
