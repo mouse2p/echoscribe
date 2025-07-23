@@ -24,6 +24,7 @@ from dataclasses import dataclass
 
 from echoscribe.errors import ConfigError, TokenizerError, require, require_in
 from echoscribe.synth.lexicon import Lexicon, MandarinSyllable
+from echoscribe.text.vocab import Vocabulary
 
 #: Separates the three parts of a tone-language unit symbol.
 UNIT_SEPARATOR = "."
@@ -132,3 +133,21 @@ def utterance_units(
         else:
             units.extend(syllable_units(table.mandarin[token], level))
     return tuple(units)
+
+
+def unit_vocabulary(lexicon: Lexicon | None = None, level: str = "syllable") -> Vocabulary:
+    """The decoder output alphabet implied by a lexicon.
+
+    Built from the lexicon tables rather than from a corpus, so the vocabulary
+    covers every word the laboratory can render even if a particular corpus never
+    uses one.  A corpus-trained subword vocabulary is a different thing and lives
+    in the tokenizer modules.
+    """
+    require_in("level", level, UNIT_LEVELS, ConfigError)
+    table = Lexicon() if lexicon is None else lexicon
+    pieces: list[str] = []
+    for spelling in table.english.values():
+        pieces.extend(spelling)
+    for syllable in table.mandarin.values():
+        pieces.extend(syllable_units(syllable, level))
+    return Vocabulary.build(pieces)
