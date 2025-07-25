@@ -15,6 +15,16 @@ identity, which is a harder problem for no gain.
 Symbols use ``.`` as a separator and ``_`` for a zero initial, so ``n.i.3`` is the
 third tone of ``ni`` and ``_.a.1`` is the first tone of a syllable with no onset.
 Both parse back unambiguously, which the numeric-only form does not.
+
+The choice has a cost worth stating.  A syllable-level tone unit means the output
+alphabet grows with the number of syllables the lexicon covers -- four tones times
+every initial-final pair -- whereas a phone-level decomposition would reuse one set
+of initials across all tones.  For a laboratory with a few dozen syllables that cost
+is invisible, and what it buys is that a single emitted symbol identifies a whole
+syllable, so the alignment from units back to characters is one-to-one instead of
+needing a tone-attachment rule.  A real large-vocabulary system would make the
+opposite trade, and the ``level`` argument is here so that trade can be measured
+rather than assumed.
 """
 
 from __future__ import annotations
