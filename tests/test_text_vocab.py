@@ -191,3 +191,20 @@ def test_the_serialized_form_is_json_encodable() -> None:
 
     text = json.dumps(Vocabulary.build(["你好", "a"]).to_dict(), ensure_ascii=False)
     assert "你好" in text
+
+
+def test_a_reserved_token_in_the_pieces_is_refused_even_when_repeated() -> None:
+    with pytest.raises(ConfigError, match="is a reserved token"):
+        Vocabulary.build(["<sos>", "a"])
+    with pytest.raises(ConfigError, match="is a reserved token"):
+        Vocabulary.build(["a", "b", "<eos>"])
+
+
+def test_a_custom_reserved_token_is_also_protected() -> None:
+    with pytest.raises(ConfigError, match="is a reserved token"):
+        Vocabulary.build(["<pad>"], reserved=("<pad>", "<unk>"))
+
+
+def test_the_refusal_names_the_offending_piece() -> None:
+    with pytest.raises(ConfigError, match="'<blank>' is a reserved token"):
+        Vocabulary.build(["<blank>"])
