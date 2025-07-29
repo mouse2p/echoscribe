@@ -76,7 +76,7 @@ def test_reserved_ids_are_the_first_four() -> None:
 
 def test_a_short_reserved_block_has_no_eos_slot() -> None:
     vocab = Vocabulary.build(["x"], reserved=("<blank>", "<unk>"))
-    with pytest.raises(ConfigError, match="reserves only 2 slots"):
+    with pytest.raises(ConfigError, match="does not reserve '<eos>'"):
         _ = vocab.eos_id
 
 
@@ -208,3 +208,25 @@ def test_a_custom_reserved_token_is_also_protected() -> None:
 def test_the_refusal_names_the_offending_piece() -> None:
     with pytest.raises(ConfigError, match="'<blank>' is a reserved token"):
         Vocabulary.build(["<blank>"])
+
+
+def test_reserved_ids_follow_the_custom_order() -> None:
+    vocab = Vocabulary.build(["x"], reserved=("<unk>", "<blank>"))
+    # The slots are whatever the reserved tuple says, not a fixed 0/1/2/3.
+    assert vocab.unk_id == 0
+    assert vocab.blank_id == 1
+
+
+def test_reserved_ids_find_their_token_wherever_it_sits() -> None:
+    variants = (
+        DEFAULT_RESERVED,
+        ("<blank>", "<unk>"),
+        ("<eos>", "<sos>", "<unk>", "<blank>"),
+    )
+    for reserved in variants:
+        vocab = Vocabulary.build(["a", "b"], reserved=reserved)
+        assert vocab.token_at(vocab.blank_id) == "<blank>"
+        assert vocab.token_at(vocab.unk_id) == "<unk>"
+        # The id is wherever the reserved tuple placed the token, not a fixed slot.
+        assert vocab.blank_id == reserved.index("<blank>")
+        assert vocab.unk_id == reserved.index("<unk>")

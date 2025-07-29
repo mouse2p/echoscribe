@@ -95,31 +95,36 @@ class Vocabulary:
     @property
     def blank_id(self) -> int:
         """Id of the CTC blank / transducer no-output symbol."""
-        return self._reserved_id(0)
+        return self._reserved_id("<blank>")
 
     @property
     def unk_id(self) -> int:
         """Id an out-of-vocabulary piece is mapped to, when that is allowed."""
-        return self._reserved_id(1)
+        return self._reserved_id("<unk>")
 
     @property
     def sos_id(self) -> int:
         """Id of the predictor's start symbol."""
-        return self._reserved_id(2)
+        return self._reserved_id("<sos>")
 
     @property
     def eos_id(self) -> int:
         """Id of the predictor's stop symbol."""
-        return self._reserved_id(3)
+        return self._reserved_id("<eos>")
 
-    def _reserved_id(self, position: int) -> int:
-        """Id of the reserved token at ``position``, or an error if there is none."""
+    def _reserved_id(self, name: str) -> int:
+        """Id of a reserved token looked up by name.
+
+        Looking it up rather than returning a position is what makes a custom
+        reserved order work: a vocabulary built with ``("<unk>", "<blank>")`` has to
+        report ``blank_id == 1``, because that is where ``<blank>`` actually is.
+        """
         require(
-            position < len(self.reserved),
-            f"this vocabulary reserves only {len(self.reserved)} slots, not {position + 1}",
+            name in self.reserved,
+            f"this vocabulary does not reserve {name!r}; it reserves {self.reserved}",
             ConfigError,
         )
-        return position
+        return self._index[name]
 
     def id_of(self, token: str) -> int:
         """Id of ``token``; an unknown token is an error, not a silent ``<unk>``."""
