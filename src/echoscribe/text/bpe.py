@@ -25,7 +25,7 @@ from __future__ import annotations
 from collections import Counter
 from collections.abc import Iterable, Sequence
 
-from echoscribe.errors import ConfigError, require
+from echoscribe.errors import ConfigError, require, require_positive
 
 #: Marks the end of a word inside a symbol sequence.
 WORD_END = "</w>"
@@ -65,3 +65,33 @@ def merge_pair(symbols: Sequence[str], pair: tuple[str, str]) -> tuple[str, ...]
             result.append(symbols[index])
             index += 1
     return tuple(result)
+
+
+def learn_bpe(words: Iterable[str], num_merges: int) -> tuple[tuple[str, str], ...]:
+    """Learn at most ``num_merges`` merges from ``words``.
+
+    Each round counts adjacent pairs weighted by word frequency, takes the most
+    frequent one, and breaks a tie by choosing the lexicographically smaller pair.
+    The tie-break is what makes the result reproducible: without it two runs over
+    the same corpus can produce different merge orders whenever two pairs are
+    equally common, which is often.
+
+    Fewer merges are returned than requested when the corpus runs out of pairs to
+    merge; that is a normal end state, not an error.
+    """
+    require_positive("num_merges", num_merges, ConfigError)
+    frequencies = Counter(words)
+    splits = {word: word_symbols(word) for word in frequencies}
+    merges: list[tuple[str, str]] = []
+    for _ in range(int(num_merges)):
+        pairs: Counter = Counter()
+        for word, frequency in frequencies.items():
+            symbols = splits[word]
+            for pair in zip(symbols, symbols[1:], strict=False):
+                pairs[pair] += frequency
+        if not pairs:
+            break
+        best = min(pairs.items(), key=lambda item: (-item[1], item[0]))[0]
+        merges.append(best)
+        splits = {word: merge_pair(symbols, best) for word, symbols in splits.items()}
+    return tuple(merges)

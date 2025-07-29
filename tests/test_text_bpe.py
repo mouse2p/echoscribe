@@ -7,7 +7,13 @@ from collections import Counter
 import pytest
 
 from echoscribe.errors import ConfigError
-from echoscribe.text.bpe import WORD_END, count_pairs, merge_pair, word_symbols
+from echoscribe.text.bpe import (
+    WORD_END,
+    count_pairs,
+    learn_bpe,
+    merge_pair,
+    word_symbols,
+)
 
 
 def test_a_word_is_spelled_with_an_end_marker() -> None:
@@ -64,3 +70,46 @@ def test_a_merge_can_produce_the_end_marker_pair() -> None:
 
 def test_merging_an_empty_sequence_is_empty() -> None:
     assert merge_pair((), ("a", "b")) == ()
+
+
+LOW = 3 * ["low"] + 2 * ["lowest"] + 4 * ["newer"] + 4 * ["wider"] + 1 * ["new"]
+
+
+def test_the_first_merge_is_the_most_frequent_pair() -> None:
+    merges = learn_bpe(LOW, 1)
+    counts = count_pairs(LOW)
+    best = max(counts.values())
+    tied = sorted(pair for pair, count in counts.items() if count == best)
+    assert merges[0] == tied[0]
+
+
+def test_learning_stops_early_when_nothing_is_left_to_merge() -> None:
+    assert learn_bpe(["ab"], 500) == (("a", "b"), ("ab", WORD_END))
+
+
+def test_more_merges_are_learned_when_asked_for() -> None:
+    assert len(learn_bpe(LOW, 3)) == 3
+    assert len(learn_bpe(LOW, 10)) > 3
+
+
+def test_the_merge_order_is_a_function_of_the_counts() -> None:
+    import random
+
+    shuffled = list(LOW)
+    random.Random(0).shuffle(shuffled)
+    assert learn_bpe(shuffled, 12) == learn_bpe(LOW, 12)
+
+
+def test_learning_from_nothing_yields_no_merges() -> None:
+    assert learn_bpe([], 10) == ()
+
+
+def test_a_non_positive_merge_count_is_refused() -> None:
+    with pytest.raises(ConfigError, match="num_merges must be positive"):
+        learn_bpe(LOW, 0)
+
+
+def test_merges_are_pairs_of_strings() -> None:
+    for pair in learn_bpe(LOW, 6):
+        assert isinstance(pair, tuple) and len(pair) == 2
+        assert all(isinstance(part, str) and part for part in pair)
