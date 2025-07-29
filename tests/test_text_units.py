@@ -222,3 +222,15 @@ def test_a_custom_lexicon_gives_a_custom_vocabulary() -> None:
 
     vocab = unit_vocabulary(Lexicon(english={"zog": ("z", "aa")}, mandarin={}))
     assert vocab.tokens[4:] == ("z", "aa")
+
+
+def test_the_text_subpackage_re_exports_the_unit_and_vocab_api() -> None:
+    from echoscribe import text
+
+    assert text.ToneUnit is ToneUnit
+    from echoscribe.text.vocab import Vocabulary
+
+    assert text.Vocabulary is Vocabulary
+    assert text.utterance_units is utterance_units
+    for name in ("Vocabulary", "ToneUnit", "unit_vocabulary", "DEFAULT_RESERVED"):
+        assert name in text.__all__

@@ -31,17 +31,32 @@ from echoscribe.text.segment import (
     summarize,
     token_texts,
 )
+from echoscribe.text.units import (
+    TONE_MARKS,
+    UNIT_LEVELS,
+    ToneUnit,
+    syllable_units,
+    unit_vocabulary,
+    utterance_units,
+)
+from echoscribe.text.vocab import DEFAULT_RESERVED, VOCAB_SCHEMA_VERSION, Vocabulary
 
 __all__ = [
     "NORMALIZATION_FORMS",
     "NORMALIZATION_STAGES",
     "PUNCTUATION_FOLD",
     "SCRIPTS",
+    "UNIT_LEVELS",
+    "VOCAB_SCHEMA_VERSION",
+    "Vocabulary",
     "WORD_SCRIPTS",
+    "DEFAULT_RESERVED",
     "NormalizeConfig",
     "SegmentConfig",
     "SegmentationSummary",
+    "TONE_MARKS",
     "Token",
+    "ToneUnit",
     "ScriptRun",
     "collapse_whitespace",
     "count_by_script",
@@ -53,7 +68,10 @@ __all__ = [
     "script_share",
     "segment",
     "summarize",
+    "syllable_units",
     "script_runs",
     "strip_accents",
     "token_texts",
+    "unit_vocabulary",
+    "utterance_units",
 ]
