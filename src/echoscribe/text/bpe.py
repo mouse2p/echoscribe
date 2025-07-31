@@ -28,6 +28,8 @@ from collections.abc import Iterable, Sequence
 from dataclasses import dataclass, field
 
 from echoscribe.errors import ConfigError, SchemaError, require, require_positive
+from echoscribe.text.normalize import NormalizeConfig, normalize_text
+from echoscribe.text.segment import SegmentConfig, segment, token_texts
 
 #: Marks the end of a word inside a symbol sequence.
 WORD_END = "</w>"
@@ -198,3 +200,43 @@ class BpeModel:
             SchemaError,
         )
         return model
+
+
+def tokenize(
+    text: str,
+    model: BpeModel,
+    normalize: NormalizeConfig | None = None,
+    segment_config: SegmentConfig | None = None,
+) -> tuple[str, ...]:
+    """Normalise, segment and subword-encode a whole utterance.
+
+    Each segment is encoded on its own, so a merge can never cross a word boundary.
+    That is also why a Han character stays a single piece: segmentation emits it as
+    its own token, and BPE only ever learns merges *inside* a token.
+    """
+    normalized = normalize_text(text, normalize)
+    pieces: list[str] = []
+    for token in token_texts(segment(normalized, segment_config)):
+        pieces.extend(model.encode(token))
+    return tuple(pieces)
+
+
+def detokenize(pieces: Sequence[str]) -> tuple[str, ...]:
+    """Recover the word list from :func:`tokenize` output.
+
+    The result is a tuple of words rather than a string, because how those words
+    should be joined depends on their script -- see
+    :func:`echoscribe.text.segment.join_for_display`.  Claiming a single string here
+    would bake in an English punctuation convention.
+    """
+    words: list[str] = []
+    current: list[str] = []
+    for piece in pieces:
+        if piece.endswith(WORD_END):
+            current.append(piece[: -len(WORD_END)])
+            words.append("".join(current))
+            current = []
+        else:
+            current.append(piece)
+    require(not current, f"piece sequence ends without {WORD_END!r}: {tuple(current)}", ConfigError)
+    return tuple(words)
