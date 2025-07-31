@@ -113,3 +113,30 @@ def test_merges_are_pairs_of_strings() -> None:
     for pair in learn_bpe(LOW, 6):
         assert isinstance(pair, tuple) and len(pair) == 2
         assert all(isinstance(part, str) and part for part in pair)
+
+
+def test_a_tie_is_broken_lexicographically() -> None:
+    # All four pairs occur once.  The smallest by (first, second) wins, and "</w>"
+    # sorts before any letter because "<" is below "a" -- a consequence worth
+    # pinning, since it decides the tail of every merge list.
+    assert learn_bpe(["ab", "ba"], 1) == (("a", WORD_END),)
+
+
+def test_frequency_beats_lexicographic_order() -> None:
+    # (z, z) occurs four times against (a, b) once, so frequency wins outright.
+    assert learn_bpe(["zzz", "zzz", "ab"], 1) == (("z", "z"),)
+
+
+def test_a_longer_corpus_produces_a_prefix_of_the_same_order() -> None:
+    short = learn_bpe(LOW, 4)
+    long = learn_bpe(LOW, 12)
+    assert long[:4] == short
+
+
+def test_learning_twice_gives_an_identical_tuple() -> None:
+    assert learn_bpe(LOW, 8) == learn_bpe(LOW, 8)
+
+
+def test_a_corpus_of_one_repeated_word_still_merges_to_the_end_marker() -> None:
+    merges = learn_bpe(["abc"] * 5, 10)
+    assert merges[-1] == ("abc", WORD_END) or merges[-1][1] == WORD_END
