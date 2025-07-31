@@ -24,6 +24,7 @@ from __future__ import annotations
 
 from collections import Counter
 from collections.abc import Iterable, Sequence
+from dataclasses import dataclass, field
 
 from echoscribe.errors import ConfigError, require, require_positive
 
@@ -95,3 +96,66 @@ def learn_bpe(words: Iterable[str], num_merges: int) -> tuple[tuple[str, str], .
         merges.append(best)
         splits = {word: merge_pair(symbols, best) for word, symbols in splits.items()}
     return tuple(merges)
+
+
+#: Bumped when the serialized shape of a BPE model changes.
+BPE_SCHEMA_VERSION = 1
+
+
+@dataclass(frozen=True)
+class BpeModel:
+    """A learned merge list, plus the encode and decode it defines."""
+
+    merges: tuple[tuple[str, str], ...] = ()
+    _ranks: dict[tuple[str, str], int] = field(
+        init=False, repr=False, compare=False, default_factory=dict
+    )
+
+    def __post_init__(self) -> None:
+        for pair in self.merges:
+            require(
+                isinstance(pair, tuple) and len(pair) == 2 and all(pair),
+                f"a merge must be a pair of non-empty strings, got {pair!r}",
+                ConfigError,
+            )
+        duplicates = [pair for pair, count in Counter(self.merges).items() if count > 1]
+        require(not duplicates, f"the merge list repeats {duplicates[:4]}", ConfigError)
+        object.__setattr__(self, "_ranks", {pair: rank for rank, pair in enumerate(self.merges)})
+
+    @classmethod
+    def learn(cls, words: Iterable[str], num_merges: int) -> BpeModel:
+        """Train a model in one call."""
+        return cls(learn_bpe(words, num_merges))
+
+    def __len__(self) -> int:
+        return len(self.merges)
+
+    def rank_of(self, pair: tuple[str, str]) -> int | None:
+        """Rank of a merge, or ``None`` when the pair was never merged."""
+        return self._ranks.get(pair)
+
+    def encode(self, word: str) -> tuple[str, ...]:
+        """Split ``word`` into pieces by applying the lowest-rank merge available.
+
+        Applying by rank rather than in list order matters: a later merge can create
+        a pair that an earlier merge would have joined, and the rank order is what
+        makes encoding agree with what training intended.
+        """
+        symbols = list(word_symbols(word))
+        while len(symbols) > 1:
+            best_rank = None
+            best_at = -1
+            for index in range(len(symbols) - 1):
+                rank = self._ranks.get((symbols[index], symbols[index + 1]))
+                if rank is not None and (best_rank is None or rank < best_rank):
+                    best_rank = rank
+                    best_at = index
+            if best_rank is None:
+                break
+            symbols[best_at : best_at + 2] = [symbols[best_at] + symbols[best_at + 1]]
+        return tuple(symbols)
+
+    @staticmethod
+    def decode(pieces: Sequence[str]) -> str:
+        """Rebuild one word from its pieces, dropping the end marker."""
+        return "".join(pieces).replace(WORD_END, "")
