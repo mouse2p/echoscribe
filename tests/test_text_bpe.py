@@ -12,8 +12,10 @@ from echoscribe.text.bpe import (
     WORD_END,
     BpeModel,
     count_pairs,
+    detokenize,
     learn_bpe,
     merge_pair,
+    tokenize,
     word_symbols,
 )
 
@@ -262,3 +264,61 @@ def test_the_serialized_form_is_json_encodable() -> None:
 
     text = json.dumps(BpeModel.learn(LOW + ["你好"], 8).to_dict(), ensure_ascii=False)
     assert "你好" in text or WORD_END in text
+
+
+UTTERANCES = [
+    "hello world",
+    "你好 世界",
+    "hello 你好 world",
+    "please open the file",
+    "don't stop",
+    "mixed 混合 text 文本",
+]
+
+
+def test_detokenize_recovers_the_segmented_words() -> None:
+    from echoscribe.text.normalize import normalize_text
+    from echoscribe.text.segment import segment, token_texts
+
+    model = BpeModel.learn(LOW, 20)
+    for text in UTTERANCES:
+        expected = token_texts(segment(normalize_text(text)))
+        assert detokenize(tokenize(text, model)) == expected
+
+
+def test_tokenize_puts_an_end_marker_on_every_word() -> None:
+    model = BpeModel.learn(LOW, 20)
+    pieces = tokenize("hello world", model)
+    assert sum(1 for piece in pieces if piece.endswith(WORD_END)) == 2
+
+
+def test_tokenize_normalises_before_splitting() -> None:
+    model = BpeModel()
+    assert tokenize("ＨＥＬＬＯ", model) == tokenize("hello", model)
+
+
+def test_tokenize_of_an_empty_string_has_no_pieces() -> None:
+    assert tokenize("", BpeModel()) == ()
+
+
+def test_detokenize_refuses_a_truncated_piece_sequence() -> None:
+    with pytest.raises(ConfigError, match="ends without"):
+        detokenize(("h", "e"))
+
+
+def test_detokenize_of_nothing_is_nothing() -> None:
+    assert detokenize(()) == ()
+
+
+def test_a_chinese_utterance_keeps_one_word_per_character() -> None:
+    model = BpeModel.learn(LOW + ["你", "好"], 30)
+    pieces = tokenize("你好", model)
+    # Segmentation makes each character its own token and BPE only ever merges
+    # inside a token, so no merge can join two characters together.
+    assert detokenize(pieces) == ("你", "好")
+    assert "".join(piece.replace(WORD_END, "") for piece in pieces) == "你好"
+
+
+def test_tokenize_is_deterministic() -> None:
+    model = BpeModel.learn(LOW, 15)
+    assert tokenize("hello 你好 world", model) == tokenize("hello 你好 world", model)
