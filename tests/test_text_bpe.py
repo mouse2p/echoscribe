@@ -6,7 +6,7 @@ from collections import Counter
 
 import pytest
 
-from echoscribe.errors import ConfigError
+from echoscribe.errors import ConfigError, SchemaError
 from echoscribe.text.bpe import (
     BPE_SCHEMA_VERSION,
     WORD_END,
@@ -206,3 +206,59 @@ def test_a_malformed_merge_is_refused() -> None:
 
 def test_the_schema_version_is_declared() -> None:
     assert BPE_SCHEMA_VERSION == 1
+
+
+def test_a_model_round_trips_through_a_dict() -> None:
+    model = BpeModel.learn(LOW, 12)
+    restored = BpeModel.from_dict(model.to_dict())
+    assert restored == model
+    assert restored.merges == model.merges
+
+
+def test_the_payload_shape_is_fixed() -> None:
+    payload = BpeModel.learn(LOW, 3).to_dict()
+    assert set(payload) == {"schema", "merges", "digest"}
+    assert payload["schema"] == BPE_SCHEMA_VERSION
+    assert len(payload["digest"]) == 16
+
+
+def test_the_digest_covers_the_merge_order() -> None:
+    forward = BpeModel((("a", "b"), ("c", "d")))
+    backward = BpeModel((("c", "d"), ("a", "b")))
+    assert forward.digest() != backward.digest()
+
+
+def test_the_digest_is_stable_for_the_same_merges() -> None:
+    assert BpeModel.learn(LOW, 8).digest() == BpeModel.learn(LOW, 8).digest()
+
+
+def test_an_empty_model_has_a_digest_too() -> None:
+    assert len(BpeModel().digest()) == 16
+
+
+def test_a_foreign_schema_is_refused() -> None:
+    payload = BpeModel.learn(LOW, 3).to_dict()
+    payload["schema"] = BPE_SCHEMA_VERSION + 1
+    with pytest.raises(SchemaError, match="is not supported"):
+        BpeModel.from_dict(payload)
+
+
+def test_a_tampered_merge_list_fails_the_digest() -> None:
+    payload = BpeModel.learn(LOW, 5).to_dict()
+    payload["merges"][0] = ["z", "z"]
+    with pytest.raises(SchemaError, match="digest mismatch"):
+        BpeModel.from_dict(payload)
+
+
+def test_a_missing_merges_field_is_refused() -> None:
+    payload = BpeModel.learn(LOW, 3).to_dict()
+    del payload["merges"]
+    with pytest.raises(SchemaError, match="missing 'merges'"):
+        BpeModel.from_dict(payload)
+
+
+def test_the_serialized_form_is_json_encodable() -> None:
+    import json
+
+    text = json.dumps(BpeModel.learn(LOW + ["你好"], 8).to_dict(), ensure_ascii=False)
+    assert "你好" in text or WORD_END in text
