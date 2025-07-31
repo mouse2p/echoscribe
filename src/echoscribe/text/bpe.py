@@ -157,17 +157,22 @@ class BpeModel:
         """
         symbols = list(word_symbols(word))
         while len(symbols) > 1:
-            best_rank = None
-            best_at = -1
-            for index in range(len(symbols) - 1):
-                rank = self._ranks.get((symbols[index], symbols[index + 1]))
-                if rank is not None and (best_rank is None or rank < best_rank):
-                    best_rank = rank
-                    best_at = index
-            if best_rank is None:
+            best_at = self._next_merge(symbols)
+            if best_at < 0:
                 break
             symbols[best_at : best_at + 2] = [symbols[best_at] + symbols[best_at + 1]]
         return tuple(symbols)
+
+    def _next_merge(self, symbols: Sequence[str]) -> int:
+        """Index of the lowest-rank mergeable pair, or -1 when there is none."""
+        best_rank = None
+        best_at = -1
+        for index in range(len(symbols) - 1):
+            rank = self.rank_of((symbols[index], symbols[index + 1]))
+            if rank is not None and (best_rank is None or rank < best_rank):
+                best_rank = rank
+                best_at = index
+        return best_at
 
     @staticmethod
     def decode(pieces: Sequence[str]) -> str:

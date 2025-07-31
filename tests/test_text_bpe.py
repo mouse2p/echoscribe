@@ -322,3 +322,21 @@ def test_a_chinese_utterance_keeps_one_word_per_character() -> None:
 def test_tokenize_is_deterministic() -> None:
     model = BpeModel.learn(LOW, 15)
     assert tokenize("hello 你好 world", model) == tokenize("hello 你好 world", model)
+
+
+def test_the_refactored_scan_still_picks_the_lowest_rank() -> None:
+    # "ab" is merged before "bc", so "abc" must become "ab" + "c" and not
+    # "a" + "bc", whichever way the scan is written.
+    model = BpeModel((("a", "b"), ("b", "c")))
+    assert model.encode("abc") == ("ab", "c", WORD_END)
+
+
+def test_a_later_merge_still_applies_after_an_earlier_one() -> None:
+    model = BpeModel((("a", "b"), ("ab", "c")))
+    assert model.encode("abc") == ("abc", WORD_END)
+
+
+def test_the_scan_reports_no_merge_for_an_unknown_word() -> None:
+    model = BpeModel((("a", "b"),))
+    assert model._next_merge(["x", "y"]) == -1
+    assert model.encode("xy") == ("x", "y", WORD_END)
