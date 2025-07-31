@@ -8,7 +8,9 @@ import pytest
 
 from echoscribe.errors import ConfigError
 from echoscribe.text.bpe import (
+    BPE_SCHEMA_VERSION,
     WORD_END,
+    BpeModel,
     count_pairs,
     learn_bpe,
     merge_pair,
@@ -140,3 +142,67 @@ def test_learning_twice_gives_an_identical_tuple() -> None:
 def test_a_corpus_of_one_repeated_word_still_merges_to_the_end_marker() -> None:
     merges = learn_bpe(["abc"] * 5, 10)
     assert merges[-1] == ("abc", WORD_END) or merges[-1][1] == WORD_END
+
+
+def test_an_untrained_model_spells_a_word_out() -> None:
+    assert BpeModel().encode("abc") == ("a", "b", "c", WORD_END)
+
+
+def test_a_trained_model_merges_what_it_learned() -> None:
+    model = BpeModel.learn(LOW, 10)
+    pieces = model.encode("low")
+    assert len(pieces) < 4
+    assert BpeModel.decode(pieces) == "low"
+
+
+def test_every_corpus_word_round_trips() -> None:
+    model = BpeModel.learn(LOW, 20)
+    for word in set(LOW):
+        assert BpeModel.decode(model.encode(word)) == word
+
+
+def test_an_unseen_word_still_round_trips() -> None:
+    model = BpeModel.learn(LOW, 20)
+    for word in ("newest", "lower", "zzz", "你好"):
+        assert BpeModel.decode(model.encode(word)) == word
+
+
+def test_encoding_never_produces_an_empty_piece() -> None:
+    model = BpeModel.learn(LOW, 20)
+    for word in ("low", "newer", "wider", "unseen"):
+        assert all(model.encode(word))
+
+
+def test_the_end_marker_survives_as_a_suffix() -> None:
+    model = BpeModel.learn(LOW, 20)
+    assert model.encode("low")[-1].endswith(WORD_END)
+
+
+def test_encoding_is_deterministic() -> None:
+    model = BpeModel.learn(LOW, 15)
+    assert model.encode("newer") == model.encode("newer")
+
+
+def test_ranks_follow_the_merge_order() -> None:
+    model = BpeModel.learn(LOW, 6)
+    for rank, pair in enumerate(model.merges):
+        assert model.rank_of(pair) == rank
+    assert model.rank_of(("\u0000", "\u0001")) is None
+
+
+def test_a_model_reports_its_merge_count() -> None:
+    assert len(BpeModel.learn(LOW, 5)) == 5
+
+
+def test_a_duplicated_merge_is_refused() -> None:
+    with pytest.raises(ConfigError, match="repeats"):
+        BpeModel((("a", "b"), ("a", "b")))
+
+
+def test_a_malformed_merge_is_refused() -> None:
+    with pytest.raises(ConfigError, match="must be a pair of non-empty strings"):
+        BpeModel((("a",),))  # type: ignore[arg-type]
+
+
+def test_the_schema_version_is_declared() -> None:
+    assert BPE_SCHEMA_VERSION == 1
