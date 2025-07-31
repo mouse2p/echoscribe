@@ -22,11 +22,12 @@ seeded tie-break would produce a different model per run for no benefit and make
 
 from __future__ import annotations
 
+import hashlib
 from collections import Counter
 from collections.abc import Iterable, Sequence
 from dataclasses import dataclass, field
 
-from echoscribe.errors import ConfigError, require, require_positive
+from echoscribe.errors import ConfigError, SchemaError, require, require_positive
 
 #: Marks the end of a word inside a symbol sequence.
 WORD_END = "</w>"
@@ -159,3 +160,41 @@ class BpeModel:
     def decode(pieces: Sequence[str]) -> str:
         """Rebuild one word from its pieces, dropping the end marker."""
         return "".join(pieces).replace(WORD_END, "")
+
+    def digest(self) -> str:
+        """A short hex digest of the merge list, in order.
+
+        Two models with the same digest encode identically.  A report quotes this so
+        a score can be tied to the tokenizer that produced it, and so re-training on
+        a slightly different corpus is caught rather than silently substituted.
+        """
+        joined = "\n".join(f"{left}\x00{right}" for left, right in self.merges)
+        return hashlib.sha256(joined.encode("utf-8")).hexdigest()[:16]
+
+    def to_dict(self) -> dict:
+        """A JSON-ready mapping of the model."""
+        return {
+            "schema": BPE_SCHEMA_VERSION,
+            "merges": [[left, right] for left, right in self.merges],
+            "digest": self.digest(),
+        }
+
+    @classmethod
+    def from_dict(cls, payload: dict) -> BpeModel:
+        """Rebuild a model, refusing a schema or digest that does not match."""
+        version = payload.get("schema")
+        require(
+            version == BPE_SCHEMA_VERSION,
+            f"BPE schema {version!r} is not supported; this build reads {BPE_SCHEMA_VERSION}",
+            SchemaError,
+        )
+        require("merges" in payload, "BPE payload is missing 'merges'", SchemaError)
+        model = cls(tuple((left, right) for left, right in payload["merges"]))
+        recorded = payload.get("digest")
+        require(
+            recorded is None or recorded == model.digest(),
+            f"BPE digest mismatch: the file says {recorded!r}, the merges hash to "
+            f"{model.digest()!r}",
+            SchemaError,
+        )
+        return model
