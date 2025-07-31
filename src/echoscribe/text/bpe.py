@@ -18,6 +18,17 @@ a prefix merge and the model could not tell a finished word from an unfinished o
 of the pair, which makes the merge list a pure function of the word counts.  A
 seeded tie-break would produce a different model per run for no benefit and make
 "same corpus, same tokenizer" untestable.
+
+Ties are common, not rare: on a small corpus a great many pairs occur exactly once,
+and the whole tail of the merge list is decided by them.  An implementation that
+picks an arbitrary element out of a set or dict would still look deterministic on
+one interpreter and one version, then silently produce a different vocabulary
+elsewhere -- which is the worst failure mode for a tokenizer, because every id in
+a trained model would then mean something different.
+
+The cost of a lexicographic tie-break is that the merge list is biased towards
+pairs that sort early.  That bias is invisible in the encoded output as long as the
+same model is used for training and inference, which the digest check enforces.
 """
 
 from __future__ import annotations
