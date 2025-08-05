@@ -340,3 +340,13 @@ def test_the_scan_reports_no_merge_for_an_unknown_word() -> None:
     model = BpeModel((("a", "b"),))
     assert model._next_merge(["x", "y"]) == -1
     assert model.encode("xy") == ("x", "y", WORD_END)
+
+
+def test_the_text_subpackage_re_exports_the_tokenizer() -> None:
+    from echoscribe import text
+
+    assert text.BpeModel is BpeModel
+    assert text.tokenize is tokenize
+    assert text.WORD_END == WORD_END
+    for name in ("BpeModel", "tokenize", "detokenize", "learn_bpe", "WORD_END"):
+        assert name in text.__all__

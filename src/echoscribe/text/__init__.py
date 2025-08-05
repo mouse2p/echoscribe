@@ -8,6 +8,17 @@ Chinese character must not be glued to an English word by the time a scorer coun
 errors.
 """
 
+from echoscribe.text.bpe import (
+    BPE_SCHEMA_VERSION,
+    WORD_END,
+    BpeModel,
+    count_pairs,
+    detokenize,
+    learn_bpe,
+    merge_pair,
+    tokenize,
+    word_symbols,
+)
 from echoscribe.text.normalize import (
     NORMALIZATION_FORMS,
     NORMALIZATION_STAGES,
@@ -49,7 +60,10 @@ __all__ = [
     "UNIT_LEVELS",
     "VOCAB_SCHEMA_VERSION",
     "Vocabulary",
+    "WORD_END",
     "WORD_SCRIPTS",
+    "BPE_SCHEMA_VERSION",
+    "BpeModel",
     "DEFAULT_RESERVED",
     "NormalizeConfig",
     "SegmentConfig",
@@ -60,7 +74,11 @@ __all__ = [
     "ScriptRun",
     "collapse_whitespace",
     "count_by_script",
+    "count_pairs",
+    "detokenize",
     "join_for_display",
+    "learn_bpe",
+    "merge_pair",
     "fold_punctuation",
     "is_han",
     "normalize_text",
@@ -73,5 +91,7 @@ __all__ = [
     "strip_accents",
     "token_texts",
     "unit_vocabulary",
+    "tokenize",
     "utterance_units",
+    "word_symbols",
 ]
