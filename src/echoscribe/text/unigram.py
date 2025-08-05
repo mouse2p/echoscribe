@@ -23,6 +23,7 @@ from __future__ import annotations
 import math
 from collections import Counter
 from collections.abc import Iterable, Mapping, Sequence
+from dataclasses import dataclass, field
 
 from echoscribe.errors import ConfigError, TokenizerError, require, require_positive
 from echoscribe.numeric import NEGATIVE_INFINITY
@@ -135,3 +136,103 @@ def estimate_log_probabilities(
             for piece, count in counts.items()
         }
     return log_probabilities
+
+
+@dataclass(frozen=True)
+class UnigramModel:
+    """A piece vocabulary with one log-probability per piece."""
+
+    pieces: tuple[str, ...]
+    log_probabilities: tuple[float, ...]
+    _table: dict[str, float] = field(init=False, repr=False, compare=False, default_factory=dict)
+
+    def __post_init__(self) -> None:
+        require(
+            len(self.pieces) == len(self.log_probabilities),
+            f"{len(self.pieces)} pieces cannot carry {len(self.log_probabilities)} probabilities",
+            ConfigError,
+        )
+        require(len(self.pieces) > 0, "a unigram model needs at least one piece", ConfigError)
+        require(
+            len(set(self.pieces)) == len(self.pieces),
+            "a unigram model cannot hold a repeated piece",
+            ConfigError,
+        )
+        object.__setattr__(
+            self, "_table", dict(zip(self.pieces, self.log_probabilities, strict=True))
+        )
+
+    def __len__(self) -> int:
+        return len(self.pieces)
+
+    def log_probability(self, piece: str) -> float:
+        """Log-probability of one piece; unknown pieces score ``-inf``."""
+        return self._table.get(piece, NEGATIVE_INFINITY)
+
+    def encode(self, word: str) -> tuple[str, ...]:
+        """Segment one word along its best path."""
+        return best_segmentation(word, self._table)
+
+    def decode(self, pieces: Sequence[str]) -> str:
+        """Concatenate pieces back into a word."""
+        return "".join(pieces)
+
+
+def learn_unigram(
+    words: Iterable[str],
+    target_size: int,
+    max_length: int = 6,
+    min_count: int = 2,
+    iterations: int = 5,
+) -> UnigramModel:
+    """Train a unigram model and prune it down to ``target_size`` pieces.
+
+    Pruning deletes the lowest-probability piece that no corpus word *needs*: a
+    piece is droppable when every word still has a segmentation without it.  That
+    criterion is stronger than the usual likelihood-loss heuristic and much cheaper
+    to state, and it guarantees the returned model can encode the corpus it was
+    trained on -- which a loss-based prune does not.
+    """
+    require_positive("target_size", target_size, ConfigError)
+    frequencies = Counter(words)
+    require(len(frequencies) > 0, "cannot learn a unigram model from no words", ConfigError)
+    pieces = list(candidate_pieces(frequencies.elements(), max_length, min_count))
+    require(
+        len(pieces) >= target_size,
+        f"the corpus yields only {len(pieces)} candidate pieces, fewer than the "
+        f"{target_size} requested",
+        ConfigError,
+    )
+    table = estimate_log_probabilities(frequencies.elements(), pieces, iterations)
+    while len(pieces) > target_size:
+        droppable = _lowest_droppable(pieces, table, frequencies)
+        require(
+            droppable is not None,
+            f"no further piece can be removed without losing a corpus word; stuck at "
+            f"{len(pieces)} pieces",
+            TokenizerError,
+        )
+        pieces.remove(droppable)
+        del table[droppable]
+        table = estimate_log_probabilities(frequencies.elements(), pieces, iterations)
+    return UnigramModel(tuple(pieces), tuple(table[piece] for piece in pieces))
+
+
+def _lowest_droppable(
+    pieces: Sequence[str], table: Mapping[str, float], frequencies: Counter
+) -> str | None:
+    """Least probable piece whose removal still leaves every word segmentable."""
+    for piece in sorted(pieces, key=lambda candidate: table.get(candidate, NEGATIVE_INFINITY)):
+        remaining = {other: table[other] for other in pieces if other != piece}
+        if all(_segmentable(word, remaining) for word in frequencies):
+            return piece
+    return None
+
+
+def _segmentable(word: str, table: Mapping[str, float]) -> bool:
+    """True when ``word`` has at least one segmentation under ``table``."""
+    try:
+        best_segmentation(word, table)
+    except TokenizerError:
+        return False
+    return True
