@@ -76,3 +76,37 @@ def test_an_unsegmentable_word_is_reported() -> None:
 def test_an_empty_word_is_refused() -> None:
     with pytest.raises(TokenizerError, match="cannot segment an empty word"):
         best_segmentation("", {"a": math.log(0.5)})
+
+
+def test_a_longer_vocabulary_still_finds_the_optimal_path() -> None:
+    word = "statistics"
+    probabilities = {character: math.log(0.05) for character in set(word)}
+    for piece in ("stat", "istic", "stics", "tis"):
+        probabilities[piece] = math.log(0.2)
+    chosen = best_segmentation(word, probabilities)
+    best_score = sum(probabilities[piece] for piece in chosen)
+    for alternative in _all_segmentations(word):
+        score = sum(probabilities.get(piece, float("-inf")) for piece in alternative)
+        assert best_score >= score - 1e-12
+
+
+def test_a_word_of_one_character_segments_to_itself() -> None:
+    assert best_segmentation("a", {"a": math.log(1.0)}) == ("a",)
+
+
+def test_repeated_pieces_are_handled() -> None:
+    probabilities = {"aa": math.log(0.4), "a": math.log(0.3)}
+    assert best_segmentation("aaaa", probabilities) == ("aa", "aa")
+
+
+def test_the_path_pieces_rebuild_the_word() -> None:
+    probabilities = {character: math.log(0.1) for character in "abcdef"}
+    probabilities["bc"] = math.log(0.3)
+    probabilities["ef"] = math.log(0.3)
+    for word in ("abcdef", "abc", "fedcba"):
+        assert "".join(best_segmentation(word, probabilities)) == word
+
+
+def test_unknown_pieces_are_simply_not_used() -> None:
+    probabilities = {"a": math.log(0.5), "zzz": math.log(0.9)}
+    assert best_segmentation("aa", probabilities) == ("a", "a")
