@@ -7,8 +7,13 @@ import math
 
 import pytest
 
-from echoscribe.errors import TokenizerError
-from echoscribe.text.unigram import best_segmentation
+from echoscribe.errors import ConfigError, TokenizerError
+from echoscribe.text.unigram import (
+    best_segmentation,
+    candidate_pieces,
+    corpus_log_likelihood,
+    estimate_log_probabilities,
+)
 
 
 def _all_segmentations(word: str) -> list[tuple[str, ...]]:
@@ -110,3 +115,84 @@ def test_the_path_pieces_rebuild_the_word() -> None:
 def test_unknown_pieces_are_simply_not_used() -> None:
     probabilities = {"a": math.log(0.5), "zzz": math.log(0.9)}
     assert best_segmentation("aa", probabilities) == ("a", "a")
+
+
+TRAIN = 6 * ["low"] + 4 * ["lowest"] + 8 * ["newer"] + 8 * ["wider"] + 3 * ["new"]
+
+
+def test_candidate_pieces_always_include_every_character() -> None:
+    pieces = candidate_pieces(TRAIN, min_count=1)
+    for word in set(TRAIN):
+        assert set(word) <= set(pieces)
+
+
+def test_candidate_pieces_respect_the_minimum_count() -> None:
+    pieces = candidate_pieces(["abc", "abd"], max_length=3, min_count=2)
+    assert "ab" in pieces
+    assert "abc" not in pieces
+
+
+def test_candidate_pieces_respect_the_maximum_length() -> None:
+    pieces = candidate_pieces(["abcdef"] * 4, max_length=3, min_count=1)
+    assert all(len(piece) <= 3 for piece in pieces)
+
+
+def test_candidate_pieces_are_sorted_and_unique() -> None:
+    pieces = candidate_pieces(TRAIN, min_count=1)
+    assert list(pieces) == sorted(set(pieces))
+
+
+def test_one_em_iteration_does_not_lower_the_likelihood() -> None:
+    pieces = candidate_pieces(TRAIN, max_length=5, min_count=2)
+    uniform = {piece: -math.log(len(pieces)) for piece in pieces}
+    before = corpus_log_likelihood(TRAIN, uniform)
+    after = corpus_log_likelihood(TRAIN, estimate_log_probabilities(TRAIN, pieces, 1))
+    assert after >= before - 1e-9
+
+
+def test_em_probabilities_form_a_distribution() -> None:
+    pieces = candidate_pieces(TRAIN, max_length=5, min_count=2)
+    log_probabilities = estimate_log_probabilities(TRAIN, pieces, 5)
+    assert sum(math.exp(value) for value in log_probabilities.values()) == pytest.approx(
+        1.0, rel=1e-6
+    )
+
+
+def test_em_concentrates_mass_on_the_pieces_it_actually_uses() -> None:
+    pieces = candidate_pieces(TRAIN, max_length=5, min_count=2)
+    log_probabilities = estimate_log_probabilities(TRAIN, pieces, 10)
+    used = set()
+    for word in set(TRAIN):
+        used.update(best_segmentation(word, log_probabilities))
+    unused = set(pieces) - used
+    # Hard EM counts only the best path, so a piece that never appears on one ends
+    # up at the floor while the ones that do share all of the mass.
+    assert used and unused
+    assert min(log_probabilities[piece] for piece in used) > max(
+        log_probabilities[piece] for piece in unused
+    )
+
+
+def test_unused_pieces_are_floored_rather_than_minus_infinite() -> None:
+    pieces = candidate_pieces(TRAIN, max_length=6, min_count=1)
+    log_probabilities = estimate_log_probabilities(TRAIN, pieces, 8)
+    assert all(math.isfinite(value) for value in log_probabilities.values())
+
+
+def test_estimating_over_an_empty_piece_set_is_refused() -> None:
+    with pytest.raises(ConfigError, match="empty piece set"):
+        estimate_log_probabilities(TRAIN, [])
+
+
+def test_estimating_from_no_words_keeps_the_uniform_start() -> None:
+    log_probabilities = estimate_log_probabilities([], ["a", "b"], 3)
+    assert log_probabilities["a"] == pytest.approx(-math.log(2.0))
+
+
+def test_more_iterations_do_not_lower_the_likelihood() -> None:
+    pieces = candidate_pieces(TRAIN, max_length=5, min_count=2)
+    scores = [
+        corpus_log_likelihood(TRAIN, estimate_log_probabilities(TRAIN, pieces, count))
+        for count in (1, 3, 8)
+    ]
+    assert all(later >= earlier - 1e-6 for earlier, later in zip(scores, scores[1:], strict=False))
