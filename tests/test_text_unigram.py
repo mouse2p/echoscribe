@@ -264,3 +264,12 @@ def test_a_model_rejects_mismatched_pieces_and_probabilities() -> None:
 def test_a_model_rejects_a_repeated_piece() -> None:
     with pytest.raises(ConfigError, match="repeated piece"):
         UnigramModel(("a", "a"), (math.log(0.5), math.log(0.5)))
+
+
+def test_the_text_subpackage_re_exports_the_unigram_model() -> None:
+    from echoscribe import text
+
+    assert text.UnigramModel is UnigramModel
+    assert text.learn_unigram is learn_unigram
+    for name in ("UnigramModel", "learn_unigram", "best_segmentation"):
+        assert name in text.__all__
