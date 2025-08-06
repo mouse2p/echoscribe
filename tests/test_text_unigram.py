@@ -9,10 +9,12 @@ import pytest
 
 from echoscribe.errors import ConfigError, TokenizerError
 from echoscribe.text.unigram import (
+    UnigramModel,
     best_segmentation,
     candidate_pieces,
     corpus_log_likelihood,
     estimate_log_probabilities,
+    learn_unigram,
 )
 
 
@@ -196,3 +198,69 @@ def test_more_iterations_do_not_lower_the_likelihood() -> None:
         for count in (1, 3, 8)
     ]
     assert all(later >= earlier - 1e-6 for earlier, later in zip(scores, scores[1:], strict=False))
+
+
+def test_a_learned_model_has_the_requested_size() -> None:
+    model = learn_unigram(TRAIN, target_size=20, max_length=5)
+    assert len(model) == 20
+    assert isinstance(model, UnigramModel)
+
+
+def test_a_learned_model_encodes_every_training_word() -> None:
+    model = learn_unigram(TRAIN, target_size=20, max_length=5)
+    for word in set(TRAIN):
+        pieces = model.encode(word)
+        assert model.decode(pieces) == word
+
+
+def test_encoding_is_deterministic() -> None:
+    model = learn_unigram(TRAIN, target_size=18, max_length=5)
+    assert model.encode("newer") == model.encode("newer")
+
+
+def test_learning_twice_gives_the_same_model() -> None:
+    left = learn_unigram(TRAIN, target_size=16, max_length=4)
+    right = learn_unigram(TRAIN, target_size=16, max_length=4)
+    assert left.pieces == right.pieces
+    assert left.log_probabilities == right.log_probabilities
+
+
+def test_a_smaller_target_still_covers_the_corpus() -> None:
+    # Ten distinct characters appear in the corpus, so ten pieces always suffice;
+    # anything at or above that is reachable by the greedy prune.
+    model = learn_unigram(TRAIN, target_size=12, max_length=4)
+    for word in set(TRAIN):
+        assert model.decode(model.encode(word)) == word
+
+
+def test_probabilities_are_sorted_consistently_with_the_pieces() -> None:
+    model = learn_unigram(TRAIN, target_size=12, max_length=4)
+    for piece in model.pieces:
+        assert model.log_probability(piece) == pytest.approx(
+            model.log_probabilities[model.pieces.index(piece)]
+        )
+
+
+def test_an_unknown_piece_scores_minus_infinity() -> None:
+    model = learn_unigram(TRAIN, target_size=12, max_length=4)
+    assert model.log_probability("\u0000not-a-piece") == float("-inf")
+
+
+def test_a_target_larger_than_the_candidates_is_refused() -> None:
+    with pytest.raises(ConfigError, match="fewer than the"):
+        learn_unigram(TRAIN, target_size=10000, max_length=2)
+
+
+def test_learning_from_no_words_is_refused() -> None:
+    with pytest.raises(ConfigError, match="from no words"):
+        learn_unigram([], target_size=5)
+
+
+def test_a_model_rejects_mismatched_pieces_and_probabilities() -> None:
+    with pytest.raises(ConfigError, match="cannot carry"):
+        UnigramModel(("a", "b"), (math.log(0.5),))
+
+
+def test_a_model_rejects_a_repeated_piece() -> None:
+    with pytest.raises(ConfigError, match="repeated piece"):
+        UnigramModel(("a", "a"), (math.log(0.5), math.log(0.5)))
