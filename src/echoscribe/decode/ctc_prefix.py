@@ -116,10 +116,17 @@ def _advance(
     next_blank: dict = {}
     next_label: dict = {}
     symbols = row.shape[0]
-    for prefix in blank_scores:
-        blank = blank_scores[prefix]
+    # The live set is the union of the two maps, not the blank map alone: after the
+    # first frame a prefix usually carries label mass and no blank mass at all, and
+    # iterating only the blank keys silently drops every hypothesis that has already
+    # emitted a symbol.  Extending a prefix always writes a blank entry, so from here
+    # on the blank map is a superset and _prune/_rank can iterate it alone.
+    for prefix in set(blank_scores) | set(label_scores):
+        blank = blank_scores.get(prefix, NEGATIVE_INFINITY)
         label = label_scores.get(prefix, NEGATIVE_INFINITY)
         total = log_add(blank, label)
+        if total == NEGATIVE_INFINITY:
+            continue
         _accumulate(next_blank, prefix, total + float(row[blank_id]))
         for symbol in range(symbols):
             if symbol == blank_id:
