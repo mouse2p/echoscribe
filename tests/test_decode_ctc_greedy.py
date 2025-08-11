@@ -82,3 +82,51 @@ def test_a_custom_blank_id_is_honoured() -> None:
 def test_greedy_decoding_is_deterministic() -> None:
     matrix = scripted_posteriors([0, 1, 2, 0, 1], num_symbols=4)
     assert ctc_greedy(matrix).symbols == ctc_greedy(matrix).symbols
+
+
+def test_token_spans_are_disjoint_and_ordered() -> None:
+    matrix = scripted_posteriors([0, 1, 1, 0, 2, 0, 0, 3], num_symbols=4)
+    tokens = ctc_greedy(matrix).tokens
+    for earlier, later in zip(tokens, tokens[1:], strict=False):
+        assert earlier.end <= later.start
+
+
+def test_every_token_span_covers_its_own_symbol() -> None:
+    path = [0, 1, 1, 0, 2, 2, 2, 0]
+    matrix = scripted_posteriors(path, num_symbols=4)
+    for token in ctc_greedy(matrix).tokens:
+        assert set(path[token.start : token.end]) == {token.symbol}
+
+
+def test_a_repeated_symbol_gets_two_spans_separated_by_the_blank() -> None:
+    matrix = scripted_posteriors([1, 1, 0, 1, 1], num_symbols=3)
+    tokens = ctc_greedy(matrix).tokens
+    assert [token.symbol for token in tokens] == [1, 1]
+    assert tokens[0].end == 2
+    assert tokens[1].start == 3
+
+
+def test_a_token_score_is_the_sum_over_its_span() -> None:
+    matrix = scripted_posteriors([1, 1, 0, 2], num_symbols=4)
+    for token in ctc_greedy(matrix).tokens:
+        assert token.score == pytest.approx(
+            float(matrix[token.start : token.end, token.symbol].sum())
+        )
+
+
+def test_token_times_follow_the_frame_shift() -> None:
+    matrix = scripted_posteriors([0, 1, 1, 0, 2], num_symbols=4)
+    tokens = ctc_greedy(matrix).tokens
+    assert tokens[0].times(10.0) == (0.01, pytest.approx(0.03))
+    assert tokens[1].times(10.0) == (0.04, pytest.approx(0.05))
+
+
+def test_greedy_spans_never_revisit_a_frame() -> None:
+    rng = np.random.default_rng(1)
+    path = [int(value) for value in rng.integers(0, 5, size=64)]
+    tokens = ctc_greedy(scripted_posteriors(path, num_symbols=5)).tokens
+    covered = []
+    for token in tokens:
+        covered.extend(range(token.start, token.end))
+    assert len(covered) == len(set(covered))
+    assert max(covered, default=-1) < 64
