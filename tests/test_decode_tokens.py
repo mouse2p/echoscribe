@@ -36,6 +36,12 @@ def test_a_positive_score_is_refused() -> None:
         DecodedToken(1, 0, 1, 0.5)
 
 
+def test_a_score_a_hair_above_zero_from_rounding_is_allowed() -> None:
+    assert DecodedToken(1, 0, 1, 1e-19).score == pytest.approx(0.0, abs=1e-12)
+    with pytest.raises(DecodeError, match="cannot be positive"):
+        DecodedToken(1, 0, 1, 1e-6)
+
+
 def test_minus_infinity_is_an_allowed_score() -> None:
     assert DecodedToken(1, 0, 1, float("-inf")).score == float("-inf")
 

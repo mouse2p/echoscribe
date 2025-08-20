@@ -20,6 +20,11 @@ from dataclasses import dataclass
 
 from echoscribe.errors import DecodeError, require, require_non_negative
 
+#: Accumulated log-domain sums can land a hair above zero through rounding: a
+#: hypothesis whose probability is 1.0 to within this margin is legal, and rejecting
+#: it would turn a correct decode into a crash.
+LOG_PROBABILITY_TOLERANCE = 1e-9
+
 
 @dataclass(frozen=True)
 class DecodedToken:
@@ -43,7 +48,7 @@ class DecodedToken:
             DecodeError,
         )
         require(
-            self.score <= 0.0,
+            self.score <= LOG_PROBABILITY_TOLERANCE,
             f"a log-probability cannot be positive, got {self.score}",
             DecodeError,
         )

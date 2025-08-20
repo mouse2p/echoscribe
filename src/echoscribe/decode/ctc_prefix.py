@@ -31,6 +31,7 @@ from dataclasses import dataclass
 import numpy as np
 
 from echoscribe.decode.posteriors import check_log_posteriors
+from echoscribe.decode.tokens import LOG_PROBABILITY_TOLERANCE
 from echoscribe.errors import DecodeError, require
 from echoscribe.numeric import NEGATIVE_INFINITY, log_add
 
@@ -44,7 +45,7 @@ class PrefixHypothesis:
 
     def __post_init__(self) -> None:
         require(
-            self.score <= 0.0,
+            self.score <= LOG_PROBABILITY_TOLERANCE,
             f"a log-probability cannot be positive, got {self.score}",
             DecodeError,
         )
