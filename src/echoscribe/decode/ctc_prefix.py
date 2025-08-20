@@ -117,11 +117,10 @@ def _advance(
     next_blank: dict = {}
     next_label: dict = {}
     symbols = row.shape[0]
-    # The live set is the union of the two maps, not the blank map alone: after the
-    # first frame a prefix usually carries label mass and no blank mass at all, and
-    # iterating only the blank keys silently drops every hypothesis that has already
-    # emitted a symbol.  Extending a prefix always writes a blank entry, so from here
-    # on the blank map is a superset and _prune/_rank can iterate it alone.
+    # The live set is the union of the two maps, not the blank map alone: a prefix
+    # created by a label extension has no blank entry yet, and iterating only the
+    # blank keys would drop every hypothesis that emitted its last symbol in the
+    # frame just processed.
     for prefix in set(blank_scores) | set(label_scores):
         blank = blank_scores.get(prefix, NEGATIVE_INFINITY)
         label = label_scores.get(prefix, NEGATIVE_INFINITY)
@@ -148,17 +147,25 @@ def _accumulate(table: dict, prefix: tuple, score: float) -> None:
     table[prefix] = log_add(table.get(prefix, NEGATIVE_INFINITY), score)
 
 
+def _live_prefixes(blank_scores: dict, label_scores: dict) -> set:
+    """Every prefix either map still carries score for."""
+    return set(blank_scores) | set(label_scores)
+
+
+def _total(blank_scores: dict, label_scores: dict, prefix: tuple) -> float:
+    """Combined log-probability of one prefix across both branches."""
+    return log_add(
+        blank_scores.get(prefix, NEGATIVE_INFINITY),
+        label_scores.get(prefix, NEGATIVE_INFINITY),
+    )
+
+
 def _prune(blank_scores: dict, label_scores: dict, beam_size: int) -> tuple[dict, dict]:
     """Keep the ``beam_size`` prefixes with the highest total score."""
-    if len(blank_scores) <= beam_size:
+    live = _live_prefixes(blank_scores, label_scores)
+    if len(live) <= beam_size:
         return blank_scores, label_scores
-    ranked = sorted(
-        blank_scores,
-        key=lambda prefix: (
-            -log_add(blank_scores[prefix], label_scores.get(prefix, NEGATIVE_INFINITY)),
-            prefix,
-        ),
-    )
+    ranked = sorted(live, key=lambda prefix: (-_total(blank_scores, label_scores, prefix), prefix))
     keep = set(ranked[:beam_size])
     return (
         {prefix: score for prefix, score in blank_scores.items() if prefix in keep},
@@ -169,8 +176,8 @@ def _prune(blank_scores: dict, label_scores: dict, beam_size: int) -> tuple[dict
 def _rank(blank_scores: dict, label_scores: dict) -> tuple[PrefixHypothesis, ...]:
     """Merge the two score maps into a ranked hypothesis tuple."""
     hypotheses = [
-        PrefixHypothesis(prefix, log_add(blank, label_scores.get(prefix, NEGATIVE_INFINITY)))
-        for prefix, blank in blank_scores.items()
+        PrefixHypothesis(prefix, _total(blank_scores, label_scores, prefix))
+        for prefix in _live_prefixes(blank_scores, label_scores)
     ]
     hypotheses.sort(key=lambda item: (-item.score, item.tokens))
     return tuple(hypotheses)
