@@ -111,3 +111,33 @@ def test_an_empty_matrix_yields_only_the_empty_prefix() -> None:
     result = ctc_prefix_search(np.zeros((0, 3)))
     assert [item.tokens for item in result.hypotheses] == [()]
     assert result.best.score == pytest.approx(0.0)
+
+
+def test_a_narrow_beam_keeps_at_most_its_size_hypotheses() -> None:
+    matrix = scripted_posteriors([0, 1, 0, 2, 0, 3, 1], num_symbols=5)
+    for size in (1, 2, 4):
+        result = ctc_prefix_search(matrix, beam_size=size)
+        assert len(result.hypotheses) <= size
+
+
+def test_a_wider_beam_never_loses_the_best_hypothesis() -> None:
+    matrix = scripted_posteriors([0, 1, 1, 0, 2, 0, 3, 3], num_symbols=5)
+    narrow = ctc_prefix_search(matrix, beam_size=1)
+    wide = ctc_prefix_search(matrix, beam_size=None)
+    assert narrow.best.tokens == wide.best.tokens
+
+
+def test_pruning_is_deterministic_under_a_tie() -> None:
+    # Two symbols with identical posteriors tie at every step; the tie-break on the
+    # prefix tuple is what keeps the beam stable between runs.
+    probabilities = np.full((4, 3), 1.0 / 3.0)
+    matrix = to_log_posteriors(probabilities)
+    first = ctc_prefix_search(matrix, beam_size=2)
+    assert first.hypotheses == ctc_prefix_search(matrix, beam_size=2).hypotheses
+
+
+def test_a_beam_of_one_still_returns_a_valid_hypothesis() -> None:
+    matrix = scripted_posteriors([1, 0, 2, 0, 3], num_symbols=4)
+    result = ctc_prefix_search(matrix, beam_size=1)
+    assert len(result.hypotheses) == 1
+    assert result.best.score <= 0.0
