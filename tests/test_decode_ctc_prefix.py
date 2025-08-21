@@ -7,6 +7,7 @@ import math
 import numpy as np
 import pytest
 
+from echoscribe.decode.ctc_greedy import ctc_greedy
 from echoscribe.decode.ctc_prefix import PrefixBeamResult, ctc_prefix_search
 from echoscribe.decode.posteriors import scripted_posteriors, to_log_posteriors
 from echoscribe.errors import DecodeError
@@ -141,3 +142,49 @@ def test_a_beam_of_one_still_returns_a_valid_hypothesis() -> None:
     result = ctc_prefix_search(matrix, beam_size=1)
     assert len(result.hypotheses) == 1
     assert result.best.score <= 0.0
+
+
+def test_the_best_prefix_matches_greedy_when_one_path_dominates() -> None:
+    for path in ([0, 1, 1, 0, 2], [1, 0, 1], [0, 0, 3, 3, 0], [2, 2, 2]):
+        matrix = scripted_posteriors(path, num_symbols=5, peak_logit=12.0)
+        assert ctc_prefix_search(matrix, beam_size=None).symbols == ctc_greedy(matrix).symbols
+
+
+def test_the_best_prefix_beats_greedy_when_it_can() -> None:
+    # A matrix with no dominant path: greedy follows the per-frame argmax, while
+    # prefix search totals every alignment that collapses to a label sequence.  The
+    # two are allowed to disagree, and here they do.
+    probabilities = np.array(
+        [
+            [0.34, 0.33, 0.33],
+            [0.34, 0.33, 0.33],
+            [0.34, 0.33, 0.33],
+        ]
+    )
+    matrix = to_log_posteriors(probabilities)
+    greedy = ctc_greedy(matrix).symbols
+    result = ctc_prefix_search(matrix, beam_size=None)
+    scores = {item.tokens: math.exp(item.score) for item in result.hypotheses}
+    # Every frame is uniform, so argmax lands on the blank every time and greedy
+    # emits nothing.  The empty sequence has probability (1/3)**3, while the
+    # average non-empty prefix already beats that -- so prefix search must win.
+    assert greedy == ()
+    assert scores[result.best.tokens] > scores[greedy]
+
+
+def test_the_greedy_sequence_is_always_in_the_beam() -> None:
+    rng = np.random.default_rng(3)
+    for _ in range(5):
+        probabilities = rng.uniform(0.01, 1.0, size=(6, 4))
+        matrix = to_log_posteriors(probabilities / probabilities.sum(axis=1, keepdims=True))
+        greedy = ctc_greedy(matrix).symbols
+        unlimited = ctc_prefix_search(matrix, beam_size=None)
+        assert greedy in [item.tokens for item in unlimited.hypotheses]
+
+
+def test_both_decoders_agree_on_a_long_dominant_path() -> None:
+    rng = np.random.default_rng(4)
+    path = [int(value) for value in rng.integers(1, 5, size=40)]
+    path = [symbol if index % 3 else 0 for index, symbol in enumerate(path)]
+    matrix = scripted_posteriors(path, num_symbols=5, peak_logit=14.0)
+    assert ctc_prefix_search(matrix, beam_size=8).symbols == ctc_greedy(matrix).symbols
