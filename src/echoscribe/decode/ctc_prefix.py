@@ -22,7 +22,11 @@ two is the classic bug: it double-counts alignments and quietly inflates repeate
 tokens.
 
 Scores are accumulated in the log domain with :func:`echoscribe.numeric.log_add`.
-"""
+
+Complexity is ``O(frames * beam * symbols)`` per utterance, dominated by the Python
+loop over the beam.  That is fine for the sizes this toolkit targets and hopeless
+for production decoding, where the inner loop is fused into a GPU kernel and the
+beam is a fixed-size tensor.  Nothing here is a claim about throughput."""
 
 from __future__ import annotations
 
