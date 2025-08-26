@@ -75,3 +75,12 @@ def test_a_token_is_immutable() -> None:
     token = DecodedToken(1, 0, 2)
     with pytest.raises(AttributeError):
         token.end = 5  # type: ignore[misc]
+
+
+def test_the_decode_subpackage_re_exports_its_records() -> None:
+    from echoscribe import decode
+
+    assert decode.DecodedToken is DecodedToken
+    assert decode.symbols_of is symbols_of
+    for name in ("DecodedToken", "ctc_greedy", "ctc_prefix_search", "scripted_posteriors"):
+        assert name in decode.__all__
