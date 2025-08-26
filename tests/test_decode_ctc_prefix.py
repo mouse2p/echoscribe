@@ -9,7 +9,11 @@ import pytest
 
 from echoscribe.decode.ctc_greedy import ctc_greedy
 from echoscribe.decode.ctc_prefix import PrefixBeamResult, ctc_prefix_search
-from echoscribe.decode.posteriors import scripted_posteriors, to_log_posteriors
+from echoscribe.decode.posteriors import (
+    masked_posteriors,
+    scripted_posteriors,
+    to_log_posteriors,
+)
 from echoscribe.errors import DecodeError
 
 
@@ -188,3 +192,27 @@ def test_both_decoders_agree_on_a_long_dominant_path() -> None:
     path = [symbol if index % 3 else 0 for index, symbol in enumerate(path)]
     matrix = scripted_posteriors(path, num_symbols=5, peak_logit=14.0)
     assert ctc_prefix_search(matrix, beam_size=8).symbols == ctc_greedy(matrix).symbols
+
+
+def test_the_faster_frame_read_gives_the_same_hypotheses() -> None:
+    rng = np.random.default_rng(7)
+    for frames in (3, 6):
+        probabilities = rng.uniform(0.02, 1.0, size=(frames, 4))
+        matrix = to_log_posteriors(probabilities / probabilities.sum(axis=1, keepdims=True))
+        unlimited = ctc_prefix_search(matrix, beam_size=None)
+        assert sum(math.exp(item.score) for item in unlimited.hypotheses) == pytest.approx(
+            1.0, rel=1e-9
+        )
+        # A beam of one is a strict subset of the search space, but its survivor
+        # has to be a hypothesis the unlimited search also reached.
+        assert ctc_prefix_search(matrix, beam_size=1).best.tokens in [
+            item.tokens for item in unlimited.hypotheses
+        ]
+
+
+def test_a_masked_symbol_never_appears_in_any_hypothesis() -> None:
+    matrix = masked_posteriors(scripted_posteriors([1, 2], num_symbols=4), [0, 1, 3])
+    result = ctc_prefix_search(matrix, beam_size=None)
+    assert all(2 not in item.tokens for item in result.hypotheses)
+    # Masking renormalises, so the surviving hypotheses are still a distribution.
+    assert sum(math.exp(item.score) for item in result.hypotheses) == pytest.approx(1.0, rel=1e-9)

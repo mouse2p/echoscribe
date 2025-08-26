@@ -120,7 +120,11 @@ def _advance(
     """Extend every live prefix by one frame."""
     next_blank: dict = {}
     next_label: dict = {}
-    symbols = row.shape[0]
+    # One conversion to Python floats per frame: indexing a numpy array inside the
+    # beam loop boxes a fresh scalar on every access, which dominates the runtime
+    # of a decoder whose real work is a handful of dict updates.
+    values = row.tolist()
+    blank_logit = values[blank_id]
     # The live set is the union of the two maps, not the blank map alone: a prefix
     # created by a label extension has no blank entry yet, and iterating only the
     # blank keys would drop every hypothesis that emitted its last symbol in the
@@ -131,12 +135,9 @@ def _advance(
         total = log_add(blank, label)
         if total == NEGATIVE_INFINITY:
             continue
-        _accumulate(next_blank, prefix, total + float(row[blank_id]))
-        for symbol in range(symbols):
-            if symbol == blank_id:
-                continue
-            score = float(row[symbol])
-            if score == NEGATIVE_INFINITY:
+        _accumulate(next_blank, prefix, total + blank_logit)
+        for symbol, score in enumerate(values):
+            if symbol == blank_id or score == NEGATIVE_INFINITY:
                 continue
             if prefix and prefix[-1] == symbol:
                 _accumulate(next_label, prefix, label + score)
