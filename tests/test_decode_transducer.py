@@ -199,3 +199,48 @@ def test_a_token_never_revisits_an_earlier_frame() -> None:
     result = transducer_greedy(joint, TransducerConfig(max_symbols_per_frame=3))
     assert list(result.frames) == sorted(result.frames)
     assert all(0 <= frame < 12 for frame in result.frames)
+
+
+def _never_blank(frames: int = 5, symbols: int = 3) -> TableJoint:
+    """A joint that always prefers a label, so only the cap can stop it."""
+    logits = np.full((frames, frames * 8 + 2, symbols), -5.0)
+    logits[:, :, 1] = 5.0
+    return TableJoint(logits)
+
+
+def test_the_cap_bounds_how_many_labels_one_frame_can_emit() -> None:
+    result = transducer_greedy(_never_blank(), TransducerConfig(max_symbols_per_frame=2))
+    assert max(result.emissions_per_frame) <= 2
+
+
+def test_the_cap_still_advances_time() -> None:
+    result = transducer_greedy(_never_blank(frames=4), TransducerConfig(max_symbols_per_frame=2))
+    assert result.num_frames == 4
+    assert len(result.symbols) == 8
+    assert sorted(set(result.frames)) == [0, 1, 2, 3]
+
+
+def test_a_cap_of_one_emits_at_most_one_label_per_frame() -> None:
+    result = transducer_greedy(_never_blank(frames=3), TransducerConfig(max_symbols_per_frame=1))
+    assert result.emissions_per_frame == (1, 1, 1)
+
+
+def test_a_generous_cap_does_not_truncate_a_normal_decode() -> None:
+    joint = _label_then_blank(5)
+    tight = transducer_greedy(joint, TransducerConfig(max_symbols_per_frame=10))
+    loose = transducer_greedy(joint, TransducerConfig(max_symbols_per_frame=100))
+    assert tight.symbols == loose.symbols
+
+
+def test_the_cap_never_pushes_a_token_past_the_last_frame() -> None:
+    result = transducer_greedy(_never_blank(frames=6), TransducerConfig(max_symbols_per_frame=3))
+    assert all(token.end <= 6 for token in result.tokens)
+    assert all(token.start < 6 for token in result.tokens)
+
+
+def test_a_stuck_joint_never_runs_past_the_frame_count() -> None:
+    for cap in (1, 2, 5):
+        config = TransducerConfig(max_symbols_per_frame=cap)
+        result = transducer_greedy(_never_blank(frames=4), config)
+        assert max(result.frames) < 4
+        assert len(result.symbols) == 4 * cap
