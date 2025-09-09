@@ -101,3 +101,62 @@ def test_a_cached_joint_decodes_identically_to_the_raw_one() -> None:
     cached = transducer_greedy(JointCache(joint, capacity=8), config)
     assert direct.symbols == cached.symbols
     assert direct.score == pytest.approx(cached.score)
+
+
+class _CountingJoint:
+    """Wraps a joint and counts how many times it was actually evaluated."""
+
+    def __init__(self, inner) -> None:
+        self.inner = inner
+        self.calls = 0
+
+    @property
+    def num_frames(self) -> int:
+        return self.inner.num_frames
+
+    @property
+    def num_symbols(self) -> int:
+        return self.inner.num_symbols
+
+    def __call__(self, frame, history):
+        self.calls += 1
+        return self.inner(frame, history)
+
+
+def test_the_cache_reduces_the_number_of_joint_evaluations() -> None:
+    joint = _CountingJoint(_joint(seed=4))
+    cache = JointCache(joint, capacity=None)
+    for _ in range(3):
+        for frame in range(6):
+            cache(frame, ())
+    assert joint.calls == 6
+    assert cache.hits == 12
+
+
+def test_a_beam_like_revisit_is_served_from_the_cache() -> None:
+    joint = _CountingJoint(_joint(seed=6))
+    cache = JointCache(joint, capacity=None)
+    for history in ((), (1,), (2,), (1,), (), (2,)):
+        cache(3, history)
+    assert joint.calls == 3
+    assert cache.hits == 3
+
+
+def test_an_evicted_entry_is_recomputed_and_still_correct() -> None:
+    inner = _joint(seed=8)
+    cache = JointCache(inner, capacity=1)
+    first = np.array(cache(0, ()))
+    cache(1, ())
+    again = cache(0, ())
+    assert np.array_equal(again, first)
+    # One eviction for (0, ()) when (1, ()) arrives, and another when (0, ()) comes
+    # back and pushes (1, ()) out: a capacity of one thrashes by construction.
+    assert cache.evictions == 2
+    assert again is not first
+
+
+def test_greedy_decoding_through_a_small_cache_still_terminates() -> None:
+    joint = _CountingJoint(_joint(seed=13))
+    config = TransducerConfig(max_symbols_per_frame=2)
+    result = transducer_greedy(JointCache(joint, capacity=4), config)
+    assert len(result.symbols) <= 2 * joint.num_frames
