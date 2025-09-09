@@ -20,6 +20,18 @@ depends only on how many labels have been produced, not on which.  That is not a
 model of a real predictor -- a real one conditions on the label identity, which is
 what makes it a language model -- but it is enough to exercise the search, the cache
 and the latency accounting exactly.
+
+Concretely, a result obtained through :class:`TableJoint` says nothing about:
+
+* language modelling.  Because the predictor state is the *count* of emitted labels,
+  the fixture cannot prefer "hello world" to "hello wrold".  Any accuracy number
+  from it measures the search, not a recognizer.
+* acoustic evidence.  The logits are arbitrary finite numbers, usually random.
+* throughput.  A table lookup costs nothing, so nothing here measures how many joint
+  evaluations per second a real model can sustain.
+
+The torch-backed encoder and joint in :mod:`echoscribe.model` produce real logits
+from real features.  The search code is identical; only the joint differs.
 """
 
 from __future__ import annotations
