@@ -297,3 +297,13 @@ def test_frames_consumed_equals_the_frame_count_when_nothing_stops_it() -> None:
         result = transducer_greedy(_blank_heavy(frames))
         assert result.frames_consumed == frames
         assert not result.stopped_early
+
+
+def test_the_decode_subpackage_re_exports_the_transducer() -> None:
+    from echoscribe import decode
+
+    assert decode.transducer_greedy is transducer_greedy
+    assert decode.TableJoint is TableJoint
+    assert decode.JointCache is not None
+    for name in ("transducer_greedy", "TransducerConfig", "JointCache", "Joint"):
+        assert name in decode.__all__

@@ -26,6 +26,7 @@ in one module rather than being scattered through the decoder tests: a reader ca
 see exactly which numbers were planted and which were measured.
 """
 
+from echoscribe.decode.cache import JointCache
 from echoscribe.decode.ctc_greedy import GreedyResult, ctc_greedy
 from echoscribe.decode.ctc_prefix import (
     PrefixBeamResult,
@@ -41,12 +42,24 @@ from echoscribe.decode.posteriors import (
     to_log_posteriors,
 )
 from echoscribe.decode.tokens import DecodedToken, span_gaps, symbols_of, total_score
+from echoscribe.decode.transducer import (
+    Joint,
+    TableJoint,
+    TransducerConfig,
+    TransducerResult,
+    transducer_greedy,
+)
 
 __all__ = [
     "DecodedToken",
     "GreedyResult",
+    "Joint",
+    "JointCache",
     "PrefixBeamResult",
     "PrefixHypothesis",
+    "TableJoint",
+    "TransducerConfig",
+    "TransducerResult",
     "check_log_posteriors",
     "ctc_greedy",
     "ctc_prefix_search",
@@ -58,4 +71,5 @@ __all__ = [
     "symbols_of",
     "to_log_posteriors",
     "total_score",
+    "transducer_greedy",
 ]
