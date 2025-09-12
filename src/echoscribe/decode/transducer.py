@@ -237,7 +237,7 @@ def transducer_greedy(joint: Joint, config: TransducerConfig | None = None) -> T
                 frame += 1
                 break
     return TransducerResult(
-        tokens=_spans(labels, frames, joint.num_frames, label_scores),
+        tokens=emission_spans(labels, frames, joint.num_frames, label_scores),
         frames=tuple(frames),
         score=total,
         num_frames=joint.num_frames,
@@ -245,7 +245,7 @@ def transducer_greedy(joint: Joint, config: TransducerConfig | None = None) -> T
     )
 
 
-def _spans(
+def emission_spans(
     labels: Sequence[int],
     frames: Sequence[int],
     num_frames: int,
