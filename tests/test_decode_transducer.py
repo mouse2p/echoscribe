@@ -244,3 +244,56 @@ def test_a_stuck_joint_never_runs_past_the_frame_count() -> None:
         result = transducer_greedy(_never_blank(frames=4), config)
         assert max(result.frames) < 4
         assert len(result.symbols) == 4 * cap
+
+
+def _eos_joint(frames: int = 6, eos: int = 2, emit: int = 2) -> TableJoint:
+    """Emits ``emit`` labels from frame 0, then the end-of-sequence symbol.
+
+    States past the EOS one prefer the blank, so a decode that ignores ``eos_id``
+    still terminates and still consumes every frame.
+    """
+    logits = np.full((frames, frames * 8 + 2, 3), -5.0)
+    for index in range(emit):
+        logits[:, index, 1] = 5.0
+    logits[:, emit, eos] = 5.0
+    logits[:, emit + 1 :, 0] = 5.0
+    return TableJoint(logits)
+
+
+def test_an_eos_symbol_ends_the_decode_early() -> None:
+    config = TransducerConfig(max_symbols_per_frame=5, eos_id=2)
+    result = transducer_greedy(_eos_joint(frames=6), config)
+    assert result.symbols == (1, 1)
+    assert result.frames_consumed == 0
+    assert result.stopped_early
+
+
+def test_without_an_eos_id_the_decoder_runs_out_of_frames() -> None:
+    result = transducer_greedy(_eos_joint(frames=6), TransducerConfig(max_symbols_per_frame=5))
+    assert result.frames_consumed == 6
+    assert not result.stopped_early
+
+
+def test_an_eos_symbol_is_scored_but_not_emitted() -> None:
+    joint = _eos_joint(frames=4)
+    config = TransducerConfig(max_symbols_per_frame=5, eos_id=2)
+    result = transducer_greedy(joint, config)
+    expected = 2 * float(joint(0, ())[1]) + float(joint(0, (1, 1))[2])
+    assert result.score == pytest.approx(expected)
+    assert 2 not in result.symbols
+
+
+def test_an_eos_on_the_first_frame_emits_nothing() -> None:
+    logits = np.full((5, 2, 3), -5.0)
+    logits[:, 0, 2] = 5.0
+    result = transducer_greedy(TableJoint(logits), TransducerConfig(eos_id=2))
+    assert result.symbols == ()
+    assert result.frames_consumed == 0
+    assert result.tokens == ()
+
+
+def test_frames_consumed_equals_the_frame_count_when_nothing_stops_it() -> None:
+    for frames in (1, 3, 6):
+        result = transducer_greedy(_blank_heavy(frames))
+        assert result.frames_consumed == frames
+        assert not result.stopped_early
