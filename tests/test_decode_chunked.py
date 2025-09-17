@@ -124,3 +124,71 @@ def test_a_chunk_reports_spans_for_the_labels_it_emitted() -> None:
     assert result.symbols == (1,)
     assert result.tokens[0].start == 0
     assert result.tokens[0].end == 2
+
+
+def test_frames_are_consumed_monotonically() -> None:
+    joint = _joint(frames=15, seed=7)
+    state = ChunkState()
+    seen = 0
+    while state.frame < joint.num_frames and not state.finished:
+        result = decode_chunk(joint, state, _config(4))
+        assert result.state.frame >= state.frame
+        assert all(token.start >= seen for token in result.tokens)
+        seen = result.state.frame
+        state = result.state
+
+
+def test_token_spans_never_overlap_across_chunks() -> None:
+    joint = _joint(frames=18, seed=8)
+    state = ChunkState()
+    previous_end = 0
+    while state.frame < joint.num_frames and not state.finished:
+        result = decode_chunk(joint, state, _config(3))
+        for token in result.tokens:
+            assert token.start >= previous_end or token.num_frames == 0
+            previous_end = max(previous_end, token.end)
+        state = result.state
+
+
+def test_the_whole_utterance_is_covered_at_most_once() -> None:
+    joint = _joint(frames=10, seed=9)
+    result = decode_all_chunks(joint, _config(3))
+    covered = [0] * joint.num_frames
+    for token in result.tokens:
+        for frame in range(token.start, token.end):
+            covered[frame] += 1
+    assert all(count <= 1 for count in covered)
+
+
+def test_a_single_frame_chunk_still_covers_the_utterance() -> None:
+    joint = _joint(frames=8, seed=10)
+    result = decode_all_chunks(joint, _config(1))
+    assert result.frames_consumed == 8
+    assert result.symbols == _batch(joint).symbols
+
+
+def test_an_eos_symbol_stops_the_chunked_decode_too() -> None:
+    logits = np.full((8, 12, 3), -5.0)
+    logits[:, 0, 1] = 5.0
+    logits[:, 1, 2] = 5.0
+    logits[:, 2:, 0] = 5.0
+    config = ChunkConfig(frames_per_chunk=4, max_symbols_per_frame=3, eos_id=2)
+    result = decode_all_chunks(TableJoint(logits), config)
+    assert result.symbols == (1,)
+    assert result.frames_consumed < 8
+
+
+def test_the_chunked_result_reports_the_joint_frame_count() -> None:
+    assert decode_all_chunks(_joint(frames=11, seed=11), _config(4)).num_frames == 11
+
+
+def test_resuming_from_a_saved_state_matches_one_long_run() -> None:
+    joint = _joint(frames=14, seed=12)
+    whole = decode_all_chunks(joint, _config(14))
+    state = ChunkState()
+    pieces = []
+    while state.frame < joint.num_frames and not state.finished:
+        result = decode_chunk(joint, state, _config(2))
+        pieces.extend(result.tokens)
+        state = result.state
+    assert tuple(token.symbol for token in pieces) == whole.symbols
