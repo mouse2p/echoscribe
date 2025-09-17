@@ -29,6 +29,7 @@ from dataclasses import dataclass, field
 
 import numpy as np
 
+from echoscribe.decode.transducer import Joint, TransducerConfig, transducer_greedy
 from echoscribe.errors import ConfigError, DecodeError, require
 
 
@@ -139,3 +140,99 @@ def advance(node: TrieNode, symbol: int, root: TrieNode | None = None) -> TrieNo
 def collect_bonus(node: TrieNode) -> float:
     """Bonus earned by arriving at ``node``, which a caller should bank once."""
     return float(node.bonus)
+
+
+@dataclass(frozen=True)
+class BiasConfig:
+    """How strongly a hotword list is allowed to move the decode."""
+
+    bonus: float = 2.0
+
+    def __post_init__(self) -> None:
+        require(
+            self.bonus >= 0.0,
+            f"a bias bonus must not be negative, got {self.bonus!r}",
+            ConfigError,
+        )
+
+
+@dataclass(frozen=True)
+class BiasReport:
+    """What biasing changed, which is what makes the trade-off visible."""
+
+    unbiased_symbols: tuple[int, ...]
+    biased_symbols: tuple[int, ...]
+    hotword_symbols: tuple[tuple[int, ...], ...]
+    score_difference: float
+
+    @property
+    def changed(self) -> bool:
+        """True when the emitted label sequence differs."""
+        return self.unbiased_symbols != self.biased_symbols
+
+    def hotwords_matched(self) -> int:
+        """How many listed hotwords appear as a contiguous run in the output."""
+        found = 0
+        for hotword in self.hotword_symbols:
+            for start in range(len(self.biased_symbols) - len(hotword) + 1):
+                if self.biased_symbols[start : start + len(hotword)] == hotword:
+                    found += 1
+                    break
+        return found
+
+
+class BiasedJoint:
+    """Wraps a joint and boosts the logits of labels that continue a hotword.
+
+    The trie position is a pure function of the label history, so the wrapper can
+    stay stateless with respect to the decoder loop and still be correct: it walks
+    the history from the root, memoising each position it has already computed.
+    """
+
+    def __init__(self, joint: Joint, trie: TrieNode) -> None:
+        self.joint = joint
+        self.trie = trie
+        self._positions: dict[tuple[int, ...], TrieNode] = {}
+
+    @property
+    def num_frames(self) -> int:
+        """Forwarded from the wrapped joint."""
+        return self.joint.num_frames
+
+    @property
+    def num_symbols(self) -> int:
+        """Forwarded from the wrapped joint."""
+        return self.joint.num_symbols
+
+    def position(self, history: tuple[int, ...]) -> TrieNode:
+        """Trie node reached by ``history``, computed at most once per history."""
+        node = self._positions.get(history)
+        if node is None:
+            node = self.trie
+            for symbol in history:
+                node = advance(node, symbol, self.trie)
+            self._positions[history] = node
+        return node
+
+    def __call__(self, frame: int, history: tuple[int, ...]) -> np.ndarray:
+        """Biased logits for one state."""
+        return apply_bias(self.joint(frame, history), self.position(history))
+
+
+def bias_greedy(
+    joint: Joint,
+    hotwords: Iterable[Sequence[int]],
+    config: TransducerConfig | None = None,
+    bias: BiasConfig | None = None,
+) -> BiasReport:
+    """Decode greedily with hotword bonuses, alongside the unbiased baseline.
+
+    Both runs are reported because a biased hypothesis with nothing to compare it to
+    is not a result: the interesting quantity is what the bonus changed, and that
+    needs the baseline next to it.
+    """
+    settings = bias if bias is not None else BiasConfig()
+    listed = tuple(tuple(int(symbol) for symbol in hotword) for hotword in hotwords)
+    plain = transducer_greedy(joint, config)
+    boosted = transducer_greedy(BiasedJoint(joint, build_trie(listed, settings.bonus)), config)
+    return BiasReport(plain.symbols, boosted.symbols, listed, boosted.score - plain.score)
