@@ -31,6 +31,7 @@ import numpy as np
 
 from echoscribe.decode.transducer import Joint, TransducerConfig, transducer_greedy
 from echoscribe.errors import ConfigError, DecodeError, require
+from echoscribe.numeric import log_softmax
 
 
 @dataclass(frozen=True)
@@ -215,8 +216,15 @@ class BiasedJoint:
         return node
 
     def __call__(self, frame: int, history: tuple[int, ...]) -> np.ndarray:
-        """Biased logits for one state."""
-        return apply_bias(self.joint(frame, history), self.position(history))
+        """Biased log-probabilities for one state.
+
+        The bonus is added and the row is renormalised, so what comes back is a real
+        log distribution and a decoder can record it as a score.  Without that step
+        a boosted symbol can score above zero, which is not a log-probability and
+        would be rejected by every downstream check that assumes one.
+        """
+        boosted = apply_bias(self.joint(frame, history), self.position(history))
+        return log_softmax(boosted)
 
 
 def bias_greedy(
