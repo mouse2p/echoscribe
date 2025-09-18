@@ -279,3 +279,17 @@ def test_biasing_a_long_decode_stays_fast_enough_to_test() -> None:
         joint, [[1, 2], [3, 1]], TransducerConfig(max_symbols_per_frame=3), BiasConfig(0.5)
     )
     assert isinstance(report.biased_symbols, tuple)
+
+
+def test_bias_greedy_accepts_a_generator_of_hotwords() -> None:
+    # The hotword list is materialised once, so a single-pass iterable works.
+    report = bias_greedy(_near_tie_joint(), (hotword for hotword in [[1]]))
+    assert report.hotword_symbols == ((1,),)
+    assert report.hotwords_matched() >= 0
+
+
+def test_bias_greedy_accepts_tuples_and_lists_alike() -> None:
+    joint = _near_tie_joint()
+    from_list = bias_greedy(joint, [[1]], bias=BiasConfig(bonus=1.0))
+    from_tuple = bias_greedy(joint, [(1,)], bias=BiasConfig(bonus=1.0))
+    assert from_list.biased_symbols == from_tuple.biased_symbols
