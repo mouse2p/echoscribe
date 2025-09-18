@@ -26,7 +26,25 @@ in one module rather than being scattered through the decoder tests: a reader ca
 see exactly which numbers were planted and which were measured.
 """
 
+from echoscribe.decode.bias import (
+    BiasConfig,
+    BiasedJoint,
+    BiasReport,
+    TrieNode,
+    advance,
+    apply_bias,
+    bias_greedy,
+    build_trie,
+    collect_bonus,
+)
 from echoscribe.decode.cache import JointCache
+from echoscribe.decode.chunked import (
+    ChunkConfig,
+    ChunkResult,
+    ChunkState,
+    decode_all_chunks,
+    decode_chunk,
+)
 from echoscribe.decode.ctc_greedy import GreedyResult, ctc_greedy
 from echoscribe.decode.ctc_prefix import (
     PrefixBeamResult,
@@ -47,11 +65,19 @@ from echoscribe.decode.transducer import (
     TableJoint,
     TransducerConfig,
     TransducerResult,
+    emission_spans,
     transducer_greedy,
 )
 
 __all__ = [
+    "BiasConfig",
+    "BiasReport",
+    "BiasedJoint",
+    "ChunkConfig",
+    "ChunkResult",
+    "ChunkState",
     "DecodedToken",
+    "TrieNode",
     "GreedyResult",
     "Joint",
     "JointCache",
@@ -60,10 +86,18 @@ __all__ = [
     "TableJoint",
     "TransducerConfig",
     "TransducerResult",
+    "advance",
+    "apply_bias",
+    "bias_greedy",
+    "build_trie",
     "check_log_posteriors",
+    "collect_bonus",
     "ctc_greedy",
     "ctc_prefix_search",
+    "decode_all_chunks",
+    "decode_chunk",
     "frame_index",
+    "emission_spans",
     "frame_times",
     "masked_posteriors",
     "scripted_posteriors",

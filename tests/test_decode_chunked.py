@@ -192,3 +192,12 @@ def test_resuming_from_a_saved_state_matches_one_long_run() -> None:
         pieces.extend(result.tokens)
         state = result.state
     assert tuple(token.symbol for token in pieces) == whole.symbols
+
+
+def test_the_decode_subpackage_re_exports_the_chunked_api() -> None:
+    from echoscribe import decode
+
+    assert decode.decode_chunk is decode_chunk
+    assert decode.ChunkConfig is ChunkConfig
+    for name in ("decode_chunk", "decode_all_chunks", "bias_greedy", "build_trie"):
+        assert name in decode.__all__
