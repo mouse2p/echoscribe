@@ -20,6 +20,19 @@ A caution the numbers bear out: a bonus large enough to guarantee a hotword is a
 large enough to insert it where it was never said.  Biasing trades recall on the
 listed words for precision on everything else, and the trade is set by the bonus,
 not by the algorithm.
+
+Two limits of this implementation are worth naming:
+
+* the bonus is added to the logits and the row is renormalised, so a biased score
+  is a log-probability under the *biased* distribution.  It ranks correctly and it
+  is not a calibrated posterior: anything downstream that reads a decoder score as
+  a confidence -- a calibration curve, a rejection threshold -- has to know whether
+  biasing was on, which is why :func:`bias_greedy` reports the unbiased decode next
+  to the biased one.
+* the trie position is memoised per label history rather than threaded through the
+  decoder loop, because the decoder only ever sees ``(frame, history)``.  That costs
+  a dict lookup per state; a production decoder carries the node in its beam entry
+  and pays nothing.
 """
 
 from __future__ import annotations
