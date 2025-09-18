@@ -242,3 +242,40 @@ def test_a_multi_symbol_hotword_is_matched_across_frames() -> None:
     assert report.unbiased_symbols == ()
     assert report.biased_symbols == (1, 2)
     assert report.hotwords_matched() == 1
+
+
+def test_the_memo_grows_with_distinct_histories_only() -> None:
+    joint = _near_tie_joint(frames=6)
+    wrapped = BiasedJoint(joint, build_trie([[1, 2]], 1.0))
+    for frame in range(6):
+        wrapped(frame, ())
+        wrapped(frame, (1,))
+    assert len(wrapped._positions) == 2
+
+
+def test_the_memo_returns_the_same_node_for_the_same_history() -> None:
+    wrapped = BiasedJoint(_near_tie_joint(), build_trie([[1, 2, 1]], 1.0))
+    first = wrapped.position((1, 2))
+    for _ in range(4):
+        assert wrapped.position((1, 2)) is first
+
+
+def test_a_long_history_still_resolves_to_the_right_node() -> None:
+    root = build_trie([[1, 2, 1]], 3.0)
+    wrapped = BiasedJoint(_near_tie_joint(), root)
+    final = root.children[1].children[2].children[1]
+    assert wrapped.position((1, 2, 1)) is final
+    assert final.bonus == pytest.approx(1.0)
+    assert final.completes
+
+
+def test_biasing_a_long_decode_stays_fast_enough_to_test() -> None:
+    rng = np.random.default_rng(1)
+    logits = rng.uniform(-1.0, 1.0, size=(60, 200, 4))
+    joint = TableJoint(logits)
+    from echoscribe.decode.transducer import TransducerConfig
+
+    report = bias_greedy(
+        joint, [[1, 2], [3, 1]], TransducerConfig(max_symbols_per_frame=3), BiasConfig(0.5)
+    )
+    assert isinstance(report.biased_symbols, tuple)
