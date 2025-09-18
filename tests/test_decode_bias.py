@@ -6,12 +6,17 @@ import numpy as np
 import pytest
 
 from echoscribe.decode.bias import (
+    BiasConfig,
+    BiasedJoint,
+    BiasReport,
     TrieNode,
     advance,
     apply_bias,
+    bias_greedy,
     build_trie,
     collect_bonus,
 )
+from echoscribe.decode.transducer import Joint, TableJoint
 from echoscribe.errors import ConfigError, DecodeError
 
 
@@ -125,3 +130,115 @@ def test_a_negative_symbol_is_refused() -> None:
 def test_a_built_trie_is_immutable() -> None:
     with pytest.raises(AttributeError):
         TrieNode().bonus = 1.0  # type: ignore[misc]
+
+
+def _near_tie_joint(frames: int = 4) -> TableJoint:
+    """Prefers symbol 2 by a hair, so a modest bonus flips it to symbol 1."""
+    logits = np.full((frames, 8, 3), -5.0)
+    logits[:, :, 0] = 4.5
+    logits[:, 0, 2] = 4.1
+    logits[:, 0, 1] = 4.0
+    return TableJoint(logits)
+
+
+def test_biasing_flips_a_close_choice() -> None:
+    report = bias_greedy(_near_tie_joint(), [[1]], bias=BiasConfig(bonus=1.0))
+    assert isinstance(report, BiasReport)
+    assert report.changed
+    assert 1 in report.biased_symbols
+    assert 1 not in report.unbiased_symbols
+
+
+def test_a_zero_bonus_changes_nothing() -> None:
+    report = bias_greedy(_near_tie_joint(), [[1]], bias=BiasConfig(bonus=0.0))
+    assert not report.changed
+    assert report.biased_symbols == report.unbiased_symbols
+
+
+def test_no_hotwords_changes_nothing() -> None:
+    report = bias_greedy(_near_tie_joint(), [])
+    assert not report.changed
+    assert report.hotwords_matched() == 0
+
+
+def test_a_matched_hotword_is_counted() -> None:
+    report = bias_greedy(_near_tie_joint(), [[1]], bias=BiasConfig(bonus=1.0))
+    assert report.hotwords_matched() == 1
+    assert report.hotword_symbols == ((1,),)
+
+
+def test_a_bonus_must_not_be_negative() -> None:
+    with pytest.raises(ConfigError, match="must not be negative"):
+        BiasConfig(bonus=-0.5)
+
+
+def test_a_larger_bonus_does_not_weaken_the_effect() -> None:
+    joint = _near_tie_joint()
+    small = bias_greedy(joint, [[1]], bias=BiasConfig(bonus=0.5))
+    large = bias_greedy(joint, [[1]], bias=BiasConfig(bonus=4.0))
+    assert large.hotwords_matched() >= small.hotwords_matched()
+
+
+def test_the_biased_joint_returns_a_normalised_log_distribution() -> None:
+    wrapped = BiasedJoint(_near_tie_joint(), build_trie([[1]], 4.0))
+    row = wrapped(0, ())
+    assert np.all(row <= 1e-12)
+    assert float(np.exp(row).sum()) == pytest.approx(1.0, rel=1e-12)
+
+
+def test_a_large_bonus_does_not_produce_a_positive_score() -> None:
+    from echoscribe.decode.transducer import transducer_greedy
+
+    joint = _near_tie_joint()
+    report = bias_greedy(joint, [[1]], bias=BiasConfig(bonus=50.0))
+    assert report.biased_symbols == (1,)
+    # The renormalisation is what makes this hold: without it the boosted symbol
+    # would carry a logit above zero and every per-token score check downstream
+    # would reject the decode.
+    biased = transducer_greedy(BiasedJoint(joint, build_trie([[1]], 50.0)))
+    assert all(token.score <= 0.0 for token in biased.tokens)
+    assert biased.score <= 0.0
+
+
+def test_apply_bias_alone_is_unnormalised_and_the_wrapper_is_not() -> None:
+    joint = _near_tie_joint()
+    root = build_trie([[1]], 4.0)
+    raw = apply_bias(joint(0, ()), root)
+    wrapped = BiasedJoint(joint, root)(0, ())
+    assert float(np.exp(raw).sum()) > 1.0
+    assert float(np.exp(wrapped).sum()) == pytest.approx(1.0, rel=1e-12)
+
+
+def test_biasing_is_deterministic() -> None:
+    joint = _near_tie_joint()
+    first = bias_greedy(joint, [[1]], bias=BiasConfig(bonus=1.0))
+    assert bias_greedy(joint, [[1]], bias=BiasConfig(bonus=1.0)).biased_symbols == (
+        first.biased_symbols
+    )
+
+
+def test_the_biased_joint_satisfies_the_joint_protocol() -> None:
+    wrapped = BiasedJoint(_near_tie_joint(), build_trie([[1]], 1.0))
+    assert isinstance(wrapped, Joint)
+    assert wrapped.num_frames == 4
+    assert wrapped.num_symbols == 3
+
+
+def test_the_biased_joint_memoises_its_trie_position() -> None:
+    wrapped = BiasedJoint(_near_tie_joint(), build_trie([[1, 2]], 1.0))
+    assert wrapped.position((1,)) is wrapped.position((1,))
+    assert wrapped.position((1,)) is not wrapped.position((1, 2))
+
+
+def test_a_multi_symbol_hotword_is_matched_across_frames() -> None:
+    # Two frames that each narrowly prefer symbol 2; the hotword (1, 2) pays only
+    # on its second symbol, so the bonus has to carry the decode through both.
+    logits = np.full((2, 8, 3), -5.0)
+    logits[:, :, 0] = 4.5
+    logits[0, 0, 1] = 4.0
+    logits[1, 1, 2] = 4.0
+    joint = TableJoint(logits)
+    report = bias_greedy(joint, [[1, 2]], bias=BiasConfig(bonus=1.5))
+    assert report.unbiased_symbols == ()
+    assert report.biased_symbols == (1, 2)
+    assert report.hotwords_matched() == 1
