@@ -228,3 +228,18 @@ def expected_calibration_error(bins: Sequence[CalibrationBin]) -> float:
         sum(item.count * abs(item.accuracy - item.mean_confidence) for item in bins if item.count)
         / total
     )
+
+
+def reliability_curve(bins: Sequence[CalibrationBin]) -> tuple[tuple[float, float], ...]:
+    """``(mean confidence, accuracy)`` for every non-empty bucket, in bucket order.
+
+    Empty buckets are dropped here and only here: a reliability *diagram* has no
+    point to draw for a range that was never observed, while the bucket list itself
+    keeps them so a reader can see the gaps.
+    """
+    return tuple((item.mean_confidence, item.accuracy) for item in bins if not item.is_empty)
+
+
+def bucket_counts(bins: Sequence[CalibrationBin]) -> tuple[int, ...]:
+    """How many tokens fell in each bucket, including the empty ones."""
+    return tuple(item.count for item in bins)

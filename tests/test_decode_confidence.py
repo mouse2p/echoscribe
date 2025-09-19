@@ -9,10 +9,12 @@ from echoscribe.decode.confidence import (
     CONFIDENCE_FLOOR,
     CalibrationBin,
     TokenConfidence,
+    bucket_counts,
     calibration_bins,
     expected_calibration_error,
     geometric_mean,
     probabilities_of,
+    reliability_curve,
     token_confidences,
     utterance_confidence,
 )
@@ -237,3 +239,38 @@ def test_mismatched_inputs_are_refused() -> None:
         calibration_bins([1.5], [True])
     with pytest.raises(DecodeError, match="num_bins must be a positive integer"):
         calibration_bins([0.5], [True], num_bins=0)
+
+
+def test_the_curve_skips_empty_buckets() -> None:
+    bins = calibration_bins([0.05, 0.95], [True, False], num_bins=10)
+    curve = reliability_curve(bins)
+    assert len(curve) == 2
+    assert sum(bucket_counts(bins)) == 2
+    assert bucket_counts(bins).count(0) == 8
+
+
+def test_the_curve_follows_the_bucket_order() -> None:
+    confidences = [0.05, 0.35, 0.65, 0.95]
+    bins = calibration_bins(confidences, [False, True, True, True], num_bins=10)
+    curve = reliability_curve(bins)
+    assert [point[0] for point in curve] == sorted(point[0] for point in curve)
+
+
+def test_a_perfectly_calibrated_curve_sits_on_the_diagonal() -> None:
+    confidences = []
+    correct = []
+    for bucket in range(10):
+        value = (bucket + 0.5) / 10
+        confidences.extend([value] * 20)
+        correct.extend([True] * (2 * bucket + 1) + [False] * (19 - 2 * bucket))
+    curve = reliability_curve(calibration_bins(confidences, correct, num_bins=10))
+    for confidence, accuracy in curve:
+        assert accuracy == pytest.approx(confidence, abs=1e-12)
+
+
+def test_the_curve_of_nothing_is_empty() -> None:
+    assert reliability_curve(calibration_bins([], [])) == ()
+
+
+def test_bucket_counts_reports_every_bucket() -> None:
+    assert len(bucket_counts(calibration_bins([0.5], [True], num_bins=7))) == 7
