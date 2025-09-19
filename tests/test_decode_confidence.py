@@ -104,3 +104,39 @@ def test_a_confidence_rejects_a_negative_rank_or_margin() -> None:
         TokenConfidence(1, 0.5, -1, 0.0, 0)
     with pytest.raises(DecodeError, match="margin must not be negative"):
         TokenConfidence(1, 0.5, 0, -0.5, 0)
+
+
+def test_every_token_of_a_decode_gets_a_confidence() -> None:
+    matrix = scripted_posteriors([0, 1, 1, 0, 2], num_symbols=3)
+    from echoscribe.decode.ctc_greedy import ctc_greedy
+
+    result = ctc_greedy(matrix)
+    confidences = token_confidences(matrix, result.tokens)
+    assert len(confidences) == len(result.tokens)
+    assert [item.symbol for item in confidences] == list(result.symbols)
+
+
+def test_confidence_never_exceeds_one() -> None:
+    rng = np.random.default_rng(0)
+    probabilities = rng.uniform(0.01, 1.0, size=(20, 5))
+    matrix = to_log_posteriors(probabilities / probabilities.sum(axis=1, keepdims=True))
+    tokens = [DecodedToken(int(row.argmax()), index, index + 1) for index, row in enumerate(matrix)]
+    assert all(item.probability <= 1.0 for item in token_confidences(matrix, tokens))
+
+
+def test_a_confident_decode_beats_an_uncertain_one() -> None:
+    sharp = scripted_posteriors([1, 2, 1, 2], num_symbols=4, peak_logit=12.0)
+    flat = to_log_posteriors(np.full((4, 4), 0.25))
+    tokens = [DecodedToken(symbol, index, index + 1) for index, symbol in enumerate([1, 2, 1, 2])]
+    confident = token_confidences(sharp, tokens)
+    uncertain = token_confidences(flat, tokens)
+    assert min(item.probability for item in confident) > max(item.probability for item in uncertain)
+
+
+def test_the_margin_measures_the_gap_to_the_best_symbol() -> None:
+    tied = to_log_posteriors(np.array([[0.5, 0.5]]))
+    clear = to_log_posteriors(np.array([[0.9, 0.1]]))
+    # The winner's margin is zero by definition; the runner-up's is the gap.
+    assert token_confidences(tied, [DecodedToken(0, 0, 1)])[0].margin == pytest.approx(0.0)
+    assert token_confidences(clear, [DecodedToken(0, 0, 1)])[0].margin == pytest.approx(0.0)
+    assert token_confidences(clear, [DecodedToken(1, 0, 1)])[0].margin == pytest.approx(0.8)
