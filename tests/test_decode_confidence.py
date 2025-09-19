@@ -7,9 +7,14 @@ import pytest
 
 from echoscribe.decode.confidence import (
     CONFIDENCE_FLOOR,
+    CalibrationBin,
     TokenConfidence,
+    calibration_bins,
+    expected_calibration_error,
+    geometric_mean,
     probabilities_of,
     token_confidences,
+    utterance_confidence,
 )
 from echoscribe.decode.posteriors import scripted_posteriors, to_log_posteriors
 from echoscribe.decode.tokens import DecodedToken
@@ -140,3 +145,95 @@ def test_the_margin_measures_the_gap_to_the_best_symbol() -> None:
     assert token_confidences(tied, [DecodedToken(0, 0, 1)])[0].margin == pytest.approx(0.0)
     assert token_confidences(clear, [DecodedToken(0, 0, 1)])[0].margin == pytest.approx(0.0)
     assert token_confidences(clear, [DecodedToken(1, 0, 1)])[0].margin == pytest.approx(0.8)
+
+
+def test_a_geometric_mean_matches_the_closed_form() -> None:
+    assert geometric_mean([0.25, 0.25, 0.25]) == pytest.approx(0.25)
+    assert geometric_mean([1.0, 0.25]) == pytest.approx(0.5)
+
+
+def test_a_geometric_mean_of_nothing_is_one() -> None:
+    assert geometric_mean([]) == 1.0
+
+
+def test_a_geometric_mean_is_pulled_down_by_one_small_value() -> None:
+    assert geometric_mean([1.0, 1.0, 1e-6]) < 0.02
+
+
+def test_a_geometric_mean_rejects_out_of_range_values() -> None:
+    with pytest.raises(DecodeError, match="needs values in"):
+        geometric_mean([0.5, 1.5])
+
+
+def test_an_empty_hypothesis_has_no_confidence() -> None:
+    assert utterance_confidence(()) == 0.0
+
+
+def test_utterance_confidence_is_the_geometric_mean_of_its_tokens() -> None:
+    matrix = to_log_posteriors(np.array([[0.5, 0.5], [0.25, 0.75]]))
+    confidences = token_confidences(matrix, [DecodedToken(0, 0, 1), DecodedToken(1, 1, 2)])
+    expected = geometric_mean(probabilities_of(confidences))
+    assert utterance_confidence(confidences) == pytest.approx(expected)
+
+
+def test_bins_cover_the_unit_interval_without_gaps() -> None:
+    bins = calibration_bins([], [], num_bins=4)
+    assert len(bins) == 4
+    assert bins[0].low == 0.0
+    assert bins[-1].high == 1.0
+    for earlier, later in zip(bins, bins[1:], strict=False):
+        assert earlier.high == later.low
+
+
+def test_a_confidence_of_one_lands_in_the_top_bin() -> None:
+    bins = calibration_bins([1.0], [True], num_bins=10)
+    assert bins[-1].count == 1
+    assert sum(item.count for item in bins) == 1
+
+
+def test_bin_accuracy_and_mean_confidence_are_computed_per_bucket() -> None:
+    confidences = [0.05, 0.05, 0.05, 0.05]
+    bins = calibration_bins(confidences, [True, False, False, False], num_bins=10)
+    assert bins[0].count == 4
+    assert bins[0].correct == 1
+    assert bins[0].accuracy == pytest.approx(0.25)
+    assert bins[0].mean_confidence == pytest.approx(0.05)
+
+
+def test_empty_bins_are_kept_and_flagged() -> None:
+    bins = calibration_bins([0.95], [True], num_bins=5)
+    assert bins[4].count == 1
+    assert bins[0].is_empty
+    assert bins[0].accuracy == 0.0
+    assert isinstance(bins[0], CalibrationBin)
+
+
+def test_a_perfectly_calibrated_scorer_has_zero_error() -> None:
+    # Twenty tokens per bucket, confidence at the bucket centre, and exactly the
+    # number of correct answers that confidence promises.
+    confidences = []
+    correct = []
+    for bucket in range(10):
+        value = (bucket + 0.5) / 10
+        confidences.extend([value] * 20)
+        correct.extend([True] * (2 * bucket + 1) + [False] * (19 - 2 * bucket))
+    bins = calibration_bins(confidences, correct, num_bins=10)
+    assert expected_calibration_error(bins) == pytest.approx(0.0, abs=1e-12)
+
+
+def test_a_grossly_overconfident_scorer_has_a_large_error() -> None:
+    bins = calibration_bins([0.95] * 10, [False] * 10, num_bins=10)
+    assert expected_calibration_error(bins) == pytest.approx(0.95)
+
+
+def test_the_error_of_nothing_is_zero() -> None:
+    assert expected_calibration_error(calibration_bins([], [])) == 0.0
+
+
+def test_mismatched_inputs_are_refused() -> None:
+    with pytest.raises(DecodeError, match="cannot be paired with"):
+        calibration_bins([0.5, 0.5], [True])
+    with pytest.raises(DecodeError, match="must lie in"):
+        calibration_bins([1.5], [True])
+    with pytest.raises(DecodeError, match="num_bins must be a positive integer"):
+        calibration_bins([0.5], [True], num_bins=0)

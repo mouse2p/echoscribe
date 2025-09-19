@@ -32,6 +32,7 @@ import numpy as np
 from echoscribe.decode.posteriors import check_log_posteriors
 from echoscribe.decode.tokens import DecodedToken
 from echoscribe.errors import DecodeError, require
+from echoscribe.types import FEATURE_DTYPE
 
 #: Smallest posterior that survives the logarithm used for a geometric mean.
 CONFIDENCE_FLOOR = 1e-300
@@ -107,3 +108,123 @@ def token_confidences(
 def probabilities_of(confidences: Sequence[TokenConfidence]) -> tuple[float, ...]:
     """The probability component of each confidence, as a plain tuple."""
     return tuple(item.probability for item in confidences)
+
+
+def geometric_mean(values: Sequence[float]) -> float:
+    """Geometric mean of values in ``[0, 1]``; 1.0 for an empty sequence.
+
+    Computed through the logarithm so a single near-zero value pulls the result down
+    instead of underflowing the product to zero.
+    """
+    require(
+        all(0.0 <= value <= 1.0 for value in values),
+        "a geometric mean of confidences needs values in [0, 1]",
+        DecodeError,
+    )
+    if not values:
+        return 1.0
+    logs = np.log(np.maximum(np.asarray(values, dtype=FEATURE_DTYPE), CONFIDENCE_FLOOR))
+    return float(np.exp(logs.mean()))
+
+
+def utterance_confidence(confidences: Sequence[TokenConfidence]) -> float:
+    """One number for a whole hypothesis: the geometric mean of its token scores.
+
+    An empty hypothesis scores 0.0 rather than the 1.0 :func:`geometric_mean` returns
+    for an empty product, because "no words" is not a confident transcription.
+    """
+    if not confidences:
+        return 0.0
+    return geometric_mean(probabilities_of(confidences))
+
+
+@dataclass(frozen=True)
+class CalibrationBin:
+    """One bucket of a reliability diagram."""
+
+    index: int
+    low: float
+    high: float
+    count: int
+    correct: int
+    confidence_total: float
+
+    @property
+    def accuracy(self) -> float:
+        """Fraction of the bucket's tokens that were correct; 0.0 when empty."""
+        return self.correct / self.count if self.count else 0.0
+
+    @property
+    def mean_confidence(self) -> float:
+        """Mean reported confidence in the bucket; 0.0 when empty."""
+        return self.confidence_total / self.count if self.count else 0.0
+
+    @property
+    def is_empty(self) -> bool:
+        """True when no token fell in this bucket."""
+        return self.count == 0
+
+
+def calibration_bins(
+    confidences: Sequence[float],
+    correct: Sequence[bool],
+    num_bins: int = 10,
+) -> tuple[CalibrationBin, ...]:
+    """Bucket ``(confidence, was-it-correct)`` pairs into a reliability diagram.
+
+    Buckets are half-open on the right except the last, so a confidence of exactly
+    1.0 lands in the top bucket rather than off the end.  Empty buckets are kept in
+    the result -- dropping them would make the diagram's x-axis lie about which
+    confidence ranges were never observed.
+    """
+    require(
+        isinstance(num_bins, int) and not isinstance(num_bins, bool) and num_bins >= 1,
+        f"num_bins must be a positive integer, got {num_bins!r}",
+        DecodeError,
+    )
+    require(
+        len(confidences) == len(correct),
+        f"{len(confidences)} confidences cannot be paired with {len(correct)} labels",
+        DecodeError,
+    )
+    require(
+        all(0.0 <= value <= 1.0 for value in confidences),
+        "a confidence must lie in [0, 1]",
+        DecodeError,
+    )
+    counts = [0] * num_bins
+    hits = [0] * num_bins
+    totals = [0.0] * num_bins
+    for value, was_correct in zip(confidences, correct, strict=True):
+        index = min(int(value * num_bins), num_bins - 1)
+        counts[index] += 1
+        totals[index] += float(value)
+        if was_correct:
+            hits[index] += 1
+    return tuple(
+        CalibrationBin(
+            index,
+            index / num_bins,
+            (index + 1) / num_bins,
+            counts[index],
+            hits[index],
+            totals[index],
+        )
+        for index in range(num_bins)
+    )
+
+
+def expected_calibration_error(bins: Sequence[CalibrationBin]) -> float:
+    """Count-weighted mean gap between reported confidence and accuracy.
+
+    Zero means every bucket reported exactly the accuracy it achieved.  The number is
+    only meaningful alongside the bucket counts: an ECE over ten tokens says almost
+    nothing, and a confident-looking ECE over an empty set says nothing at all.
+    """
+    total = sum(item.count for item in bins)
+    if total == 0:
+        return 0.0
+    return float(
+        sum(item.count * abs(item.accuracy - item.mean_confidence) for item in bins if item.count)
+        / total
+    )
