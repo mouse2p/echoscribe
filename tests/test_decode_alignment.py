@@ -113,3 +113,38 @@ def test_a_word_span_rejects_an_out_of_range_confidence() -> None:
 
 def test_an_empty_alignment_is_allowed() -> None:
     assert align_words([], [], ()) == ()
+
+
+def test_the_union_of_word_spans_covers_the_decode() -> None:
+    tokens = _tokens([0, 2, 5, 5, 8], [2, 5, 5, 8, 11])
+    spans = align_words(["ab", "c", "d"], [2, 2, 1], tokens)
+    assert spans[0].start == tokens[0].start
+    assert spans[-1].end == tokens[-1].end
+
+
+def test_alignment_survives_a_whole_greedy_decode() -> None:
+    import numpy as np
+
+    from echoscribe.decode.confidence import probabilities_of, token_confidences
+    from echoscribe.decode.ctc_greedy import ctc_greedy
+    from echoscribe.decode.posteriors import scripted_posteriors
+
+    matrix = scripted_posteriors([0, 1, 1, 0, 2, 3, 3, 0], num_symbols=5)
+    result = ctc_greedy(matrix)
+    confidences = token_confidences(matrix, result.tokens)
+    counts = [1] * len(result.tokens)
+    spans = align_words(
+        [str(symbol) for symbol in result.symbols],
+        counts,
+        result.tokens,
+        probabilities_of(confidences),
+    )
+    assert len(spans) == len(result.tokens)
+    assert all(0.0 <= span.confidence <= 1.0 for span in spans)
+    assert np.allclose([span.start for span in spans], [t.start for t in result.tokens])
+
+
+def test_a_word_span_is_immutable() -> None:
+    span = WordSpan("a", 0, 2)
+    with pytest.raises(AttributeError):
+        span.end = 4  # type: ignore[misc]
