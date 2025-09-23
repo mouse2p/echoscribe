@@ -29,6 +29,7 @@ __all__ = [
     "PROBABILITY_FLOOR",
     "log_add",
     "log_softmax",
+    "geometric_mean",
     "logsumexp",
     "safe_log",
     "softmax",
@@ -105,3 +106,22 @@ def safe_log(values: np.ndarray, floor: float = PROBABILITY_FLOOR) -> FloatArray
     array = np.asarray(values, dtype=FEATURE_DTYPE)
     require(bool(np.all(array >= 0.0)), "safe_log expects non-negative input", FeatureError)
     return np.log(np.maximum(array, floor))
+
+
+def geometric_mean(values, floor: float = 1e-300) -> np.ndarray | float:
+    """Geometric mean of values in ``[0, 1]``, computed through the logarithm.
+
+    Going through logs is what keeps a product of many small numbers from
+    underflowing to zero before it can be averaged: a ten-token hypothesis whose
+    tokens are each 0.6 confident has a product of 0.006, and a hundred-token one
+    would underflow in float64 long before the mean was taken.
+    """
+    array = np.asarray(values, dtype=FEATURE_DTYPE)
+    require(
+        bool(np.all((array >= 0.0) & (array <= 1.0))),
+        "geometric_mean expects values in [0, 1]",
+        FeatureError,
+    )
+    if array.size == 0:
+        return 1.0
+    return float(np.exp(np.mean(np.log(np.maximum(array, floor)))))

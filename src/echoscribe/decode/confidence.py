@@ -32,7 +32,7 @@ import numpy as np
 from echoscribe.decode.posteriors import check_log_posteriors
 from echoscribe.decode.tokens import DecodedToken
 from echoscribe.errors import DecodeError, require
-from echoscribe.types import FEATURE_DTYPE
+from echoscribe.numeric import geometric_mean as _geometric_mean
 
 #: Smallest posterior that survives the logarithm used for a geometric mean.
 CONFIDENCE_FLOOR = 1e-300
@@ -111,20 +111,18 @@ def probabilities_of(confidences: Sequence[TokenConfidence]) -> tuple[float, ...
 
 
 def geometric_mean(values: Sequence[float]) -> float:
-    """Geometric mean of values in ``[0, 1]``; 1.0 for an empty sequence.
+    """Geometric mean of confidences in ``[0, 1]``; 1.0 for an empty sequence.
 
-    Computed through the logarithm so a single near-zero value pulls the result down
-    instead of underflowing the product to zero.
+    A thin wrapper over :func:`echoscribe.numeric.geometric_mean` that reports the
+    failure as a :class:`DecodeError`, because a confidence outside ``[0, 1]`` is a
+    decoding bug rather than a numeric one.
     """
     require(
         all(0.0 <= value <= 1.0 for value in values),
         "a geometric mean of confidences needs values in [0, 1]",
         DecodeError,
     )
-    if not values:
-        return 1.0
-    logs = np.log(np.maximum(np.asarray(values, dtype=FEATURE_DTYPE), CONFIDENCE_FLOOR))
-    return float(np.exp(logs.mean()))
+    return float(_geometric_mean(values))
 
 
 def utterance_confidence(confidences: Sequence[TokenConfidence]) -> float:

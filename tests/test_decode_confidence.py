@@ -274,3 +274,20 @@ def test_the_curve_of_nothing_is_empty() -> None:
 
 def test_bucket_counts_reports_every_bucket() -> None:
     assert len(bucket_counts(calibration_bins([0.5], [True], num_bins=7))) == 7
+
+
+def test_the_decode_helper_matches_the_numeric_one() -> None:
+    from echoscribe.numeric import geometric_mean as numeric_mean
+
+    for values in ([0.25, 0.25], [1.0, 0.5, 0.25], [0.0, 1.0]):
+        assert geometric_mean(values) == pytest.approx(float(numeric_mean(values)))
+
+
+def test_the_numeric_helper_underflows_gracefully() -> None:
+    from echoscribe.numeric import geometric_mean as numeric_mean
+
+    values = [0.6] * 4000
+    # A direct product underflows out of the normal float64 range; the log-domain
+    # mean does not, which is the only reason the helper exists.
+    assert np.prod(values) < 1e-300
+    assert float(numeric_mean(values)) == pytest.approx(0.6, rel=1e-9)
