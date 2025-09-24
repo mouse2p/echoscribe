@@ -20,6 +20,20 @@ Two numbers are reported per token, because they fail in different ways:
 Neither is a probability of correctness.  That is what the calibration machinery
 below measures, and the measurement is the point: a confidence number that has never
 been calibrated against known-correct labels is a ranking score wearing a nicer hat.
+
+Three things a confidence from this module is *not*:
+
+* not comparable across acoustic conditions.  A clean synthetic utterance and a
+  reverberant one produce posterior matrices with different entropies, so the same
+  word at the same confidence does not carry the same risk in both.
+* not comparable across vocabularies.  A posterior over 40 phones and a posterior
+  over 4000 subwords put different mass on the winning symbol by construction.
+* not a rejection threshold.  Choosing "reject below 0.7" is a decision about the
+  operating point, and it has to be made against a measured reliability curve on
+  data from the target condition -- not inherited from a number that looks round.
+
+What it is good for is ranking: within one decode of one utterance, a token with a
+higher confidence than its neighbour is a token the model was less torn about.
 """
 
 from __future__ import annotations
