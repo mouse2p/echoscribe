@@ -26,6 +26,7 @@ in one module rather than being scattered through the decoder tests: a reader ca
 see exactly which numbers were planted and which were measured.
 """
 
+from echoscribe.decode.alignment import WordSpan, align_words
 from echoscribe.decode.bias import (
     BiasConfig,
     BiasedJoint,
@@ -44,6 +45,18 @@ from echoscribe.decode.chunked import (
     ChunkState,
     decode_all_chunks,
     decode_chunk,
+)
+from echoscribe.decode.confidence import (
+    CONFIDENCE_FLOOR,
+    CalibrationBin,
+    TokenConfidence,
+    bucket_counts,
+    calibration_bins,
+    expected_calibration_error,
+    probabilities_of,
+    reliability_curve,
+    token_confidences,
+    utterance_confidence,
 )
 from echoscribe.decode.ctc_greedy import GreedyResult, ctc_greedy
 from echoscribe.decode.ctc_prefix import (
@@ -75,9 +88,13 @@ __all__ = [
     "BiasedJoint",
     "ChunkConfig",
     "ChunkResult",
+    "CONFIDENCE_FLOOR",
+    "CalibrationBin",
     "ChunkState",
     "DecodedToken",
+    "TokenConfidence",
     "TrieNode",
+    "WordSpan",
     "GreedyResult",
     "Joint",
     "JointCache",
@@ -87,9 +104,12 @@ __all__ = [
     "TransducerConfig",
     "TransducerResult",
     "advance",
+    "align_words",
     "apply_bias",
     "bias_greedy",
+    "bucket_counts",
     "build_trie",
+    "calibration_bins",
     "check_log_posteriors",
     "collect_bonus",
     "ctc_greedy",
@@ -98,12 +118,17 @@ __all__ = [
     "decode_chunk",
     "frame_index",
     "emission_spans",
+    "expected_calibration_error",
     "frame_times",
     "masked_posteriors",
+    "probabilities_of",
+    "reliability_curve",
     "scripted_posteriors",
     "span_gaps",
     "symbols_of",
     "to_log_posteriors",
+    "token_confidences",
     "total_score",
+    "utterance_confidence",
     "transducer_greedy",
 ]

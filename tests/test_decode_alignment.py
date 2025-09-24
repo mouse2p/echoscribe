@@ -148,3 +148,12 @@ def test_a_word_span_is_immutable() -> None:
     span = WordSpan("a", 0, 2)
     with pytest.raises(AttributeError):
         span.end = 4  # type: ignore[misc]
+
+
+def test_the_decode_subpackage_re_exports_confidence_and_alignment() -> None:
+    from echoscribe import decode
+
+    assert decode.WordSpan is WordSpan
+    assert decode.align_words is align_words
+    for name in ("token_confidences", "calibration_bins", "reliability_curve", "WordSpan"):
+        assert name in decode.__all__
