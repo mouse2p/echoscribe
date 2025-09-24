@@ -107,11 +107,15 @@ def token_confidences(
         strongest = token.start + int(np.argmax(window))
         row = probabilities[strongest]
         value = float(row[token.symbol])
+        # One pass for the rank and one for the maximum, both O(symbols); sorting the
+        # row to find where one symbol sits in it was O(symbols log symbols) for
+        # nothing, and the symbol axis is the widest one in a subword vocabulary.
+        above = int(np.count_nonzero(row > value))
         result.append(
             TokenConfidence(
                 symbol=token.symbol,
                 probability=min(probability, 1.0),
-                rank=int(np.count_nonzero(row > value)),
+                rank=above,
                 margin=float(row.max()) - value,
                 frame=strongest,
             )

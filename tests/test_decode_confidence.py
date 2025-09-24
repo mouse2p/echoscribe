@@ -291,3 +291,23 @@ def test_the_numeric_helper_underflows_gracefully() -> None:
     # mean does not, which is the only reason the helper exists.
     assert np.prod(values) < 1e-300
     assert float(numeric_mean(values)) == pytest.approx(0.6, rel=1e-9)
+
+
+def test_the_rank_still_counts_strictly_better_symbols() -> None:
+    matrix = to_log_posteriors(np.array([[0.2, 0.2, 0.3, 0.3]]))
+    confidences = token_confidences(matrix, [DecodedToken(symbol, 0, 1) for symbol in range(4)])
+    # Two symbols tie at the top, so both rank 0 and the other two both rank 2.
+    assert [item.rank for item in confidences] == [2, 2, 0, 0]
+
+
+def test_a_long_decode_keeps_every_confidence_in_range() -> None:
+    rng = np.random.default_rng(5)
+    probabilities = rng.uniform(0.001, 1.0, size=(200, 40))
+    matrix = to_log_posteriors(probabilities / probabilities.sum(axis=1, keepdims=True))
+    tokens = [
+        DecodedToken(int(np.argmax(row)), index, index + 1) for index, row in enumerate(matrix)
+    ]
+    confidences = token_confidences(matrix, tokens)
+    assert len(confidences) == 200
+    assert all(0.0 <= item.probability <= 1.0 for item in confidences)
+    assert all(item.margin >= 0.0 for item in confidences)
