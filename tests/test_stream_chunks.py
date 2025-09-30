@@ -106,3 +106,38 @@ def test_a_negative_frame_count_is_rejected() -> None:
 def test_the_schedule_is_immutable() -> None:
     with pytest.raises(AttributeError):
         ChunkSchedule().frames_per_chunk = 4  # type: ignore[misc]
+
+
+def test_a_plan_is_reproducible() -> None:
+    schedule = ChunkSchedule(frames_per_chunk=7)
+    assert schedule.plan(31) == schedule.plan(31)
+
+
+def test_every_chunk_after_the_first_is_full_except_possibly_the_last() -> None:
+    schedule = ChunkSchedule(frames_per_chunk=6)
+    plans = schedule.plan(40)
+    assert all(plan.num_frames == 6 for plan in plans[:-1])
+    assert plans[-1].num_frames == 40 % 6
+
+
+def test_availability_never_precedes_the_frame_itself() -> None:
+    schedule = ChunkSchedule()
+    for index in range(1, 30):
+        # A frame that starts at (index - 1) * shift cannot be decoded before its
+        # own last sample has arrived.
+        assert schedule.available_at_ms(index) >= (index - 1) * schedule.frame_shift_ms
+
+
+def test_a_zero_lookahead_schedule_is_causal() -> None:
+    schedule = ChunkSchedule(right_context_frames=0)
+    for index in (1, 10, 100):
+        assert schedule.available_at_ms(index) <= index * schedule.frame_shift_ms + 25.0
+
+
+def test_the_last_chunk_wants_more_context_than_the_utterance_has() -> None:
+    schedule = ChunkSchedule(frames_per_chunk=5, right_context_frames=3)
+    plans = schedule.plan(12)
+    # The plan still reports the context it would like, so a caller can see the
+    # tail is decoded with a truncated lookahead.
+    assert plans[-1].available_at_ms == schedule.available_at_ms(12)
+    assert plans[-1].end_frame == 12
