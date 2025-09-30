@@ -100,3 +100,38 @@ def test_the_tail_is_zero_padded_not_replicated() -> None:
     assert held > 0
     assert np.allclose(tail[0, :held], 0.7)
     assert np.all(tail[0, held:] == 0.0)
+
+
+def test_every_split_point_of_a_short_signal_agrees_with_batch() -> None:
+    signal = _signal(1200, seed=3)
+    expected = extract_frames(signal, SNIPPED)
+    for first in range(0, 1200, 97):
+        buffer = FrameBuffer(SNIPPED)
+        head = buffer.push(signal[:first])
+        tail = buffer.push(signal[first:])
+        assert np.array_equal(np.vstack([head, tail]), expected), first
+
+
+def test_a_non_default_frame_config_streams_correctly() -> None:
+    config = FrameConfig(sample_rate=8000, frame_length_ms=32.0, frame_shift_ms=8.0)
+    signal = _signal(2000, seed=4)
+    buffer = FrameBuffer(config)
+    streamed = buffer.push(signal[:600])
+    streamed = np.vstack([streamed, buffer.push(signal[600:])])
+    assert np.array_equal(streamed, extract_frames(signal, config))
+
+
+def test_single_sample_pushes_still_produce_every_frame() -> None:
+    signal = _signal(900, seed=5)
+    buffer = FrameBuffer(SNIPPED)
+    frames = [buffer.push(signal[index : index + 1]) for index in range(len(signal))]
+    joined = np.vstack([block for block in frames if block.size])
+    assert np.array_equal(joined, extract_frames(signal, SNIPPED))
+
+
+def test_the_pending_tail_is_exactly_the_unconsumed_samples() -> None:
+    signal = _signal(1000, seed=6)
+    buffer = FrameBuffer(SNIPPED)
+    buffer.push(signal)
+    consumed = buffer.frames_emitted * SNIPPED.frame_shift
+    assert np.array_equal(buffer.pending, signal[consumed:])
