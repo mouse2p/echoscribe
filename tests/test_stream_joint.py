@@ -118,3 +118,31 @@ def test_without_a_predictor_the_history_is_ignored() -> None:
     joint = AppendableJoint(4)
     joint.append(_logits(3))
     assert np.array_equal(joint(1, ()), joint(1, (1, 2, 3)))
+
+
+def test_rows_are_the_log_softmax_of_the_appended_logits() -> None:
+    from echoscribe.numeric import log_softmax
+
+    logits = _logits(frames=5, symbols=4, seed=21)
+    joint = AppendableJoint(4)
+    joint.append(logits)
+    for frame in range(5):
+        assert np.allclose(joint(frame, ()), log_softmax(logits[frame]))
+
+
+def test_appending_in_any_chunking_gives_the_same_rows() -> None:
+    logits = _logits(frames=20, symbols=4, seed=12)
+    whole = AppendableJoint(4)
+    whole.append(logits)
+    pieces = AppendableJoint(4)
+    for start in range(0, 20, 3):
+        pieces.append(logits[start : start + 3])
+    assert pieces.num_frames == whole.num_frames == 20
+    for frame in range(20):
+        assert np.array_equal(pieces(frame, ()), whole(frame, ()))
+
+
+def test_appending_zero_frames_changes_nothing() -> None:
+    joint = AppendableJoint(4)
+    joint.append(_logits(3))
+    assert joint.append(np.zeros((0, 4))) == 3
