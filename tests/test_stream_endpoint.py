@@ -115,3 +115,60 @@ def test_the_threshold_is_inclusive() -> None:
 def test_invalid_configs_are_rejected(kwargs) -> None:
     with pytest.raises(ConfigError):
         EnergyEndpointConfig(**kwargs)
+
+
+@pytest.mark.slow
+def test_the_endpointer_never_fires_inside_a_planted_utterance() -> None:
+    """The property the hangover exists for, measured on rendered audio.
+
+    The corpus generator plants the transcript, so the speech region is known
+    exactly: everything between the leading and trailing silence.  A detector that
+    fires anywhere inside it would cut a real utterance in half.
+    """
+    from echoscribe.framing import FrameConfig, extract_frames
+    from echoscribe.synth.corpus import CorpusConfig, generate_corpus
+    from echoscribe.synth.render import RenderConfig, render_utterance
+
+    config = RenderConfig(leading_silence_ms=250.0, trailing_silence_ms=250.0)
+    corpus = generate_corpus(CorpusConfig(utterances=4, min_tokens=3, max_tokens=5))
+    shift = FrameConfig(sample_rate=config.sample_rate).frame_shift
+    leading = int(round(config.leading_silence_ms / 1000.0 * config.sample_rate))
+    trailing = leading
+
+    for utterance in corpus:
+        audio = render_utterance(utterance, config)
+        frames = extract_frames(audio.samples.astype(np.float64), FrameConfig())
+        energies = np.sqrt(np.mean(frames**2, axis=1))
+        speech_end = (audio.num_frames - trailing - FrameConfig().frame_length) // shift
+        endpointer = EnergyEndpointer(
+            EnergyEndpointConfig(threshold=0.005, hangover_frames=20, min_speech_frames=10)
+        )
+        for index, energy in enumerate(energies):
+            if endpointer.push_energy(float(energy)):
+                assert index >= speech_end, (utterance.utterance_id, index, speech_end)
+                break
+        else:
+            pytest.fail(f"{utterance.utterance_id}: the endpointer never fired")
+
+
+@pytest.mark.slow
+def test_a_longer_hangover_never_fires_earlier() -> None:
+    from echoscribe.framing import FrameConfig, extract_frames
+    from echoscribe.synth.corpus import CorpusConfig, generate_corpus
+    from echoscribe.synth.render import RenderConfig, render_utterance
+
+    utterance = next(iter(generate_corpus(CorpusConfig(utterances=1, min_tokens=3))))
+    audio = render_utterance(utterance, RenderConfig())
+    frames = extract_frames(audio.samples.astype(np.float64), FrameConfig())
+    energies = np.sqrt(np.mean(frames**2, axis=1))
+    fired = []
+    for hangover in (10, 20, 40):
+        endpointer = EnergyEndpointer(
+            EnergyEndpointConfig(threshold=0.005, hangover_frames=hangover, min_speech_frames=10)
+        )
+        for index, energy in enumerate(energies):
+            if endpointer.push_energy(float(energy)):
+                fired.append(index)
+                break
+    assert len(fired) == 3
+    assert fired == sorted(fired)
