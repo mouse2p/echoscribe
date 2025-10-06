@@ -155,3 +155,54 @@ def test_an_empty_stream_finishes_with_an_empty_hypothesis() -> None:
     assert event.kind == "final"
     assert event.hypothesis.is_empty
     assert event.frame == 0
+
+
+def test_a_reset_returns_a_terminal_event() -> None:
+    joint, decoder = _decoder(size=2)
+    event = decoder.reset()
+    assert isinstance(event, StreamEvent)
+    assert event.kind == "reset"
+    assert event.is_terminal
+    assert event.frame == 0
+
+
+def test_a_reset_after_a_finish_reopens_the_stream() -> None:
+    logits = _logits(frames=8, seed=20)
+    joint, decoder = _decoder(size=4, cap=2)
+    decoder.push_logits(logits)
+    decoder.finish()
+    assert decoder.is_closed
+    decoder.reset()
+    assert not decoder.is_closed
+    assert not decoder.hypothesis.is_final
+    assert decoder.hypothesis.frame == 0
+
+
+def test_a_second_utterance_after_a_reset_decodes_on_its_own() -> None:
+    logits = _logits(frames=12, seed=21)
+    joint, first = _decoder(size=4, cap=2)
+    first.push_logits(logits)
+    first.finish()
+    expected = first.hypothesis.symbols
+
+    first.reset()
+    first.push_logits(logits)
+    first.finish()
+    # The same audio through the same decoder after a reset has to give the same
+    # answer, which is only true if the reset really cleared the label history.
+    assert first.hypothesis.symbols == expected
+
+
+def test_a_reset_mid_utterance_does_not_leak_the_old_history() -> None:
+    logits = _logits(frames=20, seed=22)
+    joint, decoder = _decoder(size=3, cap=2)
+    decoder.push_logits(logits[:12])
+    decoder.reset()
+    fresh, reference = _decoder(size=3, cap=2)
+    for frame in range(12):
+        reference.push_logits(logits[frame][None, :])
+    reference.finish()
+    for frame in range(12):
+        decoder.push_logits(logits[frame][None, :])
+    decoder.finish()
+    assert decoder.hypothesis.symbols == reference.hypothesis.symbols
