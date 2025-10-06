@@ -206,3 +206,12 @@ def test_a_reset_mid_utterance_does_not_leak_the_old_history() -> None:
         decoder.push_logits(logits[frame][None, :])
     decoder.finish()
     assert decoder.hypothesis.symbols == reference.hypothesis.symbols
+
+
+def test_the_stream_subpackage_re_exports_its_surface() -> None:
+    from echoscribe import stream
+
+    assert stream.StreamDecoder is StreamDecoder
+    assert stream.ChunkSchedule is ChunkSchedule
+    for name in ("StreamDecoder", "FrameBuffer", "AppendableJoint", "Hypothesis"):
+        assert name in stream.__all__

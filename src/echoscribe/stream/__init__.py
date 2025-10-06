@@ -20,4 +20,20 @@ The modules split along that concern:
     the decode loop that ties them together.
 """
 
-__all__: list[str] = []
+from echoscribe.stream.buffer import FrameBuffer
+from echoscribe.stream.chunks import ChunkPlan, ChunkSchedule
+from echoscribe.stream.joint import AppendableJoint
+from echoscribe.stream.protocol import EVENT_KINDS, Hypothesis, StreamEvent
+from echoscribe.stream.runtime import StreamConfig, StreamDecoder
+
+__all__ = [
+    "EVENT_KINDS",
+    "AppendableJoint",
+    "ChunkPlan",
+    "ChunkSchedule",
+    "FrameBuffer",
+    "Hypothesis",
+    "StreamConfig",
+    "StreamDecoder",
+    "StreamEvent",
+]
