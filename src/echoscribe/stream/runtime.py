@@ -11,6 +11,19 @@ frames have arrived.  Decoding a partial chunk would produce a hypothesis that h
 be retracted when the rest of the chunk lands, and retraction is exactly what a
 user-visible transcript should not do.  The cost is one chunk of latency, which the
 schedule already accounts for.
+
+What the reported latency covers, and what it does not:
+
+* it covers the chunk duration and the right context, because those are audio that
+  has to exist before a frame can be decoded at all;
+* it covers the frame length, because a frame is not complete until its last sample
+  has arrived;
+* it does *not* cover encoder compute, joint evaluation, network transport or the
+  time a consumer spends rendering.  Those are real and they are usually larger.
+
+So :attr:`~echoscribe.stream.chunks.ChunkSchedule.algorithmic_latency_ms` is a floor
+on end-to-end latency, and the only part of it this package can guarantee.  Reporting
+it as "the latency" without that caveat would overstate what has been measured.
 """
 
 from __future__ import annotations
