@@ -35,6 +35,7 @@ import numpy as np
 from echoscribe.decode.chunked import ChunkConfig, ChunkResult, ChunkState, decode_chunk
 from echoscribe.decode.tokens import DecodedToken
 from echoscribe.stream.chunks import ChunkSchedule
+from echoscribe.stream.endpoint import BlankRatioEndpointer
 from echoscribe.stream.joint import AppendableJoint
 from echoscribe.stream.protocol import Hypothesis, StreamEvent
 
@@ -61,9 +62,15 @@ class StreamConfig:
 class StreamDecoder:
     """Decodes a growing joint one chunk at a time."""
 
-    def __init__(self, joint: AppendableJoint, config: StreamConfig | None = None) -> None:
+    def __init__(
+        self,
+        joint: AppendableJoint,
+        config: StreamConfig | None = None,
+        endpointer: BlankRatioEndpointer | None = None,
+    ) -> None:
         self.joint = joint
         self.config = StreamConfig() if config is None else config
+        self.endpointer = endpointer
         self._state = ChunkState()
         self._tokens: list[DecodedToken] = []
         self._closed = False
@@ -85,8 +92,28 @@ class StreamDecoder:
 
     def push_logits(self, logits: np.ndarray) -> tuple[StreamEvent, ...]:
         """Append encoder output and decode every chunk it completes."""
-        self.joint.append(logits)
-        return self._drain()
+        appended = self.joint.append(logits)
+        events = list(self._drain())
+        events.extend(self._watch(appended))
+        return tuple(events)
+
+    def _watch(self, appended: int) -> list[StreamEvent]:
+        """Feed newly appended frames to the endpointer, if there is one.
+
+        The endpointer sees the *acoustic* posteriors rather than the biased ones a
+        decoder might use, so a hotword list cannot make an utterance end sooner.
+        """
+        if self.endpointer is None or self._closed:
+            return []
+        events = []
+        start = self.joint.num_frames - appended
+        for frame in range(start, self.joint.num_frames):
+            row = np.exp(self.joint(frame, ()))
+            if self.endpointer.push_posteriors(row):
+                self._closed = True
+                events.append(StreamEvent("endpoint", frame + 1, self.hypothesis))
+                break
+        return events
 
     def finish(self) -> tuple[StreamEvent, ...]:
         """Decode the tail and close the utterance.
@@ -107,6 +134,8 @@ class StreamDecoder:
         self._state = ChunkState()
         self._tokens = []
         self._closed = False
+        if self.endpointer is not None:
+            self.endpointer.reset()
         return StreamEvent("reset", 0, self.hypothesis)
 
     def _tail_config(self) -> ChunkConfig:
@@ -124,7 +153,11 @@ class StreamDecoder:
         """Decode whole chunks until the next one would be incomplete."""
         events: list[StreamEvent] = []
         size = self.config.schedule.frames_per_chunk
-        while not self._state.finished and self.joint.num_frames - self._state.frame >= size:
+        while (
+            not self._closed
+            and not self._state.finished
+            and self.joint.num_frames - self._state.frame >= size
+        ):
             result = decode_chunk(self.joint, self._state, self.config.chunk_config())
             self._absorb(result)
             events.append(StreamEvent("partial", self._state.frame, self.hypothesis))
