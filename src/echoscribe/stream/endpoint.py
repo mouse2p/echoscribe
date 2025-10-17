@@ -33,7 +33,13 @@ from dataclasses import dataclass
 
 import numpy as np
 
-from echoscribe.errors import ConfigError, StreamError, require, require_positive
+from echoscribe.errors import (
+    ConfigError,
+    StreamError,
+    require,
+    require_positive,
+    require_range,
+)
 
 
 @dataclass(frozen=True)
@@ -127,6 +133,112 @@ class EnergyEndpointer:
         self._quiet_run = 0
         self._speech_frames = 0
         self._started = False
+        self._fired = False
+        self._fired_at = None
+        self._frames = 0
+
+
+@dataclass(frozen=True)
+class BlankRatioConfig:
+    """Thresholds for the decoder-driven detector."""
+
+    blank_id: int = 0
+    window_frames: int = 20
+    ratio_threshold: float = 0.9
+    min_speech_frames: int = 5
+
+    def __post_init__(self) -> None:
+        require(
+            self.blank_id >= 0,
+            f"blank_id must not be negative, got {self.blank_id}",
+            ConfigError,
+        )
+        require_positive("window_frames", self.window_frames, ConfigError)
+        require_range("ratio_threshold", self.ratio_threshold, 0.0, 1.0, ConfigError)
+        require(
+            self.min_speech_frames >= 0,
+            f"min_speech_frames must not be negative, got {self.min_speech_frames}",
+            ConfigError,
+        )
+
+
+class BlankRatioEndpointer:
+    """Fires when the decoder has been emitting blanks for a whole window.
+
+    This is the detector a transducer system actually trusts, because it reads the
+    model's own decision rather than the signal's loudness: a speaker who trails off
+    into a whisper still produces confident blanks, and a loud room does not.
+
+    The window has to be *full* before the ratio is believed.  Judging on the first
+    few frames of an utterance would fire on the leading silence for exactly the
+    reason the energy detector guards against.
+    """
+
+    def __init__(self, config: BlankRatioConfig | None = None) -> None:
+        self.config = BlankRatioConfig() if config is None else config
+        self._window: list[float] = []
+        self._speech_frames = 0
+        self._fired = False
+        self._fired_at: int | None = None
+        self._frames = 0
+
+    @property
+    def has_fired(self) -> bool:
+        """True once the endpoint has fired and not been reset."""
+        return self._fired
+
+    @property
+    def fired_at(self) -> int | None:
+        """Frame index the endpoint fired on, or ``None``."""
+        return self._fired_at
+
+    @property
+    def blank_ratio(self) -> float:
+        """Mean blank probability over the frames seen so far in the window."""
+        return float(np.mean(self._window)) if self._window else 0.0
+
+    @property
+    def speech_frames(self) -> int:
+        """Frames whose best symbol was not the blank."""
+        return self._speech_frames
+
+    def push_posteriors(self, row: np.ndarray) -> bool:
+        """Feed one frame of posterior probabilities; True on the firing frame."""
+        values = np.asarray(row, dtype=np.float64)
+        require(
+            values.ndim == 1 and values.size > self.config.blank_id,
+            f"a posterior row must hold at least {self.config.blank_id + 1} symbols, "
+            f"got shape {values.shape}",
+            StreamError,
+        )
+        require(
+            bool(np.all(values >= -1e-9)),
+            "push_posteriors expects probabilities, not log-probabilities",
+            StreamError,
+        )
+        self._frames += 1
+        blank = float(values[self.config.blank_id])
+        if int(np.argmax(values)) != self.config.blank_id:
+            self._speech_frames += 1
+        self._window.append(blank)
+        if len(self._window) > self.config.window_frames:
+            self._window.pop(0)
+        if self._fired:
+            return False
+        if len(self._window) < self.config.window_frames:
+            return False
+        if self._speech_frames < self.config.min_speech_frames:
+            return False
+        if self.blank_ratio < self.config.ratio_threshold:
+            return False
+        self._fired = True
+        self._fired_at = self._frames - 1
+        return True
+
+    def reset(self) -> None:
+        """Clear the latch, the window and the counters."""
+        self._window = []
+        self._speech_frames = 0
         self._fired = False
         self._fired_at = None
         self._frames = 0
