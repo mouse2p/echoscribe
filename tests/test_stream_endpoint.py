@@ -6,7 +6,12 @@ import numpy as np
 import pytest
 
 from echoscribe.errors import ConfigError, StreamError
-from echoscribe.stream.endpoint import EnergyEndpointConfig, EnergyEndpointer
+from echoscribe.stream.endpoint import (
+    BlankRatioConfig,
+    BlankRatioEndpointer,
+    EnergyEndpointConfig,
+    EnergyEndpointer,
+)
 
 LOUD = 0.4
 QUIET = 0.0
@@ -172,3 +177,124 @@ def test_a_longer_hangover_never_fires_earlier() -> None:
                 break
     assert len(fired) == 3
     assert fired == sorted(fired)
+
+
+def _row(blank: float, symbols: int = 4) -> np.ndarray:
+    """A probability row with ``blank`` on the blank symbol and the rest shared."""
+    row = np.full(symbols, (1.0 - blank) / (symbols - 1))
+    row[0] = blank
+    return row
+
+
+def test_an_incomplete_window_never_fires() -> None:
+    endpointer = BlankRatioEndpointer(BlankRatioConfig(window_frames=10))
+    for _ in range(9):
+        endpointer.push_posteriors(_row(0.5))
+        endpointer.push_posteriors(_row(0.99))
+    assert not endpointer.has_fired
+
+
+def test_a_full_window_of_blanks_fires() -> None:
+    endpointer = BlankRatioEndpointer(
+        BlankRatioConfig(window_frames=5, ratio_threshold=0.9, min_speech_frames=0)
+    )
+    fired = [endpointer.push_posteriors(_row(0.99)) for _ in range(8)]
+    assert fired.count(True) == 1
+    assert fired[4]
+
+
+def test_speech_in_the_window_blocks_the_endpoint() -> None:
+    endpointer = BlankRatioEndpointer(
+        BlankRatioConfig(window_frames=6, ratio_threshold=0.9, min_speech_frames=0)
+    )
+    for _ in range(20):
+        assert not endpointer.push_posteriors(_row(0.2))
+    assert not endpointer.has_fired
+
+
+def test_min_speech_frames_blocks_an_endpoint_before_any_speech() -> None:
+    endpointer = BlankRatioEndpointer(
+        BlankRatioConfig(window_frames=4, ratio_threshold=0.5, min_speech_frames=3)
+    )
+    for _ in range(10):
+        assert not endpointer.push_posteriors(_row(0.9))
+    assert not endpointer.has_fired
+
+
+def test_the_window_slides_so_speech_can_recover() -> None:
+    endpointer = BlankRatioEndpointer(
+        BlankRatioConfig(window_frames=4, ratio_threshold=0.9, min_speech_frames=0)
+    )
+    for _ in range(3):
+        endpointer.push_posteriors(_row(0.99))
+    endpointer.push_posteriors(_row(0.2))
+    assert not endpointer.has_fired
+    assert endpointer.blank_ratio < 0.9
+
+
+def test_the_blank_ratio_tracks_the_window() -> None:
+    endpointer = BlankRatioEndpointer(BlankRatioConfig(window_frames=4, min_speech_frames=0))
+    for value in (0.8, 0.4, 0.6, 0.2):
+        endpointer.push_posteriors(_row(value))
+    assert endpointer.blank_ratio == pytest.approx(0.5)
+
+
+def test_speech_frames_count_non_blank_argmaxes() -> None:
+    endpointer = BlankRatioEndpointer(BlankRatioConfig(window_frames=4, min_speech_frames=0))
+    endpointer.push_posteriors(_row(0.9))
+    endpointer.push_posteriors(_row(0.1))
+    assert endpointer.speech_frames == 1
+
+
+def test_the_blank_ratio_endpointer_latches() -> None:
+    endpointer = BlankRatioEndpointer(
+        BlankRatioConfig(window_frames=2, ratio_threshold=0.5, min_speech_frames=0)
+    )
+    results = [endpointer.push_posteriors(_row(0.9)) for _ in range(6)]
+    assert results.count(True) == 1
+    assert endpointer.fired_at == 1
+
+
+def test_a_reset_clears_the_blank_ratio_window() -> None:
+    endpointer = BlankRatioEndpointer(
+        BlankRatioConfig(window_frames=2, ratio_threshold=0.5, min_speech_frames=0)
+    )
+    endpointer.push_posteriors(_row(0.9))
+    endpointer.reset()
+    assert endpointer.blank_ratio == 0.0
+    assert endpointer.speech_frames == 0
+    assert not endpointer.has_fired
+
+
+def test_log_probabilities_are_refused() -> None:
+    with pytest.raises(StreamError, match="not log-probabilities"):
+        BlankRatioEndpointer().push_posteriors(np.full(4, -1.0))
+
+
+def test_a_row_without_the_blank_symbol_is_refused() -> None:
+    with pytest.raises(StreamError, match="must hold at least"):
+        BlankRatioEndpointer(BlankRatioConfig(blank_id=7)).push_posteriors(_row(0.5, symbols=4))
+
+
+def test_a_custom_blank_id_is_honoured() -> None:
+    endpointer = BlankRatioEndpointer(
+        BlankRatioConfig(blank_id=3, window_frames=2, ratio_threshold=0.5, min_speech_frames=0)
+    )
+    row = np.array([0.4, 0.2, 0.1, 0.3])
+    endpointer.push_posteriors(row)
+    assert endpointer.speech_frames == 1
+
+
+@pytest.mark.parametrize(
+    "kwargs",
+    [
+        {"blank_id": -1},
+        {"window_frames": 0},
+        {"ratio_threshold": -0.1},
+        {"ratio_threshold": 1.5},
+        {"min_speech_frames": -1},
+    ],
+)
+def test_invalid_blank_ratio_configs_are_rejected(kwargs) -> None:
+    with pytest.raises(ConfigError):
+        BlankRatioConfig(**kwargs)
