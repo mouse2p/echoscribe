@@ -7,6 +7,7 @@ import pytest
 
 from echoscribe.decode.transducer import TransducerConfig, transducer_greedy
 from echoscribe.stream.chunks import ChunkSchedule
+from echoscribe.stream.endpoint import BlankRatioConfig, BlankRatioEndpointer
 from echoscribe.stream.joint import AppendableJoint
 from echoscribe.stream.protocol import EVENT_KINDS, Hypothesis, StreamEvent
 from echoscribe.stream.runtime import StreamConfig, StreamDecoder
@@ -215,3 +216,70 @@ def test_the_stream_subpackage_re_exports_its_surface() -> None:
     assert stream.ChunkSchedule is ChunkSchedule
     for name in ("StreamDecoder", "FrameBuffer", "AppendableJoint", "Hypothesis"):
         assert name in stream.__all__
+
+
+def _quiet_logits(frames: int, symbols: int = 4) -> np.ndarray:
+    """Logits whose softmax is almost entirely on the blank."""
+    rows = np.full((frames, symbols), -6.0)
+    rows[:, 0] = 6.0
+    return rows
+
+
+def test_an_endpointer_closes_the_stream() -> None:
+    logits = np.vstack([_quiet_logits(4), _quiet_logits(20)])
+    joint = AppendableJoint(4)
+    endpointer = BlankRatioEndpointer(
+        BlankRatioConfig(window_frames=6, ratio_threshold=0.9, min_speech_frames=0)
+    )
+    decoder = StreamDecoder(
+        joint,
+        StreamConfig(schedule=ChunkSchedule(frames_per_chunk=4), max_symbols_per_frame=2),
+        endpointer,
+    )
+    events = []
+    for frame in range(len(logits)):
+        events.extend(decoder.push_logits(logits[frame][None, :]))
+    kinds = [event.kind for event in events]
+    assert "endpoint" in kinds
+    assert decoder.is_closed
+
+
+def test_no_endpoint_event_without_an_endpointer() -> None:
+    logits = _quiet_logits(24)
+    joint, decoder = _decoder(size=4, cap=2)
+    events = []
+    for frame in range(len(logits)):
+        events.extend(decoder.push_logits(logits[frame][None, :]))
+    assert all(event.kind == "partial" for event in events)
+
+
+def test_a_reset_clears_the_endpointer_too() -> None:
+    logits = _quiet_logits(24)
+    joint = AppendableJoint(4)
+    endpointer = BlankRatioEndpointer(
+        BlankRatioConfig(window_frames=4, ratio_threshold=0.9, min_speech_frames=0)
+    )
+    decoder = StreamDecoder(
+        joint, StreamConfig(schedule=ChunkSchedule(frames_per_chunk=4)), endpointer
+    )
+    decoder.push_logits(logits[:12])
+    assert endpointer.has_fired
+    decoder.reset()
+    assert not endpointer.has_fired
+    assert not decoder.is_closed
+
+
+def test_an_endpoint_stops_further_partials() -> None:
+    logits = _quiet_logits(40)
+    joint = AppendableJoint(4)
+    endpointer = BlankRatioEndpointer(
+        BlankRatioConfig(window_frames=4, ratio_threshold=0.9, min_speech_frames=0)
+    )
+    decoder = StreamDecoder(
+        joint, StreamConfig(schedule=ChunkSchedule(frames_per_chunk=2)), endpointer
+    )
+    events = []
+    for frame in range(len(logits)):
+        events.extend(decoder.push_logits(logits[frame][None, :]))
+    endpoint_index = [event.kind for event in events].index("endpoint")
+    assert all(event.kind != "partial" for event in events[endpoint_index:])
