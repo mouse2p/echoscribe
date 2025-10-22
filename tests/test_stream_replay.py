@@ -7,7 +7,13 @@ import pytest
 
 from echoscribe.errors import StreamError
 from echoscribe.stream.protocol import Hypothesis, StreamEvent
-from echoscribe.stream.replay import RECORDING_SCHEMA_VERSION, StreamRecording, trace_digest
+from echoscribe.stream.replay import (
+    RECORDING_SCHEMA_VERSION,
+    StreamRecording,
+    record,
+    replay,
+    trace_digest,
+)
 
 
 def _recording(frames: int = 12, symbols: int = 4, blocks=(4, 4, 4), seed: int = 0):
@@ -75,3 +81,44 @@ def test_a_trace_digest_of_nothing_is_still_a_hash() -> None:
 
 def test_the_schema_version_is_declared() -> None:
     assert RECORDING_SCHEMA_VERSION == 1
+
+
+def test_a_replay_is_reproducible() -> None:
+    recording = _recording(seed=3)
+    assert trace_digest(replay(recording)) == trace_digest(replay(recording))
+
+
+def test_a_replay_ends_with_exactly_one_final_event() -> None:
+    events = replay(_recording(seed=4))
+    assert [event.kind for event in events].count("final") == 1
+    assert events[-1].kind == "final"
+
+
+def test_the_chunking_does_not_change_the_final_hypothesis() -> None:
+    logits = np.random.default_rng(5).uniform(-2.0, 2.0, size=(24, 4))
+    finals = []
+    for blocks in ((24,), (8, 8, 8), (6, 6, 6, 6), (1,) * 24):
+        recording = StreamRecording(logits, blocks, 4, 6)
+        finals.append(replay(recording)[-1].hypothesis.symbols)
+    assert all(item == finals[0] for item in finals)
+
+
+def test_a_recording_helper_round_trips_its_inputs() -> None:
+    logits = np.random.default_rng(6).uniform(-1.0, 1.0, size=(9, 3))
+    recording = record(logits, (4, 5), chunk_frames=3, max_symbols_per_frame=2)
+    assert recording.num_symbols == 3
+    assert recording.block_sizes == (4, 5)
+    assert recording.chunk_frames == 3
+    assert recording.max_symbols_per_frame == 2
+    assert np.array_equal(recording.logits, logits)
+
+
+def test_a_replayed_trace_is_non_empty_for_a_non_empty_recording() -> None:
+    assert replay(_recording(seed=7)) != ()
+
+
+def test_replaying_an_empty_recording_still_finishes() -> None:
+    recording = StreamRecording(np.zeros((0, 3)), (), 3, 4)
+    events = replay(recording)
+    assert [event.kind for event in events] == ["final"]
+    assert events[0].hypothesis.is_empty
