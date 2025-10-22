@@ -26,7 +26,10 @@ from dataclasses import dataclass
 import numpy as np
 
 from echoscribe.errors import StreamError, require, require_positive
+from echoscribe.stream.chunks import ChunkSchedule
+from echoscribe.stream.joint import AppendableJoint
 from echoscribe.stream.protocol import StreamEvent
+from echoscribe.stream.runtime import StreamConfig, StreamDecoder
 from echoscribe.types import FEATURE_DTYPE
 
 #: Bumped when the serialized shape of a recording changes.
@@ -97,3 +100,41 @@ def trace_digest(events: Sequence[StreamEvent]) -> str:
         payload.update(",".join(str(symbol) for symbol in event.hypothesis.symbols).encode())
         payload.update(b"\n")
     return payload.hexdigest()
+
+
+def replay(recording: StreamRecording) -> tuple[StreamEvent, ...]:
+    """Run a recording through a fresh decoder and return its event trace.
+
+    The blocks are pushed in their recorded order and sizes, so the chunk boundaries
+    land where they originally did.  That is the whole point: a decoder that only
+    misbehaves at a particular chunking cannot be debugged from the audio alone.
+    """
+    joint = AppendableJoint(recording.num_symbols)
+    decoder = StreamDecoder(
+        joint,
+        StreamConfig(
+            schedule=ChunkSchedule(frames_per_chunk=recording.chunk_frames),
+            max_symbols_per_frame=recording.max_symbols_per_frame,
+        ),
+    )
+    events: list[StreamEvent] = []
+    for block in recording.blocks():
+        events.extend(decoder.push_logits(block))
+    events.extend(decoder.finish())
+    return tuple(events)
+
+
+def record(
+    logits: np.ndarray,
+    block_sizes: Sequence[int],
+    chunk_frames: int,
+    max_symbols_per_frame: int = 3,
+) -> StreamRecording:
+    """Build a recording from a logit matrix and the chunking it was fed with."""
+    return StreamRecording(
+        np.asarray(logits, dtype=FEATURE_DTYPE),
+        tuple(int(size) for size in block_sizes),
+        int(np.asarray(logits).shape[1]),
+        chunk_frames,
+        max_symbols_per_frame,
+    )
