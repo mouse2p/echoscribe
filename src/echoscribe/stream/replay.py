@@ -19,13 +19,14 @@ bug in the decoder, never a difference in the data.
 
 from __future__ import annotations
 
+import base64
 import hashlib
 from collections.abc import Iterator, Sequence
 from dataclasses import dataclass
 
 import numpy as np
 
-from echoscribe.errors import StreamError, require, require_positive
+from echoscribe.errors import SchemaError, StreamError, require, require_positive
 from echoscribe.stream.chunks import ChunkSchedule
 from echoscribe.stream.joint import AppendableJoint
 from echoscribe.stream.protocol import StreamEvent
@@ -138,3 +139,61 @@ def record(
         chunk_frames,
         max_symbols_per_frame,
     )
+
+
+def recording_to_dict(recording: StreamRecording) -> dict:
+    """A JSON-ready mapping holding the logits as base64 float64 bytes.
+
+    Base64 over the raw buffer rather than a decimal rendering: writing floats as
+    text and reading them back is where a "deterministic" replay usually stops being
+    one, because the round trip is only exact at seventeen significant digits and
+    nothing enforces that.
+    """
+    buffer = np.ascontiguousarray(recording.logits, dtype=FEATURE_DTYPE).tobytes()
+    return {
+        "schema": RECORDING_SCHEMA_VERSION,
+        "num_symbols": recording.num_symbols,
+        "chunk_frames": recording.chunk_frames,
+        "max_symbols_per_frame": recording.max_symbols_per_frame,
+        "block_sizes": list(recording.block_sizes),
+        "frames": recording.num_frames,
+        "logits": base64.b64encode(buffer).decode("ascii"),
+        "digest": recording.digest(),
+    }
+
+
+def recording_from_dict(payload: dict) -> StreamRecording:
+    """Rebuild a recording, refusing a foreign schema or a tampered digest."""
+    version = payload.get("schema")
+    require(
+        version == RECORDING_SCHEMA_VERSION,
+        f"recording schema {version!r} is not supported; this build reads "
+        f"{RECORDING_SCHEMA_VERSION}",
+        SchemaError,
+    )
+    for name in ("num_symbols", "chunk_frames", "block_sizes", "frames", "logits"):
+        require(name in payload, f"recording payload is missing {name!r}", SchemaError)
+    buffer = base64.b64decode(payload["logits"])
+    frames = int(payload["frames"])
+    symbols = int(payload["num_symbols"])
+    require(
+        len(buffer) == frames * symbols * FEATURE_DTYPE.itemsize,
+        f"the recording holds {len(buffer)} bytes but declares {frames}x{symbols} float64",
+        SchemaError,
+    )
+    logits = np.frombuffer(buffer, dtype=FEATURE_DTYPE).reshape(frames, symbols).copy()
+    recording = StreamRecording(
+        logits,
+        tuple(int(size) for size in payload["block_sizes"]),
+        symbols,
+        int(payload["chunk_frames"]),
+        int(payload.get("max_symbols_per_frame", 3)),
+    )
+    recorded = payload.get("digest")
+    require(
+        recorded is None or recorded == recording.digest(),
+        f"recording digest mismatch: the file says {recorded!r}, the logits hash to "
+        f"{recording.digest()!r}",
+        SchemaError,
+    )
+    return recording

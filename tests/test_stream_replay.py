@@ -5,12 +5,14 @@ from __future__ import annotations
 import numpy as np
 import pytest
 
-from echoscribe.errors import StreamError
+from echoscribe.errors import SchemaError, StreamError
 from echoscribe.stream.protocol import Hypothesis, StreamEvent
 from echoscribe.stream.replay import (
     RECORDING_SCHEMA_VERSION,
     StreamRecording,
     record,
+    recording_from_dict,
+    recording_to_dict,
     replay,
     trace_digest,
 )
@@ -122,3 +124,72 @@ def test_replaying_an_empty_recording_still_finishes() -> None:
     events = replay(recording)
     assert [event.kind for event in events] == ["final"]
     assert events[0].hypothesis.is_empty
+
+
+def test_a_recording_survives_serialization_bit_for_bit() -> None:
+    recording = _recording(seed=8)
+    restored = recording_from_dict(recording_to_dict(recording))
+    assert np.array_equal(restored.logits, recording.logits)
+    assert restored.block_sizes == recording.block_sizes
+    assert restored.digest() == recording.digest()
+
+
+def test_the_serialized_form_is_json_encodable() -> None:
+    import json
+
+    payload = recording_to_dict(_recording(frames=4, blocks=(2, 2), seed=9))
+    text = json.dumps(payload)
+    assert json.loads(text)["schema"] == RECORDING_SCHEMA_VERSION
+
+
+def test_the_payload_shape_is_fixed() -> None:
+    payload = recording_to_dict(_recording(frames=4, blocks=(4,)))
+    assert set(payload) == {
+        "schema",
+        "num_symbols",
+        "chunk_frames",
+        "max_symbols_per_frame",
+        "block_sizes",
+        "frames",
+        "logits",
+        "digest",
+    }
+
+
+def test_a_foreign_schema_is_refused() -> None:
+    payload = recording_to_dict(_recording(frames=4, blocks=(4,)))
+    payload["schema"] = RECORDING_SCHEMA_VERSION + 1
+    with pytest.raises(SchemaError, match="is not supported"):
+        recording_from_dict(payload)
+
+
+def test_a_missing_field_is_refused() -> None:
+    payload = recording_to_dict(_recording(frames=4, blocks=(4,)))
+    del payload["logits"]
+    with pytest.raises(SchemaError, match="missing 'logits'"):
+        recording_from_dict(payload)
+
+
+def test_a_truncated_buffer_is_refused() -> None:
+    payload = recording_to_dict(_recording(frames=4, blocks=(4,)))
+    payload["frames"] = 9
+    with pytest.raises(SchemaError, match="declares 9x4 float64"):
+        recording_from_dict(payload)
+
+
+def test_a_tampered_logit_fails_the_digest() -> None:
+    import base64
+
+    recording = _recording(frames=4, blocks=(4,), seed=10)
+    payload = recording_to_dict(recording)
+    raw = bytearray(np.ascontiguousarray(recording.logits).tobytes())
+    raw[0] ^= 0xFF
+    payload["logits"] = base64.b64encode(bytes(raw)).decode("ascii")
+    with pytest.raises(SchemaError, match="digest mismatch"):
+        recording_from_dict(payload)
+
+
+def test_a_serialized_recording_replays_to_the_same_trace() -> None:
+    recording = _recording(seed=11)
+    restored = recording_from_dict(recording_to_dict(recording))
+    assert trace_digest(replay(restored)) == trace_digest(replay(recording))
