@@ -25,6 +25,15 @@ the part that matters:
 Both are latching: once fired, an endpointer stays fired until it is reset.  That is
 what makes "the endpoint fired" a fact about the utterance rather than a fact about
 the frame that happened to be quiet.
+
+The defaults are tuned against the synthetic laboratory and nothing else.  Its
+utterances have 250 ms of leading and trailing silence and 80 ms between words, at a
+level the renderer normalises, so a 20-frame hangover at a 0.01 energy threshold
+sits comfortably between the two.  Real speech has pauses of a second or more inside
+a single thought, and a detector tuned here would cut them.  Treat the numbers as a
+starting point that has to be re-tuned per condition, and treat the *property* tests
+-- no firing inside a planted utterance, no firing before any speech -- as the part
+that transfers.
 """
 
 from __future__ import annotations
