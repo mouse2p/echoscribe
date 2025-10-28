@@ -11,8 +11,10 @@ from echoscribe.errors import ConfigError
 from echoscribe.meta import (
     FLOAT_DIGITS,
     METADATA_SCHEMA_VERSION,
+    RunMetadata,
     fingerprint,
     package_versions,
+    run_metadata,
     stable_repr,
 )
 
@@ -103,3 +105,91 @@ def test_private_dataclass_fields_are_left_out() -> None:
 
 def test_the_schema_version_is_declared() -> None:
     assert METADATA_SCHEMA_VERSION == 1
+
+
+def test_run_metadata_keeps_its_fields() -> None:
+    meta = run_metadata("synthetic-corpus", 20250106, frames=_Outer())
+    assert meta.label == "synthetic-corpus"
+    assert meta.seed == 20250106
+    assert meta.versions["echoscribe"]
+
+
+def test_the_digest_is_stable_for_identical_metadata() -> None:
+    left = run_metadata("run", 7, a=1, b=_Outer())
+    right = run_metadata("run", 7, b=_Outer(), a=1)
+    assert left.digest() == right.digest()
+    assert len(left.digest()) == 16
+
+
+def test_the_digest_changes_with_the_seed_or_label() -> None:
+    base = run_metadata("run", 7, a=1)
+    assert base.digest() != run_metadata("run", 8, a=1).digest()
+    assert base.digest() != run_metadata("other", 7, a=1).digest()
+    assert base.digest() != run_metadata("run", 7, a=2).digest()
+
+
+def test_with_config_returns_a_new_object() -> None:
+    base = run_metadata("run", 1)
+    extended = base.with_config("frame", _Outer())
+    assert base.configs == {}
+    assert "frame" in extended.configs
+    assert extended.digest() != base.digest()
+
+
+def test_serialization_round_trips_the_digest() -> None:
+    meta = run_metadata("run", 3, a=_Outer())
+    payload = meta.to_dict()
+    assert payload["schema"] == METADATA_SCHEMA_VERSION
+    assert set(payload) == {"schema", "label", "seed", "versions", "configs", "digest"}
+    assert RunMetadata.from_dict(payload).digest() == meta.digest()
+
+
+def test_configs_are_serialized_as_canonical_strings() -> None:
+    payload = run_metadata("run", 3, frame=_Outer()).to_dict()
+    assert payload["configs"]["frame"] == stable_repr(_Outer())
+
+
+def test_the_payload_is_json_encodable() -> None:
+    import json
+
+    text = json.dumps(run_metadata("run", 3, a=1, b=(1.0, 2.0)).to_dict())
+    assert json.loads(text)["label"] == "run"
+
+
+def test_a_foreign_schema_is_refused() -> None:
+    from echoscribe.errors import SchemaError
+
+    payload = run_metadata("run", 3).to_dict()
+    payload["schema"] = METADATA_SCHEMA_VERSION + 1
+    with pytest.raises(SchemaError, match="is not supported"):
+        RunMetadata.from_dict(payload)
+
+
+def test_a_missing_field_is_refused() -> None:
+    from echoscribe.errors import SchemaError
+
+    payload = run_metadata("run", 3).to_dict()
+    del payload["seed"]
+    with pytest.raises(SchemaError, match="missing 'seed'"):
+        RunMetadata.from_dict(payload)
+
+
+def test_a_tampered_label_fails_the_digest() -> None:
+    from echoscribe.errors import SchemaError
+
+    payload = run_metadata("run", 3).to_dict()
+    payload["label"] = "tampered"
+    with pytest.raises(SchemaError, match="digest mismatch"):
+        RunMetadata.from_dict(payload)
+
+
+def test_metadata_needs_a_label_and_an_integer_seed() -> None:
+    with pytest.raises(ConfigError, match="needs a label"):
+        RunMetadata("", 1, {}, {})
+    with pytest.raises(ConfigError, match="seed must be an integer"):
+        RunMetadata("run", 1.5, {}, {})
+
+
+def test_a_config_entry_needs_a_name() -> None:
+    with pytest.raises(ConfigError, match="needs a name"):
+        run_metadata("run", 1).with_config("", 1)
