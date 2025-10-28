@@ -26,12 +26,12 @@ from __future__ import annotations
 import hashlib
 import sys
 from collections.abc import Mapping
-from dataclasses import fields, is_dataclass
+from dataclasses import dataclass, fields, is_dataclass
 from importlib import metadata
 
 import numpy as np
 
-from echoscribe.errors import ConfigError, require
+from echoscribe.errors import ConfigError, SchemaError, require
 
 #: Bumped when the serialized shape of :class:`RunMetadata` changes.
 METADATA_SCHEMA_VERSION = 1
@@ -109,3 +109,108 @@ def fingerprint(configs: Mapping[str, object]) -> str:
     )
     rendered = "\n".join(f"{key}={stable_repr(configs[key])}" for key in sorted(configs))
     return hashlib.sha256(rendered.encode()).hexdigest()[:16]
+
+
+@dataclass(frozen=True)
+class RunMetadata:
+    """Everything a result needs in order to be reproduced or refuted."""
+
+    label: str
+    seed: int
+    versions: Mapping[str, str]
+    configs: Mapping[str, object]
+
+    def __post_init__(self) -> None:
+        require(bool(self.label), "run metadata needs a label", ConfigError)
+        require(
+            isinstance(self.seed, int) and not isinstance(self.seed, bool),
+            f"seed must be an integer, got {self.seed!r}",
+            ConfigError,
+        )
+
+    def canonical_configs(self) -> dict:
+        """Every configuration value rendered to its canonical string form.
+
+        A value that is already a string passes through unchanged, which is what
+        makes canonicalisation idempotent: metadata read back from a file -- where
+        the configs are stored as these very strings -- digests identically to the
+        object that wrote it.
+        """
+        return {
+            key: value if isinstance(value, str) else stable_repr(value)
+            for key, value in self.configs.items()
+        }
+
+    def canonical(self) -> str:
+        """The canonical rendering :meth:`digest` hashes.
+
+        Exposed separately so a test can show *why* two digests differ instead of
+        only asserting that they do.
+        """
+        parts = (
+            f"label={self.label}",
+            f"seed={self.seed}",
+            f"versions={stable_repr(dict(self.versions))}",
+            f"configs={stable_repr(self.canonical_configs())}",
+        )
+        return LINE_SEPARATOR.join(parts)
+
+    def digest(self) -> str:
+        """A short digest over the label, seed, versions and configuration bundle."""
+        return hashlib.sha256(self.canonical().encode()).hexdigest()[:16]
+
+    def with_config(self, name: str, value: object) -> RunMetadata:
+        """A copy with one more named configuration entry."""
+        require(bool(name), "a configuration entry needs a name", ConfigError)
+        configs = dict(self.configs)
+        configs[name] = value
+        return RunMetadata(self.label, self.seed, dict(self.versions), configs)
+
+    def to_dict(self) -> dict:
+        """A JSON-ready mapping, tagged with the schema version."""
+        return {
+            "schema": METADATA_SCHEMA_VERSION,
+            "label": self.label,
+            "seed": self.seed,
+            "versions": dict(self.versions),
+            "configs": self.canonical_configs(),
+            "digest": self.digest(),
+        }
+
+    @classmethod
+    def from_dict(cls, payload: Mapping[str, object]) -> RunMetadata:
+        """Rebuild metadata, refusing a schema this build does not read.
+
+        Configurations come back as their canonical *strings*, not as the objects
+        they were: a reader in a later version has no way to reconstruct a dataclass
+        it has never seen, and pretending otherwise is how a report becomes
+        unreadable.  The digest is checked so a hand-edited file is caught.
+        """
+        version = payload.get("schema")
+        require(
+            version == METADATA_SCHEMA_VERSION,
+            f"run metadata schema {version!r} is not supported; this build reads "
+            f"{METADATA_SCHEMA_VERSION}",
+            SchemaError,
+        )
+        for name in ("label", "seed", "versions", "configs"):
+            require(name in payload, f"run metadata is missing {name!r}", SchemaError)
+        restored = cls(
+            label=str(payload["label"]),
+            seed=int(payload["seed"]),  # type: ignore[arg-type]
+            versions=dict(payload["versions"]),  # type: ignore[arg-type]
+            configs=dict(payload["configs"]),  # type: ignore[arg-type]
+        )
+        recorded = payload.get("digest")
+        require(
+            recorded is None or recorded == restored.digest(),
+            f"run metadata digest mismatch: the file says {recorded!r}, the contents "
+            f"hash to {restored.digest()!r}",
+            SchemaError,
+        )
+        return restored
+
+
+def run_metadata(label: str, seed: int, **configs: object) -> RunMetadata:
+    """Build metadata for a run, capturing the current package versions."""
+    return RunMetadata(label, seed, package_versions(), dict(configs))
