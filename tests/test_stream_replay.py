@@ -6,6 +6,7 @@ import numpy as np
 import pytest
 
 from echoscribe.errors import SchemaError, StreamError
+from echoscribe.stream.endpoint import BlankRatioEndpointer, EnergyEndpointer
 from echoscribe.stream.protocol import Hypothesis, StreamEvent
 from echoscribe.stream.replay import (
     RECORDING_SCHEMA_VERSION,
@@ -193,3 +194,13 @@ def test_a_serialized_recording_replays_to_the_same_trace() -> None:
     recording = _recording(seed=11)
     restored = recording_from_dict(recording_to_dict(recording))
     assert trace_digest(replay(restored)) == trace_digest(replay(recording))
+
+
+def test_the_stream_subpackage_re_exports_endpointing_and_replay() -> None:
+    from echoscribe import stream
+
+    assert stream.replay is replay
+    assert stream.EnergyEndpointer is EnergyEndpointer
+    assert stream.BlankRatioEndpointer is BlankRatioEndpointer
+    for name in ("replay", "record", "trace_digest", "EnergyEndpointer", "BlankRatioEndpointer"):
+        assert name in stream.__all__

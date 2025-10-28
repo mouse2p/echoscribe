@@ -22,18 +22,44 @@ The modules split along that concern:
 
 from echoscribe.stream.buffer import FrameBuffer
 from echoscribe.stream.chunks import ChunkPlan, ChunkSchedule
+from echoscribe.stream.endpoint import (
+    BlankRatioConfig,
+    BlankRatioEndpointer,
+    EnergyEndpointConfig,
+    EnergyEndpointer,
+)
 from echoscribe.stream.joint import AppendableJoint
 from echoscribe.stream.protocol import EVENT_KINDS, Hypothesis, StreamEvent
+from echoscribe.stream.replay import (
+    RECORDING_SCHEMA_VERSION,
+    StreamRecording,
+    record,
+    recording_from_dict,
+    recording_to_dict,
+    replay,
+    trace_digest,
+)
 from echoscribe.stream.runtime import StreamConfig, StreamDecoder
 
 __all__ = [
     "EVENT_KINDS",
     "AppendableJoint",
+    "BlankRatioConfig",
+    "BlankRatioEndpointer",
     "ChunkPlan",
     "ChunkSchedule",
+    "EnergyEndpointConfig",
+    "EnergyEndpointer",
     "FrameBuffer",
     "Hypothesis",
+    "RECORDING_SCHEMA_VERSION",
     "StreamConfig",
     "StreamDecoder",
     "StreamEvent",
+    "StreamRecording",
+    "record",
+    "recording_from_dict",
+    "recording_to_dict",
+    "replay",
+    "trace_digest",
 ]
