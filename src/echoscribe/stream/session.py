@@ -85,3 +85,71 @@ class UtteranceRecord:
             endpoint_frames=None if endpoint is None else int(endpoint),
             score=float(payload.get("score", 0.0)),
         )
+
+
+@dataclass(frozen=True)
+class Session:
+    """One run over a corpus: its metadata and one record per utterance."""
+
+    session_id: str
+    metadata: dict
+    utterances: tuple[UtteranceRecord, ...]
+
+    def __post_init__(self) -> None:
+        require(bool(self.session_id), "a session needs an id", StreamError)
+        require(
+            len({item.utterance_id for item in self.utterances}) == len(self.utterances),
+            f"session {self.session_id} holds a repeated utterance id",
+            StreamError,
+        )
+
+    def __len__(self) -> int:
+        return len(self.utterances)
+
+    def record(self, utterance_id: str) -> UtteranceRecord:
+        """The record for one utterance."""
+        for item in self.utterances:
+            if item.utterance_id == utterance_id:
+                return item
+        raise StreamError(f"{utterance_id!r} is not part of session {self.session_id!r}")
+
+    @property
+    def total_frames(self) -> int:
+        """Frames decoded across the whole session."""
+        return sum(item.frames for item in self.utterances)
+
+    @property
+    def endpoint_rate(self) -> float:
+        """Fraction of utterances an endpoint fired on; 0.0 for an empty session."""
+        if not self.utterances:
+            return 0.0
+        fired = sum(1 for item in self.utterances if item.endpointed)
+        return fired / len(self.utterances)
+
+    def mean_endpoint_delay(self) -> float:
+        """Mean frames between an utterance's end and its endpoint, or ``None``.
+
+        A negative value means the endpoint fired *before* the audio ran out, which
+        is the usual case and the number a latency budget cares about.
+        """
+        delays = [
+            item.endpoint_frames - item.frames
+            for item in self.utterances
+            if item.endpoint_frames is not None
+        ]
+        return sum(delays) / len(delays) if delays else 0.0
+
+    def summary(self) -> dict:
+        """The numbers a report quotes, rounded where they are produced."""
+        return {
+            "session_id": self.session_id,
+            "utterances": len(self.utterances),
+            "frames": self.total_frames,
+            "endpoint_rate": round(self.endpoint_rate, 6),
+            "mean_endpoint_delay": round(self.mean_endpoint_delay(), 6),
+            "mean_score": round(
+                sum(item.score for item in self.utterances) / len(self.utterances), 6
+            )
+            if self.utterances
+            else 0.0,
+        }
