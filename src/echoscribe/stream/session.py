@@ -153,3 +153,88 @@ class Session:
             if self.utterances
             else 0.0,
         }
+
+
+def session_to_lines(session: Session) -> list[str]:
+    """Render a session as JSON lines: a header, then one line per utterance.
+
+    The header carries the session id, the run metadata and the schema version, so a
+    reader can refuse a file it does not understand before parsing any utterance.
+    """
+    import json
+
+    header = {
+        "kind": "session",
+        "schema": SESSION_SCHEMA_VERSION,
+        "session_id": session.session_id,
+        "metadata": dict(session.metadata),
+        "utterances": len(session.utterances),
+    }
+    lines = [json.dumps(header, ensure_ascii=False, sort_keys=True)]
+    for record in session.utterances:
+        payload = {"kind": "utterance", **record.to_dict()}
+        lines.append(json.dumps(payload, ensure_ascii=False, sort_keys=True))
+    return lines
+
+
+def write_session(path, session: Session) -> None:
+    """Write a session to ``path``, creating parent directories as needed."""
+    from pathlib import Path
+
+    resolved = Path(path)
+    resolved.parent.mkdir(parents=True, exist_ok=True)
+    resolved.write_text("\n".join(session_to_lines(session)) + "\n", encoding="utf-8")
+
+
+def read_session(path) -> Session:
+    """Read a session back, reporting the offending line number on any failure."""
+    import json
+    from pathlib import Path
+
+    resolved = Path(path)
+    require(resolved.is_file(), f"session file not found: {resolved}", StreamError)
+    header: dict | None = None
+    records = []
+    with resolved.open("r", encoding="utf-8") as handle:
+        for number, line in enumerate(handle, start=1):
+            stripped = line.strip()
+            if not stripped:
+                continue
+            try:
+                payload = json.loads(stripped)
+            except json.JSONDecodeError as error:
+                raise StreamError(f"{resolved}:{number}: not valid JSON ({error})") from error
+            kind = payload.get("kind")
+            if kind == "session":
+                require(
+                    header is None, f"{resolved}:{number}: a second session header", StreamError
+                )
+                version = payload.get("schema")
+                require(
+                    version == SESSION_SCHEMA_VERSION,
+                    f"{resolved}:{number}: session schema {version!r} is not supported; "
+                    f"this build reads {SESSION_SCHEMA_VERSION}",
+                    SchemaError,
+                )
+                header = payload
+            elif kind == "utterance":
+                require(
+                    header is not None,
+                    f"{resolved}:{number}: an utterance before any header",
+                    StreamError,
+                )
+                records.append(UtteranceRecord.from_dict(payload))
+            else:
+                raise StreamError(f"{resolved}:{number}: unknown line kind {kind!r}")
+    require(header is not None, f"{resolved}: the file holds no session header", StreamError)
+    declared = int(header.get("utterances", len(records)))
+    require(
+        declared == len(records),
+        f"{resolved}: the header declares {declared} utterances but the file holds {len(records)}",
+        StreamError,
+    )
+    return Session(
+        session_id=str(header["session_id"]),
+        metadata=dict(header.get("metadata", {})),
+        utterances=tuple(records),
+    )
