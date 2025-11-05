@@ -19,6 +19,13 @@ same configuration and digest identically.
 There is deliberately no timestamp here.  A report that needs one should add it at
 write time, outside the digest, so that re-running the same experiment produces the
 same digest and the difference is visible.
+
+The alternative -- stamping the run and digesting everything -- is the more common
+design and it is worse for exactly the use case that matters.  A digest that changes
+on every run cannot answer "is this the same experiment as the one that produced
+this number?", which is the only question a reproducibility claim needs answered.
+Version control already records when a commit happened; a results file does not have
+to duplicate that, and doing so costs the ability to compare.
 """
 
 from __future__ import annotations
