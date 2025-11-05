@@ -178,3 +178,98 @@ def test_a_repeated_utterance_id_is_refused() -> None:
 def test_a_session_needs_an_id() -> None:
     with pytest.raises(StreamError, match="a session needs an id"):
         Session("", {}, ())
+
+
+def test_a_session_round_trips(tmp_path) -> None:
+    from echoscribe.stream.session import read_session, write_session
+
+    session = _session(3, endpoint_every=2)
+    target = tmp_path / "sessions" / "run.jsonl"
+    write_session(target, session)
+    restored = read_session(target)
+    assert restored.session_id == session.session_id
+    assert restored.metadata == session.metadata
+    assert restored.utterances == session.utterances
+
+
+def test_a_session_file_has_one_line_per_record_plus_a_header(tmp_path) -> None:
+    from echoscribe.stream.session import write_session
+
+    target = tmp_path / "run.jsonl"
+    write_session(target, _session(4))
+    assert len(target.read_text(encoding="utf-8").splitlines()) == 5
+
+
+def test_the_header_names_its_schema_and_count(tmp_path) -> None:
+    import json
+
+    from echoscribe.stream.session import session_to_lines
+
+    header = json.loads(session_to_lines(_session(2))[0])
+    assert header["kind"] == "session"
+    assert header["schema"] == SESSION_SCHEMA_VERSION
+    assert header["utterances"] == 2
+
+
+def test_a_foreign_schema_is_refused(tmp_path) -> None:
+    import json
+
+    from echoscribe.stream.session import read_session, session_to_lines, write_session
+
+    target = tmp_path / "run.jsonl"
+    write_session(target, _session(1))
+    lines = session_to_lines(_session(1))
+    header = json.loads(lines[0])
+    header["schema"] = SESSION_SCHEMA_VERSION + 99
+    target.write_text("\n".join([json.dumps(header), *lines[1:]]) + "\n", encoding="utf-8")
+    with pytest.raises(SchemaError, match="is not supported"):
+        read_session(target)
+
+
+def test_a_truncated_file_is_reported(tmp_path) -> None:
+    from echoscribe.stream.session import read_session, session_to_lines
+
+    target = tmp_path / "run.jsonl"
+    lines = session_to_lines(_session(3))
+    target.write_text("\n".join(lines[:2]) + "\n", encoding="utf-8")
+    with pytest.raises(StreamError, match="declares 3 utterances but the file holds 1"):
+        read_session(target)
+
+
+def test_a_missing_file_is_reported(tmp_path) -> None:
+    from echoscribe.stream.session import read_session
+
+    with pytest.raises(StreamError, match="session file not found"):
+        read_session(tmp_path / "absent.jsonl")
+
+
+def test_an_utterance_before_any_header_is_reported(tmp_path) -> None:
+    import json
+
+    from echoscribe.stream.session import read_session
+
+    target = tmp_path / "run.jsonl"
+    target.write_text(json.dumps({"kind": "utterance", **_record().to_dict()}), encoding="utf-8")
+    with pytest.raises(StreamError, match="before any header"):
+        read_session(target)
+
+
+def test_an_unknown_line_kind_is_reported(tmp_path) -> None:
+    import json
+
+    from echoscribe.stream.session import read_session
+
+    target = tmp_path / "run.jsonl"
+    target.write_text(json.dumps({"kind": "mystery"}), encoding="utf-8")
+    with pytest.raises(StreamError, match="unknown line kind"):
+        read_session(target)
+
+
+def test_non_ascii_transcripts_survive(tmp_path) -> None:
+    from echoscribe.stream.session import read_session, write_session
+
+    session = Session("s", {}, (_record(reference="你好 world", text="你好 world"),))
+    target = tmp_path / "run.jsonl"
+    write_session(target, session)
+    assert "你好 world" in target.read_text(encoding="utf-8")
+    assert read_session(target).utterances[0].reference == "你好 world"
