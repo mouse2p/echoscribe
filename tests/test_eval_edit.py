@@ -194,3 +194,38 @@ def test_random_pairs_always_rebuild_the_hypothesis(seed: int) -> None:
         result = align(reference, hypothesis)
         assert result.apply(reference) == tuple(hypothesis)
         assert result.errors == edit_distance(reference, hypothesis)
+
+
+@pytest.mark.parametrize("seed", range(8))
+def test_the_dynamic_program_matches_brute_force(seed: int) -> None:
+    import random
+
+    from echoscribe.eval.edit import brute_force_distance
+
+    alphabet = "abc"
+    rng = random.Random(100 + seed)
+    for _ in range(40):
+        reference = [rng.choice(alphabet) for _ in range(rng.randint(0, 6))]
+        hypothesis = [rng.choice(alphabet) for _ in range(rng.randint(0, 6))]
+        assert edit_distance(reference, hypothesis) == brute_force_distance(reference, hypothesis)
+
+
+def test_brute_force_agrees_on_the_classic_examples() -> None:
+    from echoscribe.eval.edit import brute_force_distance
+
+    assert brute_force_distance(list("kitten"), list("sitting")) == 3
+    assert brute_force_distance([], list("abc")) == 3
+    assert brute_force_distance(list("abc"), []) == 3
+    assert brute_force_distance(list("flaw"), list("lawn")) == 2
+
+
+def test_the_error_count_is_the_operation_count_minus_the_matches() -> None:
+    result = align(list("abcdef"), list("abxdefg"))
+    assert len(result.operations) - result.correct == result.errors
+
+
+def test_every_operation_consumes_exactly_one_side_or_both() -> None:
+    result = align(list("the cat sat"), list("a cat sat down"))
+    for op in result.operations:
+        consumed = (op.ref_index is not None) + (op.hyp_index is not None)
+        assert consumed == (1 if op.kind in ("deletion", "insertion") else 2)

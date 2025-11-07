@@ -205,3 +205,26 @@ def _backtrace(cost: list, ref: list, hyp: list) -> tuple[EditOp, ...]:
 def edit_distance(reference: Sequence[str], hypothesis: Sequence[str]) -> int:
     """The minimum number of single-token edits between two sequences."""
     return align(reference, hypothesis).errors
+
+
+def brute_force_distance(reference: Sequence[str], hypothesis: Sequence[str]) -> int:
+    """Minimum edit distance by exhaustive search, for tests only.
+
+    Exponential in the length of the inputs, so it exists to check
+    :func:`edit_distance` on short sequences rather than to be used on real ones.  A
+    dynamic program that disagrees with a brute force on a six-token pair is wrong,
+    and the disagreement is the only way to find out.
+    """
+    ref = list(reference)
+    hyp = list(hypothesis)
+
+    def search(i: int, j: int) -> int:
+        if i == len(ref):
+            return len(hyp) - j
+        if j == len(hyp):
+            return len(ref) - i
+        if ref[i] == hyp[j]:
+            return search(i + 1, j + 1)
+        return 1 + min(search(i + 1, j + 1), search(i + 1, j), search(i, j + 1))
+
+    return search(0, 0)
