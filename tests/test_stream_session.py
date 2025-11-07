@@ -309,3 +309,12 @@ def test_a_latency_report_rejects_a_bad_shift() -> None:
 
     with pytest.raises(StreamError, match="frame_shift_ms must be positive"):
         latency_report(_session(1), 0.0)
+
+
+def test_the_stream_subpackage_re_exports_the_session_api() -> None:
+    from echoscribe import stream
+
+    assert stream.Session is Session
+    assert stream.UtteranceRecord is UtteranceRecord
+    for name in ("Session", "UtteranceRecord", "read_session", "write_session", "latency_report"):
+        assert name in stream.__all__

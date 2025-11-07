@@ -40,6 +40,15 @@ from echoscribe.stream.replay import (
     trace_digest,
 )
 from echoscribe.stream.runtime import StreamConfig, StreamDecoder
+from echoscribe.stream.session import (
+    SESSION_SCHEMA_VERSION,
+    Session,
+    UtteranceRecord,
+    latency_report,
+    read_session,
+    session_to_lines,
+    write_session,
+)
 
 __all__ = [
     "EVENT_KINDS",
@@ -53,13 +62,20 @@ __all__ = [
     "FrameBuffer",
     "Hypothesis",
     "RECORDING_SCHEMA_VERSION",
+    "SESSION_SCHEMA_VERSION",
+    "Session",
     "StreamConfig",
     "StreamDecoder",
     "StreamEvent",
     "StreamRecording",
+    "UtteranceRecord",
+    "latency_report",
+    "read_session",
     "record",
     "recording_from_dict",
     "recording_to_dict",
     "replay",
+    "session_to_lines",
     "trace_digest",
+    "write_session",
 ]
