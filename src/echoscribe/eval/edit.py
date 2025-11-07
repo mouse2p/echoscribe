@@ -20,6 +20,7 @@ report can be diffed against a previous one.
 
 from __future__ import annotations
 
+from collections.abc import Sequence
 from dataclasses import dataclass
 
 from echoscribe.errors import EvalError, require, require_in
@@ -62,3 +63,104 @@ class EditOp:
     def is_error(self) -> bool:
         """True for anything that is not a match."""
         return self.kind in ERROR_OPERATIONS
+
+
+@dataclass(frozen=True)
+class Alignment:
+    """An aligned pair of sequences, as the operations that connect them."""
+
+    operations: tuple[EditOp, ...]
+
+    @property
+    def correct(self) -> int:
+        """Tokens that matched."""
+        return sum(1 for op in self.operations if op.kind == "correct")
+
+    @property
+    def substitutions(self) -> int:
+        """Tokens present on both sides but different."""
+        return sum(1 for op in self.operations if op.kind == "substitution")
+
+    @property
+    def deletions(self) -> int:
+        """Reference tokens the hypothesis missed."""
+        return sum(1 for op in self.operations if op.kind == "deletion")
+
+    @property
+    def insertions(self) -> int:
+        """Hypothesis tokens the reference did not have."""
+        return sum(1 for op in self.operations if op.kind == "insertion")
+
+    @property
+    def errors(self) -> int:
+        """Total edit distance: substitutions plus deletions plus insertions."""
+        return self.substitutions + self.deletions + self.insertions
+
+    @property
+    def reference_length(self) -> int:
+        """Tokens consumed from the reference, which is correct + sub + deletion."""
+        return self.correct + self.substitutions + self.deletions
+
+    @property
+    def hypothesis_length(self) -> int:
+        """Tokens consumed from the hypothesis, which is correct + sub + insertion."""
+        return self.correct + self.substitutions + self.insertions
+
+
+def align(reference: Sequence[str], hypothesis: Sequence[str]) -> Alignment:
+    """Align two token sequences at minimum edit distance.
+
+    The cost matrix is Wagner-Fischer with unit costs; the backtrace walks it from
+    the bottom-right corner and takes the first available move in the documented
+    preference order, which is what makes the result a function of its inputs rather
+    than of a dictionary's iteration order.
+    """
+    ref = list(reference)
+    hyp = list(hypothesis)
+    rows, columns = len(ref), len(hyp)
+    cost = [[0] * (columns + 1) for _ in range(rows + 1)]
+    for index in range(1, rows + 1):
+        cost[index][0] = index
+    for index in range(1, columns + 1):
+        cost[0][index] = index
+    for i in range(1, rows + 1):
+        current, previous = cost[i], cost[i - 1]
+        ref_token = ref[i - 1]
+        for j in range(1, columns + 1):
+            diagonal = previous[j - 1] + (0 if ref_token == hyp[j - 1] else 1)
+            up = previous[j] + 1
+            left = current[j - 1] + 1
+            current[j] = diagonal if diagonal < up else up
+            if left < current[j]:
+                current[j] = left
+    return Alignment(_backtrace(cost, ref, hyp))
+
+
+def _backtrace(cost: list, ref: list, hyp: list) -> tuple[EditOp, ...]:
+    """Walk the cost matrix back to the origin, collecting operations."""
+    operations: list[EditOp] = []
+    i, j = len(ref), len(hyp)
+    while i > 0 or j > 0:
+        if i > 0 and j > 0:
+            same = ref[i - 1] == hyp[j - 1]
+            if cost[i][j] == cost[i - 1][j - 1] + (0 if same else 1):
+                kind = "correct" if same else "substitution"
+                operations.append(EditOp(kind, i - 1, j - 1, ref[i - 1], hyp[j - 1]))
+                i -= 1
+                j -= 1
+                continue
+        if i > 0 and cost[i][j] == cost[i - 1][j] + 1:
+            operations.append(EditOp("deletion", i - 1, None, ref[i - 1], ""))
+            i -= 1
+            continue
+        if j > 0 and cost[i][j] == cost[i][j - 1] + 1:
+            operations.append(EditOp("insertion", None, j - 1, "", hyp[j - 1]))
+            j -= 1
+            continue
+        raise EvalError(f"the cost matrix has no valid move at ({i}, {j})")
+    return tuple(reversed(operations))
+
+
+def edit_distance(reference: Sequence[str], hypothesis: Sequence[str]) -> int:
+    """The minimum number of single-token edits between two sequences."""
+    return align(reference, hypothesis).errors
