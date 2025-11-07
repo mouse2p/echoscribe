@@ -15,7 +15,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from echoscribe.errors import SchemaError, StreamError, require
+from echoscribe.errors import SchemaError, StreamError, require, require_positive
 
 #: Bumped when the serialized shape of a session changes.
 SESSION_SCHEMA_VERSION = 1
@@ -238,3 +238,37 @@ def read_session(path) -> Session:
         metadata=dict(header.get("metadata", {})),
         utterances=tuple(records),
     )
+
+
+def latency_report(session: Session, frame_shift_ms: float = 10.0) -> dict:
+    """Turn the frame counts a session stores into milliseconds.
+
+    The frame shift is passed in rather than stored per record, so every number in a
+    session is converted with one value and cannot disagree with itself.  The report
+    covers only the endpointed utterances: an utterance that ran to the end of its
+    audio has no endpoint delay to report, and averaging zeros into the mean would
+    make a session that never endpoints look fast.
+    """
+    require_positive("frame_shift_ms", frame_shift_ms, StreamError)
+    delays = [
+        (item.frames - item.endpoint_frames) * frame_shift_ms
+        for item in session.utterances
+        if item.endpoint_frames is not None
+    ]
+    if not delays:
+        return {
+            "endpointed": 0,
+            "utterances": len(session.utterances),
+            "frame_shift_ms": frame_shift_ms,
+            "mean_ms": 0.0,
+            "min_ms": 0.0,
+            "max_ms": 0.0,
+        }
+    return {
+        "endpointed": len(delays),
+        "utterances": len(session.utterances),
+        "frame_shift_ms": frame_shift_ms,
+        "mean_ms": round(sum(delays) / len(delays), 6),
+        "min_ms": round(min(delays), 6),
+        "max_ms": round(max(delays), 6),
+    }

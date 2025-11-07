@@ -273,3 +273,39 @@ def test_non_ascii_transcripts_survive(tmp_path) -> None:
     write_session(target, session)
     assert "你好 world" in target.read_text(encoding="utf-8")
     assert read_session(target).utterances[0].reference == "你好 world"
+
+
+def test_a_latency_report_converts_frames_to_milliseconds() -> None:
+    from echoscribe.stream.session import latency_report
+
+    session = _session(3, endpoint_every=1)
+    report = latency_report(session, frame_shift_ms=10.0)
+    assert report["endpointed"] == 3
+    assert report["mean_ms"] == pytest.approx(100.0)
+    assert report["min_ms"] == pytest.approx(100.0)
+    assert report["max_ms"] == pytest.approx(100.0)
+
+
+def test_a_latency_report_scales_with_the_frame_shift() -> None:
+    from echoscribe.stream.session import latency_report
+
+    session = _session(2, endpoint_every=1)
+    assert latency_report(session, 20.0)["mean_ms"] == pytest.approx(
+        2 * latency_report(session, 10.0)["mean_ms"]
+    )
+
+
+def test_a_session_with_no_endpoints_reports_zero_endpoints() -> None:
+    from echoscribe.stream.session import latency_report
+
+    report = latency_report(_session(4))
+    assert report["endpointed"] == 0
+    assert report["utterances"] == 4
+    assert report["mean_ms"] == 0.0
+
+
+def test_a_latency_report_rejects_a_bad_shift() -> None:
+    from echoscribe.stream.session import latency_report
+
+    with pytest.raises(StreamError, match="frame_shift_ms must be positive"):
+        latency_report(_session(1), 0.0)
