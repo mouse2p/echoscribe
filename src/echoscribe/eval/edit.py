@@ -106,6 +106,47 @@ class Alignment:
         """Tokens consumed from the hypothesis, which is correct + sub + insertion."""
         return self.correct + self.substitutions + self.insertions
 
+    def apply(self, reference: Sequence[str]) -> tuple[str, ...]:
+        """Rebuild the hypothesis by replaying the operations over ``reference``.
+
+        This is the alignment's own consistency check, and the one that catches a
+        wrong backtrace: an alignment that reports the right *number* of errors can
+        still describe a path that does not lead from the reference to the
+        hypothesis.
+        """
+        rebuilt: list[str] = []
+        for op in self.operations:
+            if op.kind == "insertion":
+                rebuilt.append(op.hyp_token)
+                continue
+            if op.ref_index is None or op.ref_index >= len(reference):
+                raise EvalError(
+                    f"operation {op.kind!r} refers to reference index {op.ref_index} "
+                    f"of a {len(reference)}-token sequence"
+                )
+            if reference[op.ref_index] != op.ref_token:
+                raise EvalError(
+                    f"operation at reference index {op.ref_index} expects "
+                    f"{op.ref_token!r} but found {reference[op.ref_index]!r}"
+                )
+            if op.kind != "deletion":
+                rebuilt.append(op.hyp_token)
+        return tuple(rebuilt)
+
+    def pairs(self) -> tuple[tuple[str | None, str | None], ...]:
+        """The alignment as ``(reference, hypothesis)`` pairs, ``None`` for a gap.
+
+        This is the shape a report renders and the shape a scorer iterates, and
+        having one place produce it is what keeps the two from disagreeing.
+        """
+        return tuple(
+            (
+                op.ref_token if op.ref_index is not None else None,
+                op.hyp_token if op.hyp_index is not None else None,
+            )
+            for op in self.operations
+        )
+
 
 def align(reference: Sequence[str], hypothesis: Sequence[str]) -> Alignment:
     """Align two token sequences at minimum edit distance.

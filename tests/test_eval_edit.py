@@ -143,3 +143,54 @@ def test_operation_indices_walk_both_sequences_in_order() -> None:
 def test_alignment_is_deterministic() -> None:
     ref, hyp = list("the quick brown fox"), list("a quick brown box")
     assert align(ref, hyp) == align(ref, hyp)
+
+
+def test_replaying_the_operations_rebuilds_the_hypothesis() -> None:
+    for ref, hyp in [
+        ("abc", "abc"),
+        ("abc", "abd"),
+        ("abc", "ac"),
+        ("abc", "abxc"),
+        ("", "xyz"),
+        ("xyz", ""),
+        ("the cat sat", "a cat sat down"),
+    ]:
+        reference, hypothesis = list(ref.split()), list(hyp.split())
+        assert align(reference, hypothesis).apply(reference) == tuple(hypothesis)
+
+
+def test_replaying_a_character_alignment_rebuilds_the_string() -> None:
+    reference = list("kitten")
+    hypothesis = list("sitting")
+    result = align(reference, hypothesis)
+    assert "".join(result.apply(reference)) == "sitting"
+
+
+def test_replaying_over_the_wrong_reference_is_refused() -> None:
+    result = align(list("abc"), list("abd"))
+    with pytest.raises(EvalError, match="expects 'a' but found 'z'"):
+        result.apply(list("zbc"))
+
+
+def test_the_pair_view_has_one_entry_per_operation() -> None:
+    result = align(list("abc"), list("axc"))
+    assert result.pairs() == (("a", "a"), ("b", "x"), ("c", "c"))
+
+
+def test_a_gap_appears_as_none_in_the_pair_view() -> None:
+    assert align(list("ab"), list("a")).pairs() == (("a", "a"), ("b", None))
+    assert align(list("a"), list("ab")).pairs() == (("a", "a"), (None, "b"))
+
+
+@pytest.mark.parametrize("seed", range(6))
+def test_random_pairs_always_rebuild_the_hypothesis(seed: int) -> None:
+    import random
+
+    alphabet = "abcde"
+    rng = random.Random(seed)
+    for _ in range(30):
+        reference = [rng.choice(alphabet) for _ in range(rng.randint(0, 9))]
+        hypothesis = [rng.choice(alphabet) for _ in range(rng.randint(0, 9))]
+        result = align(reference, hypothesis)
+        assert result.apply(reference) == tuple(hypothesis)
+        assert result.errors == edit_distance(reference, hypothesis)
