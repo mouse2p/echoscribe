@@ -193,3 +193,43 @@ def test_metadata_needs_a_label_and_an_integer_seed() -> None:
 def test_a_config_entry_needs_a_name() -> None:
     with pytest.raises(ConfigError, match="needs a name"):
         run_metadata("run", 1).with_config("", 1)
+
+
+def test_the_cached_table_matches_a_fresh_lookup() -> None:
+    from echoscribe.meta import cached_versions
+
+    assert cached_versions() == package_versions()
+
+
+def test_the_cache_hands_out_a_fresh_dict_each_call() -> None:
+    from echoscribe.meta import cached_versions
+
+    first = cached_versions()
+    first["echoscribe"] = "tampered"
+    assert cached_versions()["echoscribe"] != "tampered"
+
+
+def test_the_canonical_form_explains_a_digest_difference() -> None:
+    left = run_metadata("run", 7, a=1)
+    right = run_metadata("run", 7, a=2)
+    assert left.digest() != right.digest()
+    assert left.canonical() != right.canonical()
+    # Configurations are canonicalised to strings before they are rendered, so the
+    # difference shows up as the quoted value under the same key.
+    assert "'a': '1'" in left.canonical()
+    assert "'a': '2'" in right.canonical()
+
+
+def test_the_digest_is_the_hash_of_the_canonical_form() -> None:
+    import hashlib
+
+    meta = run_metadata("run", 7, a=1)
+    expected = hashlib.sha256(meta.canonical().encode()).hexdigest()[:16]
+    assert meta.digest() == expected
+
+
+def test_metadata_read_back_from_a_file_keeps_its_digest() -> None:
+    meta = run_metadata("run", 7, frame=_Outer())
+    restored = RunMetadata.from_dict(meta.to_dict())
+    assert restored.digest() == meta.digest()
+    assert restored.canonical() == meta.canonical()

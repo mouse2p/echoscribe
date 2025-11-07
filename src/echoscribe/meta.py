@@ -34,6 +34,7 @@ import hashlib
 import sys
 from collections.abc import Mapping
 from dataclasses import dataclass, fields, is_dataclass
+from functools import lru_cache
 from importlib import metadata
 
 import numpy as np
@@ -48,6 +49,17 @@ FLOAT_DIGITS = 12
 
 #: Separator between the parts of a canonical rendering.
 LINE_SEPARATOR = chr(10)
+
+
+@lru_cache(maxsize=1)
+def _installed_versions() -> tuple[tuple[str, str], ...]:
+    """Memoised version table; versions cannot change inside one process."""
+    return tuple(sorted(package_versions().items()))
+
+
+def cached_versions() -> dict[str, str]:
+    """The version table, served from a one-entry cache after the first call."""
+    return dict(_installed_versions())
 
 
 def package_versions() -> dict[str, str]:
