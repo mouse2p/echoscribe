@@ -152,9 +152,32 @@ def align(reference: Sequence[str], hypothesis: Sequence[str]) -> Alignment:
     """Align two token sequences at minimum edit distance.
 
     The cost matrix is Wagner-Fischer with unit costs; the backtrace walks it from
-    the bottom-right corner and takes the first available move in the documented
-    preference order, which is what makes the result a function of its inputs rather
-    than of a dictionary's iteration order.
+    the bottom-right corner and takes the first available move in the preference
+    order
+
+        diagonal (correct, then substitution) > deletion > insertion
+
+    which prefers to line tokens up rather than to shift them.  The order is
+    arbitrary in the sense that another one would find equally minimal alignments,
+    and deliberate in the sense that it is fixed, so the same pair of sequences
+    always produces the same alignment and a report can be diffed against a
+    previous one.
+
+    Why the tie-break is worth a paragraph: consider the reference ``a b`` against
+    the hypothesis ``b``.  The minimum cost is one, and both "delete ``a``" and
+    "substitute ``a`` with ``b`` then delete ``b``" are wrong -- only the first is
+    minimal, so the cost matrix already rules the second out.  But ``a b`` against
+    ``b c`` has two minimal alignments, one substitution-heavy and one
+    deletion-plus-insertion, and the reported breakdown differs between them even
+    though the error count does not.  A tool that picked arbitrarily would produce
+    reports that change between runs for no reason, and a regression would be
+    indistinguishable from noise.
+
+    The cost of a fixed order is that the breakdown is a *convention*, not a fact
+    about the two sequences.  Only the total is invariant.  Anything downstream
+    that reports substitutions, deletions and insertions separately has to say
+    which convention it used, which is why the order is documented here rather
+    than left in the backtrace.
     """
     ref = list(reference)
     hyp = list(hypothesis)
