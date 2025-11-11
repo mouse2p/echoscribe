@@ -191,12 +191,17 @@ def align(reference: Sequence[str], hypothesis: Sequence[str]) -> Alignment:
         current, previous = cost[i], cost[i - 1]
         ref_token = ref[i - 1]
         for j in range(1, columns + 1):
-            diagonal = previous[j - 1] + (0 if ref_token == hyp[j - 1] else 1)
+            # One write per cell.  The earlier form assigned current[j] and then
+            # possibly reassigned it, which reads as though the second branch
+            # could produce a different answer.  It cannot: all three moves are
+            # candidates for the same minimum, and the documented tie-break lives
+            # in the backtrace, which only ever reads the finished matrix.
+            best = previous[j - 1] + (0 if ref_token == hyp[j - 1] else 1)
             up = previous[j] + 1
+            if up < best:
+                best = up
             left = current[j - 1] + 1
-            current[j] = diagonal if diagonal < up else up
-            if left < current[j]:
-                current[j] = left
+            current[j] = left if left < best else best
     return Alignment(_backtrace(cost, ref, hyp))
 
 
