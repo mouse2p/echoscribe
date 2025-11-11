@@ -264,3 +264,47 @@ def test_the_alignment_of_a_long_pair_is_reproducible() -> None:
 
 def test_alignment_accepts_tuples_as_well_as_lists() -> None:
     assert align(("a", "b"), ("a", "c")).errors == 1
+
+
+def test_the_rewritten_fill_still_matches_brute_force() -> None:
+    from echoscribe.eval.edit import brute_force_distance
+
+    pairs = [
+        ("", ""),
+        ("a", ""),
+        ("", "a"),
+        ("ab", "ba"),
+        ("abc", "acb"),
+        ("aaaa", "aa"),
+        ("abcd", "dcba"),
+        ("the cat", "cat the"),
+    ]
+    for left, right in pairs:
+        reference, hypothesis = list(left), list(right)
+        assert edit_distance(reference, hypothesis) == brute_force_distance(
+            reference, hypothesis
+        ), (left, right)
+
+
+def test_the_rewritten_fill_keeps_the_documented_tie_break() -> None:
+    # "ab" against "bc" has two minimal alignments: two substitutions, or
+    # delete-a, correct-b, insert-c.  The documented diagonal preference picks
+    # the substitutions, and the rewritten fill must not change that.
+    result = align(list("ab"), list("bc"))
+    assert result.errors == 2
+    assert [(op.kind, op.ref_token, op.hyp_token) for op in result.operations] == [
+        ("substitution", "a", "b"),
+        ("substitution", "b", "c"),
+    ]
+
+
+def test_a_single_token_pair_reports_one_substitution() -> None:
+    result = align(["a"], ["b"])
+    assert result.substitutions == 1
+    assert len(result.operations) == 1
+
+
+def test_repeated_tokens_align_pairwise() -> None:
+    result = align(["a"] * 5, ["a"] * 5)
+    assert result.correct == 5
+    assert result.errors == 0
