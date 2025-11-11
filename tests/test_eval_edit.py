@@ -229,3 +229,38 @@ def test_every_operation_consumes_exactly_one_side_or_both() -> None:
     for op in result.operations:
         consumed = (op.ref_index is not None) + (op.hyp_index is not None)
         assert consumed == (1 if op.kind in ("deletion", "insertion") else 2)
+
+
+def test_a_long_sequence_with_one_change_reports_one_error() -> None:
+    reference = [str(index) for index in range(500)]
+    hypothesis = list(reference)
+    hypothesis[237] = "changed"
+    result = align(reference, hypothesis)
+    assert result.errors == 1
+    assert result.substitutions == 1
+    assert result.correct == 499
+    assert result.apply(reference) == tuple(hypothesis)
+
+
+def test_a_long_insertion_reports_only_insertions() -> None:
+    reference = [str(index) for index in range(200)]
+    hypothesis = reference[:100] + ["extra"] * 50 + reference[100:]
+    result = align(reference, hypothesis)
+    assert result.insertions == 50
+    assert result.deletions == 0
+    assert result.substitutions == 0
+
+
+def test_a_reversed_sequence_costs_no_more_than_its_length() -> None:
+    reference = [str(index) for index in range(60)]
+    assert edit_distance(reference, list(reversed(reference))) <= len(reference)
+
+
+def test_the_alignment_of_a_long_pair_is_reproducible() -> None:
+    reference = [str(index % 17) for index in range(300)]
+    hypothesis = [str((index + 3) % 17) for index in range(300)]
+    assert align(reference, hypothesis) == align(reference, hypothesis)
+
+
+def test_alignment_accepts_tuples_as_well_as_lists() -> None:
+    assert align(("a", "b"), ("a", "c")).errors == 1
