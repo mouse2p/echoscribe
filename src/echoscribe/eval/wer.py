@@ -81,3 +81,28 @@ def score_tokens(reference: Sequence[str], hypothesis: Sequence[str]) -> ScoreRe
         insertions=result.insertions,
         alignment=result,
     )
+
+
+def word_sequence(text: str) -> tuple[str, ...]:
+    """Split text into words: whitespace runs are the only separators."""
+    return tuple(text.split())
+
+
+def character_sequence(text: str) -> tuple[str, ...]:
+    """Split text into characters, dropping whitespace entirely.
+
+    This is the convention character error rate uses for Chinese: spaces carry
+    no linguistic information there, and scoring them would measure the typist
+    rather than the recognizer.
+    """
+    return tuple(character for character in text if not character.isspace())
+
+
+def wer(reference: str, hypothesis: str) -> ScoreReport:
+    """Word error rate: score two strings as whitespace-separated words."""
+    return score_tokens(word_sequence(reference), word_sequence(hypothesis))
+
+
+def cer(reference: str, hypothesis: str) -> ScoreReport:
+    """Character error rate: score two strings as whitespace-free characters."""
+    return score_tokens(character_sequence(reference), character_sequence(hypothesis))
