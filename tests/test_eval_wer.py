@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import pytest
 
+from echoscribe.errors import EvalError
 from echoscribe.eval.wer import score_tokens
 
 
@@ -71,3 +72,23 @@ def test_random_pairs_keep_every_invariant(seed: int) -> None:
         assert report.deletions - report.insertions == len(reference) - len(hypothesis)
         assert report.alignment.apply(reference) == tuple(hypothesis)
         assert report.error_rate >= 0.0
+
+
+def test_an_empty_reference_with_a_hypothesis_is_refused() -> None:
+    with pytest.raises(EvalError, match="the reference is empty"):
+        score_tokens([], ["anything"])
+
+
+def test_two_empty_sequences_score_zero() -> None:
+    report = score_tokens([], [])
+    assert report.errors == 0
+    assert report.error_rate == 0.0
+    assert report.alignment.operations == ()
+
+
+def test_an_empty_hypothesis_against_a_reference_is_all_deletions() -> None:
+    report = score_tokens(["a", "b", "c"], [])
+    assert report.deletions == 3
+    assert report.substitutions == 0
+    assert report.insertions == 0
+    assert report.error_rate == 1.0
