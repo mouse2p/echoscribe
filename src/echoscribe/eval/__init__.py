@@ -21,4 +21,22 @@ The modules:
     deterministic SVG output, so a report is a file that can be diffed.
 """
 
-__all__: list[str] = []
+from echoscribe.eval.edit import (
+    EDIT_OPERATIONS,
+    ERROR_OPERATIONS,
+    Alignment,
+    EditOp,
+    align,
+    brute_force_distance,
+    edit_distance,
+)
+
+__all__ = [
+    "EDIT_OPERATIONS",
+    "ERROR_OPERATIONS",
+    "Alignment",
+    "EditOp",
+    "align",
+    "brute_force_distance",
+    "edit_distance",
+]

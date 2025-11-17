@@ -308,3 +308,13 @@ def test_repeated_tokens_align_pairwise() -> None:
     result = align(["a"] * 5, ["a"] * 5)
     assert result.correct == 5
     assert result.errors == 0
+
+
+def test_the_eval_subpackage_re_exports_the_alignment_api() -> None:
+    from echoscribe import eval as evaluation
+
+    assert evaluation.align is align
+    assert evaluation.Alignment is Alignment
+    assert evaluation.EditOp is EditOp
+    for name in ("align", "edit_distance", "Alignment", "EDIT_OPERATIONS"):
+        assert name in evaluation.__all__
