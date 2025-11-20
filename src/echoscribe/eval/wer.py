@@ -20,7 +20,7 @@ here (:func:`wer` and :func:`cer`) are conveniences over the same arithmetic.
 
 from __future__ import annotations
 
-from collections.abc import Sequence
+from collections.abc import Iterable, Sequence
 from dataclasses import dataclass
 
 from echoscribe.errors import EvalError
@@ -106,3 +106,58 @@ def wer(reference: str, hypothesis: str) -> ScoreReport:
 def cer(reference: str, hypothesis: str) -> ScoreReport:
     """Character error rate: score two strings as whitespace-free characters."""
     return score_tokens(character_sequence(reference), character_sequence(hypothesis))
+
+
+@dataclass(frozen=True)
+class CorpusReport:
+    """Totals over many utterances, plus each utterance's own report.
+
+    The corpus rate is *micro-averaged*: total errors over total reference
+    tokens.  Averaging per-utterance rates instead would let a two-word
+    utterance count as much as a two-hundred-word one, which is not what a
+    corpus number is for.
+    """
+
+    reports: tuple[ScoreReport, ...]
+
+    @property
+    def utterances(self) -> int:
+        """How many pairs were scored."""
+        return len(self.reports)
+
+    @property
+    def substitutions(self) -> int:
+        """Substitutions summed over every utterance."""
+        return sum(report.substitutions for report in self.reports)
+
+    @property
+    def deletions(self) -> int:
+        """Deletions summed over every utterance."""
+        return sum(report.deletions for report in self.reports)
+
+    @property
+    def insertions(self) -> int:
+        """Insertions summed over every utterance."""
+        return sum(report.insertions for report in self.reports)
+
+    @property
+    def errors(self) -> int:
+        """Total edit distance over the whole corpus."""
+        return sum(report.errors for report in self.reports)
+
+    @property
+    def reference_length(self) -> int:
+        """Total reference tokens, the corpus denominator."""
+        return sum(report.reference_length for report in self.reports)
+
+    @property
+    def error_rate(self) -> float:
+        """Total errors over total reference tokens, rounded at the source."""
+        if self.reference_length == 0:
+            return 0.0
+        return round(self.errors / self.reference_length, ERROR_RATE_DECIMALS)
+
+
+def score_corpus(pairs: Iterable[tuple[Sequence[str], Sequence[str]]]) -> CorpusReport:
+    """Score many reference-hypothesis pairs into one report."""
+    return CorpusReport(tuple(score_tokens(ref, hyp) for ref, hyp in pairs))
