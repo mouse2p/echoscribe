@@ -5,7 +5,7 @@ from __future__ import annotations
 import pytest
 
 from echoscribe.errors import EvalError
-from echoscribe.eval.wer import score_tokens
+from echoscribe.eval.wer import cer, score_tokens, wer
 
 
 def test_the_breakdown_sums_to_the_error_count() -> None:
@@ -92,3 +92,43 @@ def test_an_empty_hypothesis_against_a_reference_is_all_deletions() -> None:
     assert report.substitutions == 0
     assert report.insertions == 0
     assert report.error_rate == 1.0
+
+
+def test_a_single_deletion_over_three_words() -> None:
+    report = wer("the cat sat", "the cat")
+    assert (report.substitutions, report.deletions, report.insertions) == (0, 1, 0)
+    assert report.error_rate == round(1 / 3, 6)
+
+
+def test_the_kitten_sitting_example_in_characters() -> None:
+    report = cer("kitten", "sitting")
+    assert report.errors == 3
+    assert report.reference_length == 6
+    assert report.error_rate == 0.5
+
+
+def test_a_chinese_sentence_missing_one_character() -> None:
+    report = cer("今天天气不错", "今天气不错")
+    assert report.deletions == 1
+    assert report.errors == 1
+    assert report.reference_length == 6
+
+
+def test_whitespace_never_counts_as_a_character() -> None:
+    assert cer("a b", "ab").errors == 0
+
+
+def test_wer_splits_on_any_whitespace_run() -> None:
+    report = wer("the   cat\nsat", "the cat sat")
+    assert report.errors == 0
+
+
+def test_wer_and_cer_disagree_by_design_on_the_same_strings() -> None:
+    # One word replaced by another is a single word error but several character
+    # errors; neither number is wrong, they answer different questions.
+    word_report = wer("hello world", "hello word")
+    char_report = cer("hello world", "hello word")
+    assert word_report.errors == 1
+    assert char_report.errors == 1
+    assert word_report.reference_length == 2
+    assert char_report.reference_length == 10
