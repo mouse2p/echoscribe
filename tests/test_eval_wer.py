@@ -5,7 +5,7 @@ from __future__ import annotations
 import pytest
 
 from echoscribe.errors import EvalError
-from echoscribe.eval.wer import cer, score_tokens, wer
+from echoscribe.eval.wer import cer, score_corpus, score_tokens, wer
 
 
 def test_the_breakdown_sums_to_the_error_count() -> None:
@@ -132,3 +132,48 @@ def test_wer_and_cer_disagree_by_design_on_the_same_strings() -> None:
     assert char_report.errors == 1
     assert word_report.reference_length == 2
     assert char_report.reference_length == 10
+
+
+def test_the_corpus_rate_is_micro_averaged() -> None:
+    pairs = [
+        (["a", "b", "c", "d"], ["a", "b", "c", "x"]),  # 1 error over 4 tokens
+        (["y"], ["z"]),  # 1 error over 1 token
+    ]
+    report = score_corpus(pairs)
+    assert report.errors == 2
+    assert report.reference_length == 5
+    assert report.error_rate == 0.4
+    per_utterance_mean = sum(item.error_rate for item in report.reports) / 2
+    assert report.error_rate != per_utterance_mean
+
+
+def test_corpus_totals_are_the_sums_of_the_parts() -> None:
+    pairs = [
+        (["a", "b"], ["a"]),
+        (["c"], ["c", "d"]),
+        (["e", "f"], ["e", "f"]),
+    ]
+    report = score_corpus(pairs)
+    assert report.utterances == 3
+    assert report.deletions == 1
+    assert report.insertions == 1
+    assert report.substitutions == 0
+    assert report.errors == 2
+    assert report.reference_length == 5
+
+
+def test_an_empty_corpus_scores_zero_without_dividing() -> None:
+    report = score_corpus([])
+    assert report.utterances == 0
+    assert report.error_rate == 0.0
+
+
+def test_a_corpus_pair_with_an_empty_reference_is_still_refused() -> None:
+    with pytest.raises(EvalError, match="the reference is empty"):
+        score_corpus([(["a"], ["a"]), ([], ["b"])])
+
+
+def test_the_corpus_report_keeps_every_utterance_report() -> None:
+    pairs = [(list("abc"), list("axc")), (list("de"), list("de"))]
+    report = score_corpus(pairs)
+    assert [item.errors for item in report.reports] == [1, 0]
