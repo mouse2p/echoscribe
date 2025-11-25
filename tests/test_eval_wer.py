@@ -200,3 +200,18 @@ def test_the_summary_of_an_empty_pair_is_defined() -> None:
 def test_a_rate_above_one_hundred_percent_is_shown_not_capped() -> None:
     report = wer("hello", "hello world how are you")
     assert format_summary(report) == "WER 400.00% | S0 D0 I4 | N1"
+
+
+def test_lists_and_tuples_score_identically() -> None:
+    from_list = score_tokens(["a", "b"], ["a", "c"])
+    from_tuple = score_tokens(("a", "b"), ("a", "c"))
+    assert from_list == from_tuple
+
+
+def test_a_generator_of_pairs_can_build_a_corpus() -> None:
+    pairs = ((list(ref), list(hyp)) for ref, hyp in [("ab", "ac"), ("de", "de")])
+    report = score_corpus(pairs)
+    assert report.utterances == 2
+    assert report.errors == 1
+    assert report.reference_length == 4
+    assert report.error_rate == 0.25
