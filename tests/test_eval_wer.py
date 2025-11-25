@@ -5,7 +5,7 @@ from __future__ import annotations
 import pytest
 
 from echoscribe.errors import EvalError
-from echoscribe.eval.wer import cer, score_corpus, score_tokens, wer
+from echoscribe.eval.wer import cer, format_summary, score_corpus, score_tokens, wer
 
 
 def test_the_breakdown_sums_to_the_error_count() -> None:
@@ -177,3 +177,26 @@ def test_the_corpus_report_keeps_every_utterance_report() -> None:
     pairs = [(list("abc"), list("axc")), (list("de"), list("de"))]
     report = score_corpus(pairs)
     assert [item.errors for item in report.reports] == [1, 0]
+
+
+def test_the_summary_line_has_a_fixed_format() -> None:
+    report = wer("the cat sat on the mat", "the cat sit on a mat")
+    assert format_summary(report) == "WER 33.33% | S2 D0 I0 | N6"
+
+
+def test_the_label_is_caller_chosen() -> None:
+    report = cer("今天天气不错", "今天气不错")
+    assert format_summary(report, label="CER") == "CER 16.67% | S0 D1 I0 | N6"
+
+
+def test_a_perfect_hypothesis_reads_as_zero() -> None:
+    assert format_summary(wer("a b", "a b")) == "WER 0.00% | S0 D0 I0 | N2"
+
+
+def test_the_summary_of_an_empty_pair_is_defined() -> None:
+    assert format_summary(score_tokens([], [])) == "WER 0.00% | S0 D0 I0 | N0"
+
+
+def test_a_rate_above_one_hundred_percent_is_shown_not_capped() -> None:
+    report = wer("hello", "hello world how are you")
+    assert format_summary(report) == "WER 400.00% | S0 D0 I4 | N1"
