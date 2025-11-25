@@ -170,3 +170,22 @@ class CorpusReport:
 def score_corpus(pairs: Iterable[tuple[Sequence[str], Sequence[str]]]) -> CorpusReport:
     """Score many reference-hypothesis pairs into one report."""
     return CorpusReport(tuple(score_tokens(ref, hyp) for ref, hyp in pairs))
+
+
+def format_summary(report: ScoreReport, label: str = "WER") -> str:
+    """One printable line: rate, breakdown and denominator.
+
+    The percentage is computed from the integer counts in a single division
+    rather than from the rounded :attr:`ScoreReport.error_rate`, so a printed
+    value never carries a rounding of a rounding.  The format is fixed and
+    covered by golden tests, because logs are compared between runs.
+    """
+    if report.reference_length == 0:
+        percent = 0.0
+    else:
+        percent = round(report.errors * 100 / report.reference_length, 2)
+    return (
+        f"{label} {percent:.2f}% | "
+        f"S{report.substitutions} D{report.deletions} I{report.insertions} | "
+        f"N{report.reference_length}"
+    )
