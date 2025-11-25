@@ -16,6 +16,15 @@ Three conventions matter here, and each is a choice rather than a fact:
 This module scores *token sequences*.  What counts as a token -- a word, a
 character, a subword unit -- is the caller's choice, and the two entry points
 here (:func:`wer` and :func:`cer`) are conveniences over the same arithmetic.
+
+A rate above 1.0 is not a bug and is not capped.  Scoring the one-word
+reference ``hello`` against the hypothesis ``hello world how are you``
+produces four insertions over one reference token: a rate of 4.0.  The number
+says the hypothesis carried four times the reference's content, which is
+exactly what happened, and squeezing it into 100% would lose the magnitude.
+Reports that present the rate as a percentage therefore show values above
+100% when they occur, and readers should treat them as "worse than deleting
+everything", which they are.
 """
 
 from __future__ import annotations
