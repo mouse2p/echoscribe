@@ -5,7 +5,7 @@ from __future__ import annotations
 import pytest
 
 from echoscribe.errors import EvalError
-from echoscribe.eval.wer import cer, format_summary, score_corpus, score_tokens, wer
+from echoscribe.eval.wer import ScoreReport, cer, format_summary, score_corpus, score_tokens, wer
 
 
 def test_the_breakdown_sums_to_the_error_count() -> None:
@@ -215,3 +215,14 @@ def test_a_generator_of_pairs_can_build_a_corpus() -> None:
     assert report.errors == 1
     assert report.reference_length == 4
     assert report.error_rate == 0.25
+
+
+def test_the_eval_subpackage_re_exports_the_scoring_api() -> None:
+    from echoscribe import eval as evaluation
+
+    assert evaluation.wer is wer
+    assert evaluation.cer is cer
+    assert evaluation.ScoreReport is ScoreReport
+    assert evaluation.score_tokens is score_tokens
+    for name in ("score_corpus", "format_summary", "CorpusReport", "word_sequence"):
+        assert name in evaluation.__all__

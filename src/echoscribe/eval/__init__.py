@@ -30,13 +30,33 @@ from echoscribe.eval.edit import (
     brute_force_distance,
     edit_distance,
 )
+from echoscribe.eval.wer import (
+    CorpusReport,
+    ScoreReport,
+    cer,
+    character_sequence,
+    format_summary,
+    score_corpus,
+    score_tokens,
+    wer,
+    word_sequence,
+)
 
 __all__ = [
     "EDIT_OPERATIONS",
     "ERROR_OPERATIONS",
     "Alignment",
+    "CorpusReport",
     "EditOp",
+    "ScoreReport",
     "align",
     "brute_force_distance",
+    "cer",
+    "character_sequence",
     "edit_distance",
+    "format_summary",
+    "score_corpus",
+    "score_tokens",
+    "wer",
+    "word_sequence",
 ]
