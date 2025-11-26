@@ -43,3 +43,15 @@ def mixed_token_sequence(text: str) -> tuple[tuple[str, str], ...]:
             for word in run.text.split():
                 tokens.append((word, run.script))
     return tuple(tokens)
+
+
+def count_code_switches(text: str) -> int:
+    """How many times the script changes between consecutive scored tokens.
+
+    Digits count as a script of their own here, so ``第42层`` has two switches.
+    The count describes the *reference*, because that is the side the score is
+    normalised against; a hypothesis that switches in different places is
+    already paying for it in insertions and deletions.
+    """
+    scripts = [script for _, script in mixed_token_sequence(text)]
+    return sum(1 for before, after in zip(scripts, scripts[1:], strict=False) if before != after)
