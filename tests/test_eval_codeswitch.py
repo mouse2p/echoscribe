@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from echoscribe.eval.codeswitch import mixed_token_sequence
+from echoscribe.eval.codeswitch import count_code_switches, mixed_token_sequence
 
 
 def test_han_characters_become_individual_tokens() -> None:
@@ -54,3 +54,24 @@ def test_an_empty_string_has_no_tokens() -> None:
     assert mixed_token_sequence("") == ()
     assert mixed_token_sequence("   ") == ()
     assert mixed_token_sequence("，。！") == ()
+
+
+def test_a_pure_script_has_no_switches() -> None:
+    assert count_code_switches("the cat sat") == 0
+    assert count_code_switches("今天天气") == 0
+
+
+def test_each_script_transition_counts_once() -> None:
+    assert count_code_switches("今天use AI好吧") == 2
+
+
+def test_digits_count_as_a_script_of_their_own() -> None:
+    assert count_code_switches("第42层") == 2
+
+
+def test_punctuation_does_not_interrupt_a_run() -> None:
+    assert count_code_switches("hello, 世界!") == 1
+
+
+def test_an_empty_string_has_no_switches() -> None:
+    assert count_code_switches("") == 0
