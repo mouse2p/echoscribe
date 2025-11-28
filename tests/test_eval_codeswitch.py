@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
-from echoscribe.eval.codeswitch import count_code_switches, mixed_token_sequence
+import pytest
+
+from echoscribe.eval.codeswitch import count_code_switches, mixed_token_sequence, score_mixed
 
 
 def test_han_characters_become_individual_tokens() -> None:
@@ -75,3 +77,57 @@ def test_punctuation_does_not_interrupt_a_run() -> None:
 
 def test_an_empty_string_has_no_switches() -> None:
     assert count_code_switches("") == 0
+
+
+PAIRS = [
+    ("今天use AI好吧", "今天use AG好吧"),
+    ("今天use AI好吧", "今天use AI好巴"),
+    ("hello world", "hello 世界 world"),
+    ("打开the document", "打开document"),
+    ("第42层", "第43层楼"),
+    ("pure english only", "pure english"),
+    ("纯中文句子", "纯中文的句"),
+]
+
+
+@pytest.mark.parametrize("reference,hypothesis", PAIRS)
+def test_the_parts_sum_to_the_whole(reference: str, hypothesis: str) -> None:
+    report = score_mixed(reference, hypothesis)
+    assert sum(score.substitutions for score in report.per_script) == (report.overall.substitutions)
+    assert sum(score.deletions for score in report.per_script) == report.overall.deletions
+    assert sum(score.insertions for score in report.per_script) == report.overall.insertions
+    assert sum(score.errors for score in report.per_script) == report.overall.errors
+    assert sum(score.reference_tokens for score in report.per_script) == (
+        report.overall.reference_length
+    )
+
+
+@pytest.mark.parametrize("reference,hypothesis", PAIRS)
+def test_each_script_rate_is_consistent_with_its_counts(reference: str, hypothesis: str) -> None:
+    report = score_mixed(reference, hypothesis)
+    for score in report.per_script:
+        if score.error_rate is None:
+            assert score.reference_tokens == 0
+        else:
+            assert score.error_rate == round(score.errors / score.reference_tokens, 6)
+
+
+def test_scripts_appear_in_sorted_order_for_a_stable_report() -> None:
+    report = score_mixed("今天use 42好吧", "今天use 43好吧")
+    assert [score.script for score in report.per_script] == ["digit", "han", "latin"]
+
+
+@pytest.mark.parametrize("seed", range(5))
+def test_random_mixed_pairs_keep_the_sum_invariant(seed: int) -> None:
+    import random
+
+    pieces = ["hello", "world", "今天", "天气", "use", "AI", "好吧", "42"]
+    rng = random.Random(seed)
+    for _ in range(20):
+        reference = " ".join(rng.choice(pieces) for _ in range(rng.randint(1, 6)))
+        hypothesis = " ".join(rng.choice(pieces) for _ in range(rng.randint(0, 6)))
+        report = score_mixed(reference, hypothesis)
+        assert sum(score.errors for score in report.per_script) == report.overall.errors
+        assert sum(score.reference_tokens for score in report.per_script) == (
+            report.overall.reference_length
+        )
