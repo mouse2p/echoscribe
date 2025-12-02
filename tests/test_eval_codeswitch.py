@@ -155,3 +155,40 @@ def test_a_pure_utterance_has_one_script_score() -> None:
 
 def test_a_pure_utterance_reports_no_switches() -> None:
     assert score_mixed("今天天气不错", "今天气不错").code_switches == 0
+
+
+def _script(report, name: str):
+    return next(score for score in report.per_script if score.script == name)
+
+
+def test_a_latin_substitution_is_charged_to_the_latin_script() -> None:
+    report = score_mixed("今天use AI好吧", "今天use AG好吧")
+    assert (_script(report, "latin").substitutions, _script(report, "latin").reference_tokens) == (
+        1,
+        2,
+    )
+    assert _script(report, "han").substitutions == 0
+    assert _script(report, "han").reference_tokens == 4
+    assert report.overall.errors == 1
+    assert report.code_switches == 2
+
+
+def test_a_han_substitution_is_charged_to_the_han_script() -> None:
+    report = score_mixed("今天use AI好吧", "今天use AI好八")
+    assert _script(report, "han").substitutions == 1
+    assert _script(report, "latin").substitutions == 0
+
+
+def test_an_inserted_script_absent_from_the_reference_has_no_rate() -> None:
+    report = score_mixed("hello world", "hello 世界 world")
+    han = _script(report, "han")
+    assert han.reference_tokens == 0
+    assert han.insertions == 2
+    assert han.error_rate is None
+    assert report.overall.insertions == 2
+
+
+def test_a_deletion_is_charged_to_the_script_it_removed() -> None:
+    report = score_mixed("打开the document", "打开document")
+    assert _script(report, "latin").deletions == 1
+    assert _script(report, "han").errors == 0
