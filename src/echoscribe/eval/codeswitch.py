@@ -13,6 +13,21 @@ English word into a Chinese sentence changes exactly that.  A single global
 alignment always exists, and it keeps the parts consistent with the whole:
 the per-script error counts sum to the overall count by construction, which
 segment-wise scores cannot promise.
+
+The attribution rules, stated plainly because they are conventions:
+
+* a substitution or deletion is charged to the script of the *reference*
+  token it consumed -- the reference is what the rate normalises against;
+* an insertion is charged to the script of the inserted token itself, the
+  only side that has one;
+* a script that appears only in the hypothesis gets a count but no rate,
+  since a rate over zero reference tokens does not exist.
+
+The blind spot follows from the first rule: an English word substituted by a
+Chinese character is charged to the English side, even though the intruding
+token is Chinese.  There is no attribution that is obviously right for a
+cross-script substitution, and any choice would break the sum invariant
+unless applied consistently.  The overall rate is unaffected either way.
 """
 
 from __future__ import annotations
