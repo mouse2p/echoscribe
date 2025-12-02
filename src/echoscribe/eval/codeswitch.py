@@ -155,3 +155,22 @@ def score_mixed(reference: str, hypothesis: str) -> CodeSwitchReport:
         per_script=per_script,
         code_switches=count_code_switches(reference),
     )
+
+
+def format_code_switch(report: CodeSwitchReport) -> str:
+    """One printable line: overall rate, per-script counts and switch count.
+
+    As in :func:`~echoscribe.eval.wer.format_summary`, the percentage comes
+    from a single division of integer counts, and the format is pinned by
+    golden tests so logs stay comparable between runs.
+    """
+    total = report.overall
+    if total.reference_length == 0:
+        percent = 0.0
+    else:
+        percent = round(total.errors * 100 / total.reference_length, 2)
+    parts = " ".join(
+        f"{score.script} {score.errors}/{score.reference_tokens}" for score in report.per_script
+    )
+    middle = f" | {parts}" if parts else ""
+    return f"CS {percent:.2f}%{middle} | switches {report.code_switches}"
