@@ -4,7 +4,12 @@ from __future__ import annotations
 
 import pytest
 
-from echoscribe.eval.codeswitch import count_code_switches, mixed_token_sequence, score_mixed
+from echoscribe.eval.codeswitch import (
+    count_code_switches,
+    mixed_token_sequence,
+    score_mixed,
+)
+from echoscribe.eval.wer import cer, wer
 
 
 def test_han_characters_become_individual_tokens() -> None:
@@ -131,3 +136,22 @@ def test_random_mixed_pairs_keep_the_sum_invariant(seed: int) -> None:
         assert sum(score.reference_tokens for score in report.per_script) == (
             report.overall.reference_length
         )
+
+
+def test_a_pure_english_pair_matches_plain_wer() -> None:
+    assert score_mixed("the cat sat", "the cat").overall == wer("the cat sat", "the cat")
+
+
+def test_a_pure_chinese_pair_matches_plain_cer() -> None:
+    assert score_mixed("今天天气不错", "今天气不错").overall == cer("今天天气不错", "今天气不错")
+
+
+def test_a_pure_utterance_has_one_script_score() -> None:
+    report = score_mixed("the cat sat", "the cat")
+    assert len(report.per_script) == 1
+    assert report.per_script[0].script == "latin"
+    assert report.per_script[0].error_rate == report.overall.error_rate
+
+
+def test_a_pure_utterance_reports_no_switches() -> None:
+    assert score_mixed("今天天气不错", "今天气不错").code_switches == 0
