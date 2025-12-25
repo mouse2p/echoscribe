@@ -6,6 +6,7 @@ import pytest
 
 from echoscribe.eval.codeswitch import (
     count_code_switches,
+    format_code_switch,
     mixed_token_sequence,
     score_mixed,
 )
@@ -192,3 +193,22 @@ def test_a_deletion_is_charged_to_the_script_it_removed() -> None:
     report = score_mixed("打开the document", "打开document")
     assert _script(report, "latin").deletions == 1
     assert _script(report, "han").errors == 0
+
+
+def test_the_golden_mixed_score() -> None:
+    report = score_mixed("今天use AI好吧", "今天use AG好巴")
+    assert format_code_switch(report) == "CS 33.33% | han 1/4 latin 1/2 | switches 2"
+
+
+def test_a_perfect_mixed_hypothesis_reads_as_zero() -> None:
+    report = score_mixed("今天use AI好吧", "今天use AI好吧")
+    assert format_code_switch(report) == "CS 0.00% | han 0/4 latin 0/2 | switches 2"
+
+
+def test_the_empty_pair_has_no_script_parts() -> None:
+    assert format_code_switch(score_mixed("", "")) == "CS 0.00% | switches 0"
+
+
+def test_a_script_only_in_the_hypothesis_still_appears_in_the_summary() -> None:
+    report = score_mixed("hello world", "hello 世界 world")
+    assert format_code_switch(report) == "CS 100.00% | han 2/0 latin 0/2 | switches 0"
