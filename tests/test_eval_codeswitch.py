@@ -212,3 +212,18 @@ def test_the_empty_pair_has_no_script_parts() -> None:
 def test_a_script_only_in_the_hypothesis_still_appears_in_the_summary() -> None:
     report = score_mixed("hello world", "hello 世界 world")
     assert format_code_switch(report) == "CS 100.00% | han 2/0 latin 0/2 | switches 0"
+
+
+def test_an_empty_reference_with_content_is_refused() -> None:
+    import pytest
+
+    from echoscribe.errors import EvalError
+
+    with pytest.raises(EvalError, match="the reference is empty"):
+        score_mixed("", "hello 世界")
+
+
+def test_punctuation_only_text_scores_as_an_empty_pair() -> None:
+    report = score_mixed("，。", "！")
+    assert report.overall.errors == 0
+    assert report.overall.error_rate == 0.0
