@@ -227,3 +227,12 @@ def test_punctuation_only_text_scores_as_an_empty_pair() -> None:
     report = score_mixed("，。", "！")
     assert report.overall.errors == 0
     assert report.overall.error_rate == 0.0
+
+
+def test_the_eval_subpackage_re_exports_the_code_switch_api() -> None:
+    from echoscribe import eval as evaluation
+
+    assert evaluation.score_mixed is score_mixed
+    assert evaluation.count_code_switches is count_code_switches
+    for name in ("CodeSwitchReport", "ScriptScore", "format_code_switch", "mixed_token_sequence"):
+        assert name in evaluation.__all__
