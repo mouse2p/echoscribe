@@ -5,7 +5,7 @@ from __future__ import annotations
 import pytest
 
 from echoscribe.errors import ConfigError
-from echoscribe.eval.bench import BenchResult, TimingStatistics, timing_statistics
+from echoscribe.eval.bench import BenchResult, TimingStatistics, measure_rtf, timing_statistics
 
 
 def test_the_statistics_of_a_single_sample_are_that_sample() -> None:
@@ -78,3 +78,53 @@ def test_zero_audio_duration_is_refused() -> None:
 def test_a_result_without_a_task_name_is_refused() -> None:
     with pytest.raises(ConfigError, match="task name"):
         BenchResult(task="", audio_seconds=1.0, warmups=0, samples=(0.1,))
+
+
+class FakeClock:
+    """Hands out prepared readings in order and complains when they run out."""
+
+    def __init__(self, readings: list[float]) -> None:
+        self.readings = list(readings)
+        self.calls = 0
+
+    def __call__(self) -> float:
+        self.calls += 1
+        if not self.readings:
+            raise AssertionError("the clock was read more often than prepared")
+        return self.readings.pop(0)
+
+
+def test_warmup_runs_are_executed_but_not_timed() -> None:
+    calls: list[str] = []
+
+    def run() -> None:
+        calls.append("run")
+
+    clock = FakeClock([10.0, 11.0, 20.0, 21.5])
+    result = measure_rtf("decode", run, audio_seconds=3.0, warmups=2, repeats=2, clock=clock)
+    assert len(calls) == 4
+    assert result.samples == (1.0, 1.5)
+    assert result.warmups == 2
+    assert clock.calls == 4
+
+
+def test_the_measured_runs_drive_the_rtf() -> None:
+    clock = FakeClock([0.0, 1.0, 0.0, 0.5, 0.0, 2.0])
+    result = measure_rtf("x", lambda: None, audio_seconds=2.0, warmups=0, repeats=3, clock=clock)
+    assert result.samples == (1.0, 0.5, 2.0)
+    assert result.rtf == 0.5
+
+
+def test_a_failing_run_propagates_and_leaves_no_result() -> None:
+    def explode() -> None:
+        raise RuntimeError("the task failed")
+
+    with pytest.raises(RuntimeError, match="the task failed"):
+        measure_rtf("x", explode, audio_seconds=1.0, warmups=0, repeats=1)
+
+
+def test_measuring_against_the_real_clock_is_well_formed() -> None:
+    result = measure_rtf("noop", lambda: None, audio_seconds=1.0, warmups=1, repeats=2)
+    assert result.repeats == 2
+    assert all(sample >= 0.0 for sample in result.samples)
+    assert result.rtf >= 0.0
