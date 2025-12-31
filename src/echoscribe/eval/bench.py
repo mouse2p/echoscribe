@@ -16,7 +16,8 @@ behaviour exactly instead of sleeping and hoping.
 
 from __future__ import annotations
 
-from collections.abc import Sequence
+import time
+from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 from statistics import median
 
@@ -107,3 +108,38 @@ class BenchResult:
     def rtf_best(self) -> float:
         """Fastest-sample RTF: the headroom this machine showed at its best."""
         return round(self.statistics.minimum / self.audio_seconds, RTF_DECIMALS)
+
+
+def measure_rtf(
+    task: str,
+    run: Callable[[], object],
+    audio_seconds: float,
+    warmups: int = 1,
+    repeats: int = 3,
+    clock: Callable[[], float] = time.perf_counter,
+) -> BenchResult:
+    """Time ``run`` and express the cost as wall seconds per audio second.
+
+    ``run`` is called ``warmups + repeats`` times; only the last ``repeats``
+    calls are timed.  Every sample is rounded where it is produced, to nine
+    decimals, so a serialized result never depends on the repr precision of
+    the machine that measured it.  The clock is a parameter, which is what
+    allows the tests to drive the whole sequence without sleeping.
+    """
+    require(repeats >= 1, f"repeats must be at least 1, got {repeats!r}", ConfigError)
+    require(warmups >= 0, f"warmups must not be negative, got {warmups!r}", ConfigError)
+    require(
+        audio_seconds > 0,
+        f"audio_seconds must be positive, got {audio_seconds!r}",
+        ConfigError,
+    )
+    for _ in range(warmups):
+        run()
+    samples: list[float] = []
+    for _ in range(repeats):
+        started = clock()
+        run()
+        samples.append(round(clock() - started, TIME_DECIMALS))
+    return BenchResult(
+        task=task, audio_seconds=audio_seconds, warmups=warmups, samples=tuple(samples)
+    )
