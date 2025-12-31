@@ -51,3 +51,59 @@ def timing_statistics(samples: Sequence[float]) -> TimingStatistics:
         median=round(float(median(values)), TIME_DECIMALS),
         mean=round(sum(values) / len(values), TIME_DECIMALS),
     )
+
+
+@dataclass(frozen=True)
+class BenchResult:
+    """One benchmarked task: how much wall time per second of audio.
+
+    The headline number is the *median* sample divided by the audio duration.
+    The median rather than the mean because a benchmark occasionally shares
+    the machine with something else, and one stalled sample should move the
+    reported factor as little as possible.  The fastest sample is exposed
+    separately as ``rtf_best`` for the same reason.
+    """
+
+    task: str
+    audio_seconds: float
+    warmups: int
+    samples: tuple[float, ...]
+
+    def __post_init__(self) -> None:
+        require(bool(self.task), "a bench result needs a task name", ConfigError)
+        require(
+            self.audio_seconds > 0,
+            f"audio_seconds must be positive, got {self.audio_seconds!r}",
+            ConfigError,
+        )
+        require(
+            self.warmups >= 0,
+            f"warmups must not be negative, got {self.warmups!r}",
+            ConfigError,
+        )
+        require(len(self.samples) > 0, "a bench result needs at least one sample", ConfigError)
+        require(
+            all(sample >= 0 for sample in self.samples),
+            "sample times must not be negative",
+            ConfigError,
+        )
+
+    @property
+    def repeats(self) -> int:
+        """How many measured runs produced the samples."""
+        return len(self.samples)
+
+    @property
+    def statistics(self) -> TimingStatistics:
+        """Spread of the measured runs."""
+        return timing_statistics(self.samples)
+
+    @property
+    def rtf(self) -> float:
+        """Median wall seconds per audio second, rounded where it is produced."""
+        return round(self.statistics.median / self.audio_seconds, RTF_DECIMALS)
+
+    @property
+    def rtf_best(self) -> float:
+        """Fastest-sample RTF: the headroom this machine showed at its best."""
+        return round(self.statistics.minimum / self.audio_seconds, RTF_DECIMALS)
