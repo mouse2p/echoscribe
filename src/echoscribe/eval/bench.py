@@ -21,7 +21,7 @@ from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 from statistics import median
 
-from echoscribe.errors import ConfigError, require
+from echoscribe.errors import ConfigError, SchemaError, require
 
 BENCH_SCHEMA_VERSION = 1
 TIME_DECIMALS = 9
@@ -108,6 +108,34 @@ class BenchResult:
     def rtf_best(self) -> float:
         """Fastest-sample RTF: the headroom this machine showed at its best."""
         return round(self.statistics.minimum / self.audio_seconds, RTF_DECIMALS)
+
+    def to_dict(self) -> dict:
+        """A JSON-ready mapping of the result, schema version included."""
+        return {
+            "schema": BENCH_SCHEMA_VERSION,
+            "task": self.task,
+            "audio_seconds": self.audio_seconds,
+            "warmups": self.warmups,
+            "samples": list(self.samples),
+        }
+
+    @classmethod
+    def from_dict(cls, payload: dict) -> BenchResult:
+        """Rebuild a result from :meth:`to_dict`, refusing foreign schemas."""
+        version = payload.get("schema")
+        require(
+            version == BENCH_SCHEMA_VERSION,
+            f"bench schema {version!r} is not supported; this build reads {BENCH_SCHEMA_VERSION}",
+            SchemaError,
+        )
+        for name in ("task", "audio_seconds", "warmups", "samples"):
+            require(name in payload, f"bench result is missing {name!r}", SchemaError)
+        return cls(
+            task=str(payload["task"]),
+            audio_seconds=float(payload["audio_seconds"]),
+            warmups=int(payload["warmups"]),
+            samples=tuple(float(sample) for sample in payload["samples"]),
+        )
 
 
 def measure_rtf(
