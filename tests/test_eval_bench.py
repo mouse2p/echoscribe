@@ -128,3 +128,44 @@ def test_measuring_against_the_real_clock_is_well_formed() -> None:
     assert result.repeats == 2
     assert all(sample >= 0.0 for sample in result.samples)
     assert result.rtf >= 0.0
+
+
+def test_a_bench_result_survives_a_dict_roundtrip() -> None:
+    result = BenchResult(task="decode", audio_seconds=2.5, warmups=1, samples=(0.5, 0.75))
+    assert BenchResult.from_dict(result.to_dict()) == result
+
+
+def test_the_serialized_form_is_pinned() -> None:
+    result = BenchResult(task="decode", audio_seconds=2.5, warmups=1, samples=(0.5, 0.75))
+    assert result.to_dict() == {
+        "schema": 1,
+        "task": "decode",
+        "audio_seconds": 2.5,
+        "warmups": 1,
+        "samples": [0.5, 0.75],
+    }
+
+
+def test_a_foreign_schema_version_is_refused() -> None:
+    from echoscribe.errors import SchemaError
+
+    payload = BenchResult("decode", 2.5, 1, (0.5,)).to_dict()
+    payload["schema"] = 99
+    with pytest.raises(SchemaError, match="not supported"):
+        BenchResult.from_dict(payload)
+
+
+def test_a_missing_field_is_refused() -> None:
+    from echoscribe.errors import SchemaError
+
+    payload = BenchResult("decode", 2.5, 1, (0.5,)).to_dict()
+    del payload["samples"]
+    with pytest.raises(SchemaError, match="missing 'samples'"):
+        BenchResult.from_dict(payload)
+
+
+def test_the_roundtrip_preserves_the_computed_rtf() -> None:
+    result = BenchResult(task="x", audio_seconds=4.0, warmups=0, samples=(1.0, 1.5, 3.0))
+    restored = BenchResult.from_dict(result.to_dict())
+    assert restored.rtf == result.rtf
+    assert restored.rtf_best == result.rtf_best
