@@ -169,3 +169,24 @@ def test_the_roundtrip_preserves_the_computed_rtf() -> None:
     restored = BenchResult.from_dict(result.to_dict())
     assert restored.rtf == result.rtf
     assert restored.rtf_best == result.rtf_best
+
+
+def test_zero_repeats_is_refused_before_running() -> None:
+    calls: list[str] = []
+    with pytest.raises(ConfigError, match="repeats must be at least 1"):
+        measure_rtf("x", lambda: calls.append("run"), audio_seconds=1.0, repeats=0)
+    assert calls == []
+
+
+def test_negative_warmups_are_refused_before_running() -> None:
+    calls: list[str] = []
+    with pytest.raises(ConfigError, match="warmups must not be negative"):
+        measure_rtf("x", lambda: calls.append("run"), audio_seconds=1.0, warmups=-1)
+    assert calls == []
+
+
+def test_a_nonpositive_audio_duration_is_refused_before_running() -> None:
+    calls: list[str] = []
+    with pytest.raises(ConfigError, match="audio_seconds must be positive"):
+        measure_rtf("x", lambda: calls.append("run"), audio_seconds=-2.0)
+    assert calls == []
