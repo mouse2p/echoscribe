@@ -5,7 +5,12 @@ from __future__ import annotations
 import pytest
 
 from echoscribe.errors import ConfigError
-from echoscribe.eval.bench import BenchResult, TimingStatistics, measure_rtf, timing_statistics
+from echoscribe.eval.bench import (
+    BenchResult,
+    TimingStatistics,
+    measure_rtf,
+    timing_statistics,
+)
 
 
 def test_the_statistics_of_a_single_sample_are_that_sample() -> None:
@@ -190,3 +195,12 @@ def test_a_nonpositive_audio_duration_is_refused_before_running() -> None:
     with pytest.raises(ConfigError, match="audio_seconds must be positive"):
         measure_rtf("x", lambda: calls.append("run"), audio_seconds=-2.0)
     assert calls == []
+
+
+def test_the_eval_subpackage_re_exports_the_bench_api() -> None:
+    from echoscribe import eval as evaluation
+
+    assert evaluation.measure_rtf is measure_rtf
+    assert evaluation.BenchResult is BenchResult
+    for name in ("timing_statistics", "TimingStatistics", "BENCH_SCHEMA_VERSION"):
+        assert name in evaluation.__all__

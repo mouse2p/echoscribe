@@ -21,6 +21,13 @@ The modules:
     deterministic SVG output, so a report is a file that can be diffed.
 """
 
+from echoscribe.eval.bench import (
+    BENCH_SCHEMA_VERSION,
+    BenchResult,
+    TimingStatistics,
+    measure_rtf,
+    timing_statistics,
+)
 from echoscribe.eval.codeswitch import (
     CodeSwitchReport,
     ScriptScore,
@@ -51,14 +58,17 @@ from echoscribe.eval.wer import (
 )
 
 __all__ = [
+    "BENCH_SCHEMA_VERSION",
     "EDIT_OPERATIONS",
     "ERROR_OPERATIONS",
     "Alignment",
+    "BenchResult",
     "CodeSwitchReport",
     "CorpusReport",
     "EditOp",
     "ScoreReport",
     "ScriptScore",
+    "TimingStatistics",
     "align",
     "brute_force_distance",
     "cer",
@@ -67,10 +77,12 @@ __all__ = [
     "edit_distance",
     "format_code_switch",
     "format_summary",
+    "measure_rtf",
     "mixed_token_sequence",
     "score_corpus",
     "score_mixed",
     "score_tokens",
+    "timing_statistics",
     "wer",
     "word_sequence",
 ]
