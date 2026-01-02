@@ -171,3 +171,23 @@ def measure_rtf(
     return BenchResult(
         task=task, audio_seconds=audio_seconds, warmups=warmups, samples=tuple(samples)
     )
+
+
+# What an RTF from this harness claims, and what it does not
+# ----------------------------------------------------------
+#
+# It claims: on this machine, in this process, at this moment, the callable
+# that was handed to ``measure_rtf`` consumed ``rtf`` wall seconds per second
+# of audio, as a median over the recorded repeats.  That is all.
+#
+# It does not claim a hardware-independent throughput number.  RTF depends on
+# the CPU, the core count the process happened to get, the numpy build, the
+# Python version and whatever else was running.  A number measured here is
+# comparable with another number measured the same way on the same machine --
+# useful for "did this change make decoding slower", which is the question a
+# benchmark in a test suite should answer -- and is not comparable with
+# numbers from other machines or other harnesses.
+#
+# It also does not include time spent outside the callable: loading audio
+# from disk before the measurement, or writing results after it, are the
+# caller's responsibility to put inside ``run`` or consciously leave out.
