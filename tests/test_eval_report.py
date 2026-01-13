@@ -5,7 +5,7 @@ from __future__ import annotations
 import pytest
 
 from echoscribe.errors import ConfigError
-from echoscribe.eval.report import escape_text, format_length
+from echoscribe.eval.report import SvgElement, escape_text, format_length
 
 
 def test_every_reserved_character_becomes_an_entity() -> None:
@@ -76,3 +76,41 @@ def test_a_string_or_boolean_length_is_refused() -> None:
         format_length("12")
     with pytest.raises(ConfigError, match="must be a number"):
         format_length(True)
+
+
+def test_a_childless_element_renders_self_closing() -> None:
+    assert SvgElement("rect").render() == "<rect/>"
+
+
+def test_attributes_render_in_the_order_given() -> None:
+    element = SvgElement("rect", (("b", 1), ("a", 2)))
+    assert element.render() == '<rect b="1" a="2"/>'
+
+
+def test_text_children_render_on_the_same_line() -> None:
+    element = SvgElement("text", (("x", 1), ("y", 2.5)), ("hi",))
+    assert element.render() == '<text x="1" y="2.5">hi</text>'
+
+
+def test_nested_elements_indent_by_two_spaces() -> None:
+    element = SvgElement("g", (), (SvgElement("rect", (("x", 0),)),))
+    assert element.render() == '<g>\n  <rect x="0"/>\n</g>'
+
+
+def test_text_is_escaped_on_the_way_out() -> None:
+    assert SvgElement("text", (), ("a<b",)).render() == "<text>a&lt;b</text>"
+
+
+def test_attribute_values_are_escaped_too() -> None:
+    element = SvgElement("rect", (("fill", 'a"b'),))
+    assert element.render() == '<rect fill="a&quot;b"/>'
+
+
+def test_the_indent_parameter_shifts_the_whole_subtree() -> None:
+    element = SvgElement("g", (), (SvgElement("rect"),))
+    assert element.render(indent=1) == "  <g>\n    <rect/>\n  </g>"
+
+
+def test_float_attributes_use_the_length_formatter() -> None:
+    element = SvgElement("rect", (("x", 0.1 + 0.2),))
+    assert element.render() == '<rect x="0.3"/>'
