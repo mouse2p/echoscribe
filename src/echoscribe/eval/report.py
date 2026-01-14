@@ -8,6 +8,7 @@ a display server or a heavyweight dependency.
 
 from __future__ import annotations
 
+import hashlib
 import math
 from collections.abc import Sequence
 from dataclasses import dataclass
@@ -188,3 +189,19 @@ def svg_document(
         (*header, *children),
     )
     return f'<?xml version="1.0" encoding="UTF-8"?>\n{root.render()}\n'
+
+
+def digest_report(svg: str) -> str:
+    """The SHA-256 of a document, the handle golden tests compare with.
+
+    Digesting the exact bytes that would be written means a golden test fails
+    on any change at all -- a reordered attribute, one coordinate off in the
+    last decimal.  That is the point: report drift should be a decision, never
+    an accident.
+    """
+    require(
+        isinstance(svg, str),
+        f"a report digest needs a string, got {type(svg).__name__}",
+        ConfigError,
+    )
+    return hashlib.sha256(svg.encode("utf-8")).hexdigest()
