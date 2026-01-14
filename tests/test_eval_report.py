@@ -114,3 +114,33 @@ def test_the_indent_parameter_shifts_the_whole_subtree() -> None:
 def test_float_attributes_use_the_length_formatter() -> None:
     element = SvgElement("rect", (("x", 0.1 + 0.2),))
     assert element.render() == '<rect x="0.3"/>'
+
+
+def test_an_empty_tag_is_refused() -> None:
+    with pytest.raises(ConfigError, match="usable SVG tag"):
+        SvgElement("")
+
+
+def test_a_tag_with_a_space_is_refused() -> None:
+    with pytest.raises(ConfigError, match="usable SVG tag"):
+        SvgElement("rect x")
+
+
+def test_duplicate_attributes_are_refused() -> None:
+    with pytest.raises(ConfigError, match="duplicate SVG attribute"):
+        SvgElement("rect", (("x", 1), ("x", 2)))
+
+
+def test_a_boolean_attribute_value_is_refused() -> None:
+    with pytest.raises(ConfigError, match="string or a number"):
+        SvgElement("rect", (("x", True),))
+
+
+def test_a_bad_attribute_name_is_refused() -> None:
+    with pytest.raises(ConfigError, match="usable SVG attribute"):
+        SvgElement("rect", (("x y", 1),))
+
+
+def test_a_non_string_non_element_child_is_refused() -> None:
+    with pytest.raises(ConfigError, match="element or text"):
+        SvgElement("g", (), (42,))
