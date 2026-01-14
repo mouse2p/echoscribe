@@ -5,7 +5,7 @@ from __future__ import annotations
 import pytest
 
 from echoscribe.errors import ConfigError
-from echoscribe.eval.report import SvgElement, escape_text, format_length
+from echoscribe.eval.report import SvgElement, escape_text, format_length, svg_document
 
 
 def test_every_reserved_character_becomes_an_entity() -> None:
@@ -144,3 +144,43 @@ def test_a_bad_attribute_name_is_refused() -> None:
 def test_a_non_string_non_element_child_is_refused() -> None:
     with pytest.raises(ConfigError, match="element or text"):
         SvgElement("g", (), (42,))
+
+
+def test_a_small_document_is_pinned_byte_for_byte() -> None:
+    document = svg_document(
+        4,
+        2,
+        [SvgElement("rect", (("x", 0), ("y", 0), ("width", 4), ("height", 2), ("fill", "#eee")))],
+        title="t",
+    )
+    opening = (
+        '<svg xmlns="http://www.w3.org/2000/svg" version="1.1" '
+        'width="4" height="2" viewBox="0 0 4 2">'
+    )
+    assert document == (
+        '<?xml version="1.0" encoding="UTF-8"?>\n'
+        + opening
+        + "\n"
+        + "  <title>t</title>\n"
+        + '  <rect x="0" y="0" width="4" height="2" fill="#eee"/>\n'
+        + "</svg>\n"
+    )
+
+
+def test_a_description_becomes_a_desc_element() -> None:
+    document = svg_document(2, 2, (), description="d")
+    assert "  <desc>d</desc>\n" in document
+
+
+def test_title_and_description_come_before_the_content() -> None:
+    document = svg_document(2, 2, [SvgElement("g")], title="t", description="d")
+    assert document.index("<title>") < document.index("<desc>") < document.index("<g/>")
+
+
+def test_a_document_needs_positive_integer_dimensions() -> None:
+    with pytest.raises(ConfigError, match="positive integer"):
+        svg_document(0, 2)
+    with pytest.raises(ConfigError, match="positive integer"):
+        svg_document(2, -1)
+    with pytest.raises(ConfigError, match="positive integer"):
+        svg_document(2.5, 2)
