@@ -9,9 +9,13 @@ a display server or a heavyweight dependency.
 from __future__ import annotations
 
 import math
+from collections.abc import Sequence
 from dataclasses import dataclass
 
 from echoscribe.errors import ConfigError, require
+
+SVG_NAMESPACE = "http://www.w3.org/2000/svg"
+SVG_VERSION = "1.1"
 
 ESCAPES: tuple[tuple[str, str], ...] = (
     ("&", "&amp;"),
@@ -146,3 +150,41 @@ def attribute_value(value: str | int | float) -> str:
     if isinstance(value, int):
         return str(value)
     return format_length(value)
+
+
+def svg_document(
+    width: int,
+    height: int,
+    children: Sequence[SvgElement | str] = (),
+    title: str = "",
+    description: str = "",
+) -> str:
+    """A complete SVG document: XML declaration, sized root, optional title.
+
+    ``title`` and ``description`` become the first children of the root, which
+    is where SVG expects them and what makes the file self-describing when it
+    is opened in a browser or diffed by hand.
+    """
+    for name, value in (("width", width), ("height", height)):
+        require(
+            isinstance(value, int) and not isinstance(value, bool) and value > 0,
+            f"the document {name} must be a positive integer, got {value!r}",
+            ConfigError,
+        )
+    header: list[SvgElement] = []
+    if title:
+        header.append(SvgElement("title", (), (title,)))
+    if description:
+        header.append(SvgElement("desc", (), (description,)))
+    root = SvgElement(
+        "svg",
+        (
+            ("xmlns", SVG_NAMESPACE),
+            ("version", SVG_VERSION),
+            ("width", width),
+            ("height", height),
+            ("viewBox", f"0 0 {width} {height}"),
+        ),
+        (*header, *children),
+    )
+    return f'<?xml version="1.0" encoding="UTF-8"?>\n{root.render()}\n'
