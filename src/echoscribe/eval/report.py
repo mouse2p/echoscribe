@@ -259,3 +259,97 @@ class Section:
                 f"a section {name} must be a non-negative integer, got {value!r}",
                 ConfigError,
             )
+
+
+def cell_fills(reference: str | None, hypothesis: str | None) -> tuple[str, str]:
+    """The ``(reference, hypothesis)`` cell colours of one aligned column.
+
+    A pair with both sides empty never occurs in an alignment -- every
+    operation consumes at least one token -- and refusing it here keeps a
+    malformed pairs list from drawing an invisible grid.
+    """
+    require(
+        reference is not None or hypothesis is not None,
+        "an alignment pair consumes at least one side",
+        ConfigError,
+    )
+    if reference is None:
+        return COLOR_GAP, COLOR_INSERTION
+    if hypothesis is None:
+        return COLOR_DELETION, COLOR_GAP
+    if reference == hypothesis:
+        return COLOR_CORRECT, COLOR_CORRECT
+    return COLOR_SUBSTITUTION, COLOR_SUBSTITUTION
+
+
+def cell_text(x: float, y: float, content: str) -> SvgElement:
+    """One centred label, the shape every renderer in this module reuses."""
+    return SvgElement(
+        "text",
+        (
+            ("x", x),
+            ("y", y),
+            ("text-anchor", "middle"),
+            ("dominant-baseline", "central"),
+            ("font-family", FONT_FAMILY),
+            ("font-size", FONT_SIZE),
+            ("fill", COLOR_TEXT),
+        ),
+        (content,),
+    )
+
+
+def alignment_section(
+    pairs: Sequence[tuple[str | None, str | None]],
+    title: str = "alignment",
+) -> Section:
+    """Draw one aligned column per operation: reference row over hypothesis row.
+
+    Gaps render as grey cells, substitutions as amber, insertions and
+    deletions as red on the side that carries the token.  The grid is the
+    alignment made visible, so a reviewer can check a score by reading it
+    rather than trusting it.
+    """
+    width = max(len(pairs), 1) * CELL_WIDTH
+    children: list[SvgElement] = []
+    for index, (reference, hypothesis) in enumerate(pairs):
+        x = index * CELL_WIDTH
+        reference_fill, hypothesis_fill = cell_fills(reference, hypothesis)
+        children.append(
+            SvgElement(
+                "rect",
+                (
+                    ("x", x),
+                    ("y", 0),
+                    ("width", CELL_WIDTH),
+                    ("height", CELL_HEIGHT),
+                    ("fill", reference_fill),
+                    ("stroke", COLOR_BORDER),
+                ),
+            )
+        )
+        children.append(
+            SvgElement(
+                "rect",
+                (
+                    ("x", x),
+                    ("y", CELL_HEIGHT),
+                    ("width", CELL_WIDTH),
+                    ("height", CELL_HEIGHT),
+                    ("fill", hypothesis_fill),
+                    ("stroke", COLOR_BORDER),
+                ),
+            )
+        )
+        if reference is not None:
+            children.append(cell_text(x + CELL_WIDTH / 2, CELL_HEIGHT / 2, reference))
+        if hypothesis is not None:
+            children.append(
+                cell_text(x + CELL_WIDTH / 2, CELL_HEIGHT + CELL_HEIGHT / 2, hypothesis)
+            )
+    return Section(
+        title=title,
+        element=SvgElement("g", (), tuple(children)),
+        width=width,
+        height=2 * CELL_HEIGHT,
+    )
