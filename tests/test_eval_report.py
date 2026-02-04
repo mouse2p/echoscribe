@@ -5,7 +5,13 @@ from __future__ import annotations
 import pytest
 
 from echoscribe.errors import ConfigError
-from echoscribe.eval.report import SvgElement, escape_text, format_length, svg_document
+from echoscribe.eval.report import (
+    SvgElement,
+    digest_report,
+    escape_text,
+    format_length,
+    svg_document,
+)
 
 
 def test_every_reserved_character_becomes_an_entity() -> None:
@@ -184,3 +190,31 @@ def test_a_document_needs_positive_integer_dimensions() -> None:
         svg_document(2, -1)
     with pytest.raises(ConfigError, match="positive integer"):
         svg_document(2.5, 2)
+
+
+def test_the_same_document_always_digests_the_same() -> None:
+    document = svg_document(2, 2, [SvgElement("rect")])
+    assert digest_report(document) == digest_report(document)
+
+
+def test_one_changed_coordinate_changes_the_digest() -> None:
+    left = svg_document(2, 2, [SvgElement("rect", (("x", 1),))])
+    right = svg_document(2, 2, [SvgElement("rect", (("x", 2),))])
+    assert digest_report(left) != digest_report(right)
+
+
+def test_the_digest_is_sixty_four_hex_characters() -> None:
+    digest = digest_report("<svg/>")
+    assert len(digest) == 64
+    assert all(character in "0123456789abcdef" for character in digest)
+
+
+def test_the_digest_of_the_empty_string_is_the_standard_one() -> None:
+    # SHA-256("") is fixed by the standard itself, so this pins the encoder
+    # path end to end without depending on any report code.
+    assert digest_report("") == ("e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855")
+
+
+def test_a_non_string_document_is_refused() -> None:
+    with pytest.raises(ConfigError, match="needs a string"):
+        digest_report(b"<svg/>")
