@@ -6,7 +6,16 @@ import pytest
 
 from echoscribe.errors import ConfigError
 from echoscribe.eval.report import (
+    CELL_HEIGHT,
+    CELL_WIDTH,
+    COLOR_CORRECT,
+    COLOR_DELETION,
+    COLOR_GAP,
+    COLOR_INSERTION,
+    COLOR_SUBSTITUTION,
     SvgElement,
+    alignment_section,
+    cell_fills,
     digest_report,
     escape_text,
     format_length,
@@ -227,3 +236,52 @@ def test_the_eval_subpackage_re_exports_the_report_core() -> None:
     assert evaluation.SvgElement is SvgElement
     for name in ("escape_text", "format_length", "digest_report"):
         assert name in evaluation.__all__
+
+
+def test_a_matching_pair_renders_plain_cells() -> None:
+    assert cell_fills("a", "a") == (COLOR_CORRECT, COLOR_CORRECT)
+
+
+def test_a_substitution_amber_fills_both_rows() -> None:
+    assert cell_fills("a", "b") == (COLOR_SUBSTITUTION, COLOR_SUBSTITUTION)
+
+
+def test_a_deletion_reds_the_reference_and_gaps_the_hypothesis() -> None:
+    assert cell_fills("a", None) == (COLOR_DELETION, COLOR_GAP)
+
+
+def test_an_insertion_gaps_the_reference_and_reds_the_hypothesis() -> None:
+    assert cell_fills(None, "a") == (COLOR_GAP, COLOR_INSERTION)
+
+
+def test_the_grid_draws_two_cells_per_pair() -> None:
+    section = alignment_section([("a", "a"), ("b", None)])
+    rects = [child for child in section.element.children if child.tag == "rect"]
+    assert len(rects) == 4
+    assert section.width == 2 * CELL_WIDTH
+    assert section.height == 2 * CELL_HEIGHT
+
+
+def test_the_deletion_column_carries_the_documented_fills() -> None:
+    section = alignment_section([("b", None)])
+    rects = [child for child in section.element.children if child.tag == "rect"]
+    assert dict(rects[0].attributes)["fill"] == COLOR_DELETION
+    assert dict(rects[1].attributes)["fill"] == COLOR_GAP
+
+
+def test_a_gap_cell_holds_no_text() -> None:
+    section = alignment_section([("b", None)])
+    texts = [child for child in section.element.children if child.tag == "text"]
+    assert len(texts) == 1
+    assert texts[0].children == ("b",)
+
+
+def test_a_pair_with_neither_side_is_refused() -> None:
+    with pytest.raises(ConfigError, match="at least one side"):
+        alignment_section([(None, None)])
+
+
+def test_an_empty_alignment_renders_an_empty_grid() -> None:
+    section = alignment_section([])
+    assert section.element.children == ()
+    assert section.width == CELL_WIDTH
