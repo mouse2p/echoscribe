@@ -4,6 +4,12 @@ Every figure in this package is a string of SVG built from small ordered
 pieces, so the same inputs produce the same bytes on every run.  A report can
 be committed as a golden file, diffed in review and regenerated in CI without
 a display server or a heavyweight dependency.
+
+The target is SVG 1.1, the subset every browser and viewer still reads
+(https://www.w3.org/TR/SVG11/), and only the pieces a report needs are
+implemented: containers, rectangles, lines and text.  That is a few hundred
+lines of code under the tests' control instead of a plotting dependency whose
+output bytes change with its version.
 """
 
 from __future__ import annotations
