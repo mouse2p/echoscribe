@@ -218,3 +218,12 @@ def test_the_digest_of_the_empty_string_is_the_standard_one() -> None:
 def test_a_non_string_document_is_refused() -> None:
     with pytest.raises(ConfigError, match="needs a string"):
         digest_report(b"<svg/>")
+
+
+def test_the_eval_subpackage_re_exports_the_report_core() -> None:
+    from echoscribe import eval as evaluation
+
+    assert evaluation.svg_document is svg_document
+    assert evaluation.SvgElement is SvgElement
+    for name in ("escape_text", "format_length", "digest_report"):
+        assert name in evaluation.__all__
