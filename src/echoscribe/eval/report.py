@@ -211,3 +211,51 @@ def digest_report(svg: str) -> str:
         ConfigError,
     )
     return hashlib.sha256(svg.encode("utf-8")).hexdigest()
+
+
+MARGIN = 16
+SECTION_GAP = 24
+SECTION_TITLE_HEIGHT = 24
+PLOT_HEADROOM = 16
+CELL_WIDTH = 64
+CELL_HEIGHT = 28
+FONT_FAMILY = "monospace"
+FONT_SIZE = 14
+COLOR_BORDER = "#cccccc"
+COLOR_TEXT = "#111111"
+COLOR_BAR = "#4a7ebb"
+COLOR_CORRECT = "#ffffff"
+COLOR_SUBSTITUTION = "#ffe8cc"
+COLOR_DELETION = "#ffd7d5"
+COLOR_INSERTION = "#ffd7d5"
+COLOR_GAP = "#f2f2f2"
+COLOR_HEADER = "#f2f2f2"
+
+
+@dataclass(frozen=True)
+class Section:
+    """One titled block of a report, drawn from its own local origin.
+
+    Sections know their own size and nothing about their neighbours, which is
+    what lets :func:`render_report` stack any combination of them without the
+    renderers coordinating.  All sizes are integers of SVG user units.
+    """
+
+    title: str
+    element: SvgElement
+    width: int
+    height: int
+
+    def __post_init__(self) -> None:
+        require(bool(self.title), "a section needs a title", ConfigError)
+        require(
+            isinstance(self.element, SvgElement),
+            f"a section needs an SVG element, got {type(self.element).__name__}",
+            ConfigError,
+        )
+        for name, value in (("width", self.width), ("height", self.height)):
+            require(
+                isinstance(value, int) and not isinstance(value, bool) and value >= 0,
+                f"a section {name} must be a non-negative integer, got {value!r}",
+                ConfigError,
+            )
