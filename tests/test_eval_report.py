@@ -20,6 +20,7 @@ from echoscribe.eval.report import (
     escape_text,
     format_length,
     histogram_counts,
+    histogram_section,
     svg_document,
 )
 
@@ -323,3 +324,33 @@ def test_zero_bins_are_refused() -> None:
 def test_a_non_finite_sample_is_refused() -> None:
     with pytest.raises(ConfigError, match="must be finite"):
         histogram_counts([1.0, float("nan")], bins=2)
+
+
+def test_bar_heights_scale_with_the_counts() -> None:
+    section = histogram_section([1.0, 2.0, 2.0], bins=3)
+    rendered = section.element.render()
+    # counts are (1, 0, 2): the middle bar is empty, the last is full height
+    assert 'height="72"' in rendered
+    assert 'height="0"' in rendered
+    assert 'height="144"' in rendered
+
+
+def test_the_baseline_is_drawn() -> None:
+    section = histogram_section([1.0], bins=2)
+    assert any(child.tag == "line" for child in section.element.children)
+
+
+def test_every_bar_carries_its_count_label() -> None:
+    section = histogram_section([0.0, 0.5, 1.0], bins=2)
+    texts = [child for child in section.element.children if child.tag == "text"]
+    assert [text.children for text in texts] == [("1",), ("2",)]
+
+
+def test_the_plot_size_is_the_section_size() -> None:
+    section = histogram_section([1.0, 2.0], bins=4, plot_width=400, plot_height=100)
+    assert (section.width, section.height) == (400, 100)
+
+
+def test_a_plot_smaller_than_the_headroom_is_refused() -> None:
+    with pytest.raises(ConfigError, match="above the headroom"):
+        histogram_section([1.0], plot_height=8)
