@@ -19,6 +19,7 @@ from echoscribe.eval.report import (
     digest_report,
     escape_text,
     format_length,
+    histogram_counts,
     svg_document,
 )
 
@@ -285,3 +286,40 @@ def test_an_empty_alignment_renders_an_empty_grid() -> None:
     section = alignment_section([])
     assert section.element.children == ()
     assert section.width == CELL_WIDTH
+
+
+def test_equal_samples_all_land_in_the_first_bin() -> None:
+    assert histogram_counts([2.0, 2.0, 2.0], bins=4) == (3, 0, 0, 0)
+
+
+def test_the_maximum_lands_in_the_last_bin() -> None:
+    assert histogram_counts([0.0, 1.0], bins=2) == (1, 1)
+
+
+def test_hand_computed_binning() -> None:
+    assert histogram_counts([0.0, 0.5, 1.0], bins=2) == (1, 2)
+
+
+def test_counts_always_sum_to_the_sample_count() -> None:
+    samples = [0.0, 0.3, 0.9, 1.2, 5.0]
+    assert sum(histogram_counts(samples, bins=3)) == len(samples)
+
+
+def test_a_single_sample_fills_one_bin() -> None:
+    assert histogram_counts([3.5], bins=1) == (1,)
+    assert histogram_counts([3.5], bins=5) == (1, 0, 0, 0, 0)
+
+
+def test_an_empty_sample_list_is_refused() -> None:
+    with pytest.raises(ConfigError, match="at least one sample"):
+        histogram_counts([], bins=4)
+
+
+def test_zero_bins_are_refused() -> None:
+    with pytest.raises(ConfigError, match="bins must be"):
+        histogram_counts([1.0], bins=0)
+
+
+def test_a_non_finite_sample_is_refused() -> None:
+    with pytest.raises(ConfigError, match="must be finite"):
+        histogram_counts([1.0, float("nan")], bins=2)
