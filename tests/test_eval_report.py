@@ -22,6 +22,7 @@ from echoscribe.eval.report import (
     histogram_counts,
     histogram_section,
     svg_document,
+    table_section,
 )
 
 
@@ -354,3 +355,35 @@ def test_the_plot_size_is_the_section_size() -> None:
 def test_a_plot_smaller_than_the_headroom_is_refused() -> None:
     with pytest.raises(ConfigError, match="above the headroom"):
         histogram_section([1.0], plot_height=8)
+
+
+def test_the_header_row_comes_first_and_is_bold() -> None:
+    section = table_section([("u1", "WER 0.00%")])
+    texts = [child for child in section.element.children if child.tag == "text"]
+    assert texts[0].children == ("utterance",)
+    assert ("font-weight", "bold") in texts[0].attributes
+    assert texts[2].children == ("u1",)
+    assert ("font-weight", "bold") not in texts[2].attributes
+
+
+def test_cells_are_escaped_not_interpreted() -> None:
+    section = table_section([("<b>", "a&b")])
+    rendered = section.element.render()
+    assert "&lt;b&gt;" in rendered
+    assert "a&amp;b" in rendered
+    assert "<b>" not in rendered
+
+
+def test_cjk_cells_pass_through_as_text() -> None:
+    section = table_section([("u1", "CER 16.67% | 今天")])
+    assert "今天" in section.element.render()
+
+
+def test_the_table_grows_one_row_per_entry() -> None:
+    assert table_section([]).height == CELL_HEIGHT
+    assert table_section([("a", "b"), ("c", "d")]).height == 3 * CELL_HEIGHT
+
+
+def test_a_non_string_cell_is_refused() -> None:
+    with pytest.raises(ConfigError, match="pair of strings"):
+        table_section([("a", 3)])
