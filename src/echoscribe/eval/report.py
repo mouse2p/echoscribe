@@ -383,3 +383,76 @@ def histogram_counts(samples: Sequence[float], bins: int = 8) -> tuple[int, ...]
             index = min(int((value - low) / (high - low) * bins), bins - 1)
         counts[index] += 1
     return tuple(counts)
+
+
+def histogram_section(
+    samples: Sequence[float],
+    title: str = "latency",
+    bins: int = 8,
+    plot_width: int = 480,
+    plot_height: int = 160,
+) -> Section:
+    """Bars over a baseline, one per bin, each labelled with its count.
+
+    The tallest bar stops ``PLOT_HEADROOM`` below the top of the plot so its
+    count label has somewhere to live.  Bar heights are plain ratios of
+    integer counts, so two runs over the same samples draw the same pixels.
+    """
+    for name, value in (("plot_width", plot_width), ("plot_height", plot_height)):
+        require(
+            isinstance(value, int) and not isinstance(value, bool) and value > PLOT_HEADROOM,
+            f"{name} must be an integer above the headroom, got {value!r}",
+            ConfigError,
+        )
+    counts = histogram_counts(samples, bins)
+    bar_width = plot_width / bins
+    peak = max(counts)
+    drawable = plot_height - PLOT_HEADROOM
+    children: list[SvgElement] = []
+    for index, count in enumerate(counts):
+        bar_height = drawable * count / peak
+        x = bar_width * index
+        children.append(
+            SvgElement(
+                "rect",
+                (
+                    ("x", x),
+                    ("y", plot_height - bar_height),
+                    ("width", bar_width),
+                    ("height", bar_height),
+                    ("fill", COLOR_BAR),
+                ),
+            )
+        )
+        children.append(
+            SvgElement(
+                "text",
+                (
+                    ("x", x + bar_width / 2),
+                    ("y", plot_height - bar_height - 4),
+                    ("text-anchor", "middle"),
+                    ("font-family", FONT_FAMILY),
+                    ("font-size", FONT_SIZE - 2),
+                    ("fill", COLOR_TEXT),
+                ),
+                (str(count),),
+            )
+        )
+    children.append(
+        SvgElement(
+            "line",
+            (
+                ("x1", 0),
+                ("y1", plot_height),
+                ("x2", plot_width),
+                ("y2", plot_height),
+                ("stroke", COLOR_TEXT),
+            ),
+        )
+    )
+    return Section(
+        title=title,
+        element=SvgElement("g", (), tuple(children)),
+        width=plot_width,
+        height=plot_height,
+    )
