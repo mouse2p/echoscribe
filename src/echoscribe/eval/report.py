@@ -456,3 +456,72 @@ def histogram_section(
         width=plot_width,
         height=plot_height,
     )
+
+
+def table_text(x: float, y: float, content: str, bold: bool = False) -> SvgElement:
+    """One left-anchored table label, optionally bold for the header row."""
+    weight = (("font-weight", "bold"),) if bold else ()
+    return SvgElement(
+        "text",
+        (
+            ("x", x),
+            ("y", y),
+            ("text-anchor", "start"),
+            ("dominant-baseline", "central"),
+            ("font-family", FONT_FAMILY),
+            ("font-size", FONT_SIZE),
+            ("fill", COLOR_TEXT),
+            *weight,
+        ),
+        (content,),
+    )
+
+
+def table_section(
+    rows: Sequence[tuple[str, str]],
+    title: str = "scores",
+    header: tuple[str, str] = ("utterance", "score"),
+    name_width: int = 200,
+    value_width: int = 400,
+) -> Section:
+    """A two-column table: one bold header row above one row per entry.
+
+    Cells are rendered as text, never parsed back, so anything a scorer can
+    print -- including CJK text and markup characters -- goes in as content
+    and comes out escaped.
+    """
+    for name, value in rows:
+        require(
+            isinstance(name, str) and isinstance(value, str),
+            f"a table row is a pair of strings, got {(name, value)!r}",
+            ConfigError,
+        )
+    lines = [header, *rows]
+    children: list[SvgElement] = []
+    for row_index, (name, value) in enumerate(lines):
+        y = row_index * CELL_HEIGHT
+        is_header = row_index == 0
+        fill = COLOR_HEADER if is_header else COLOR_CORRECT
+        for x, width in ((0, name_width), (name_width, value_width)):
+            children.append(
+                SvgElement(
+                    "rect",
+                    (
+                        ("x", x),
+                        ("y", y),
+                        ("width", width),
+                        ("height", CELL_HEIGHT),
+                        ("fill", fill),
+                        ("stroke", COLOR_BORDER),
+                    ),
+                )
+            )
+        middle = y + CELL_HEIGHT / 2
+        children.append(table_text(8, middle, name, bold=is_header))
+        children.append(table_text(name_width + 8, middle, value, bold=is_header))
+    return Section(
+        title=title,
+        element=SvgElement("g", (), tuple(children)),
+        width=name_width + value_width,
+        height=len(lines) * CELL_HEIGHT,
+    )
