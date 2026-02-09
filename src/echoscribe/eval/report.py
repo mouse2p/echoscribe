@@ -353,3 +353,33 @@ def alignment_section(
         width=width,
         height=2 * CELL_HEIGHT,
     )
+
+
+def histogram_counts(samples: Sequence[float], bins: int = 8) -> tuple[int, ...]:
+    """Count samples per bin across ``[min, max]``, maximum in the last bin.
+
+    The binning is separate from the drawing because this is the part with
+    edge cases -- equal values, a single sample, values landing exactly on a
+    boundary -- and those can be tested directly instead of by parsing SVG.
+    """
+    require(len(samples) > 0, "a histogram needs at least one sample", ConfigError)
+    require(
+        isinstance(bins, int) and not isinstance(bins, bool) and bins >= 1,
+        f"bins must be an integer >= 1, got {bins!r}",
+        ConfigError,
+    )
+    values = [float(sample) for sample in samples]
+    require(
+        all(math.isfinite(value) for value in values),
+        "histogram samples must be finite",
+        ConfigError,
+    )
+    low, high = min(values), max(values)
+    counts = [0] * bins
+    for value in values:
+        if high == low:
+            index = 0
+        else:
+            index = min(int((value - low) / (high - low) * bins), bins - 1)
+        counts[index] += 1
+    return tuple(counts)
