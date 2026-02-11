@@ -20,6 +20,7 @@ from collections.abc import Sequence
 from dataclasses import dataclass
 
 from echoscribe.errors import ConfigError, require
+from echoscribe.meta import RunMetadata
 
 SVG_NAMESPACE = "http://www.w3.org/2000/svg"
 SVG_VERSION = "1.1"
@@ -525,3 +526,63 @@ def table_section(
         width=name_width + value_width,
         height=len(lines) * CELL_HEIGHT,
     )
+
+
+def metadata_line(metadata: RunMetadata) -> str:
+    """The reproducibility handle stamped into every report."""
+    return f"run={metadata.label} seed={metadata.seed} digest={metadata.digest()}"
+
+
+def render_report(
+    title: str,
+    sections: Sequence[Section],
+    metadata: RunMetadata,
+    description: str = "",
+) -> str:
+    """Stack sections into one SVG document stamped with its run metadata.
+
+    The metadata goes into the document's ``<desc>`` element, so the file
+    itself carries the label, seed and configuration digest that produced it:
+    a report detached from its run stays traceable, and a report regenerated
+    from the same run is byte-identical to the one on disk.
+    """
+    require(bool(title), "a report needs a title", ConfigError)
+    require(len(sections) > 0, "a report needs at least one section", ConfigError)
+    width = max(section.width for section in sections) + 2 * MARGIN
+    stacked = (
+        sum(SECTION_TITLE_HEIGHT + section.height + SECTION_GAP for section in sections)
+        - SECTION_GAP
+    )
+    height = stacked + 2 * MARGIN
+    children: list[SvgElement] = []
+    y = MARGIN
+    for section in sections:
+        children.append(
+            SvgElement(
+                "g",
+                (("transform", f"translate({MARGIN}, {y})"),),
+                (
+                    SvgElement(
+                        "text",
+                        (
+                            ("x", 0),
+                            ("y", FONT_SIZE),
+                            ("text-anchor", "start"),
+                            ("font-family", FONT_FAMILY),
+                            ("font-size", FONT_SIZE + 2),
+                            ("font-weight", "bold"),
+                            ("fill", COLOR_TEXT),
+                        ),
+                        (section.title,),
+                    ),
+                    SvgElement(
+                        "g",
+                        (("transform", f"translate(0, {SECTION_TITLE_HEIGHT})"),),
+                        (section.element,),
+                    ),
+                ),
+            )
+        )
+        y += SECTION_TITLE_HEIGHT + section.height + SECTION_GAP
+    described = "\n".join(part for part in (description, metadata_line(metadata)) if part)
+    return svg_document(width, height, children, title=title, description=described)
