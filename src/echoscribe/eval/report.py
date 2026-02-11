@@ -10,6 +10,14 @@ The target is SVG 1.1, the subset every browser and viewer still reads
 implemented: containers, rectangles, lines and text.  That is a few hundred
 lines of code under the tests' control instead of a plotting dependency whose
 output bytes change with its version.
+
+The determinism promise, precisely: for the same inputs -- the same aligned
+pairs, the same samples, the same metadata -- the renderers return the same
+string, on any platform and any supported Python version.  Coordinates are
+integers or pass through :func:`format_length`, counts are integer ratios,
+attributes render in the order they were given, and no renderer reads a
+clock, a locale or a random source.  A golden digest over a rendered report
+is therefore a regression test like any other.
 """
 
 from __future__ import annotations
