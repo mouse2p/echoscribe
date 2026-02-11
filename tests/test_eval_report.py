@@ -21,9 +21,11 @@ from echoscribe.eval.report import (
     format_length,
     histogram_counts,
     histogram_section,
+    render_report,
     svg_document,
     table_section,
 )
+from echoscribe.meta import run_metadata
 
 
 def test_every_reserved_character_becomes_an_entity() -> None:
@@ -387,3 +389,45 @@ def test_the_table_grows_one_row_per_entry() -> None:
 def test_a_non_string_cell_is_refused() -> None:
     with pytest.raises(ConfigError, match="pair of strings"):
         table_section([("a", 3)])
+
+
+def test_a_report_embeds_its_run_metadata() -> None:
+    metadata = run_metadata("demo", seed=7, feature={"num_mels": 40})
+    document = render_report("t", [alignment_section([("a", "a")])], metadata)
+    assert f"run=demo seed=7 digest={metadata.digest()}" in document
+    assert "<title>t</title>" in document
+
+
+def test_the_same_report_renders_the_same_bytes() -> None:
+    metadata = run_metadata("demo", seed=7)
+    sections = [alignment_section([("a", "b")]), histogram_section([1.0, 2.0, 2.0])]
+    first = render_report("r", sections, metadata)
+    second = render_report("r", sections, metadata)
+    assert first == second
+    assert digest_report(first) == digest_report(second)
+
+
+def test_the_description_and_the_metadata_share_the_desc() -> None:
+    document = render_report(
+        "t", [table_section([])], run_metadata("lab", seed=3), description="hello"
+    )
+    assert "<desc>hello\nrun=lab seed=3 digest=" in document
+
+
+def test_the_sections_stack_top_to_bottom() -> None:
+    document = render_report(
+        "t",
+        [alignment_section([], title="first"), table_section([], title="second")],
+        run_metadata("x", seed=1),
+    )
+    assert document.index(">first<") < document.index(">second<")
+
+
+def test_a_report_without_sections_is_refused() -> None:
+    with pytest.raises(ConfigError, match="at least one section"):
+        render_report("t", [], run_metadata("x", seed=1))
+
+
+def test_a_report_without_a_title_is_refused() -> None:
+    with pytest.raises(ConfigError, match="needs a title"):
+        render_report("", [table_section([])], run_metadata("x", seed=1))
