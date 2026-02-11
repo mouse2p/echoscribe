@@ -431,3 +431,24 @@ def test_a_report_without_sections_is_refused() -> None:
 def test_a_report_without_a_title_is_refused() -> None:
     with pytest.raises(ConfigError, match="needs a title"):
         render_report("", [table_section([])], run_metadata("x", seed=1))
+
+
+def test_a_section_needs_a_title() -> None:
+    from echoscribe.eval.report import Section
+
+    with pytest.raises(ConfigError, match="needs a title"):
+        Section(title="", element=SvgElement("g"), width=1, height=1)
+
+
+def test_a_section_needs_integer_sizes() -> None:
+    from echoscribe.eval.report import Section
+
+    with pytest.raises(ConfigError, match="non-negative integer"):
+        Section(title="t", element=SvgElement("g"), width=1.5, height=1)
+
+
+def test_a_section_needs_an_element() -> None:
+    from echoscribe.eval.report import Section
+
+    with pytest.raises(ConfigError, match="needs an SVG element"):
+        Section(title="t", element="<g/>", width=1, height=1)
