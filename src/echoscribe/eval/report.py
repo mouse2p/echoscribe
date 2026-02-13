@@ -26,6 +26,7 @@ import hashlib
 import math
 from collections.abc import Sequence
 from dataclasses import dataclass
+from pathlib import Path
 
 from echoscribe.errors import ConfigError, require
 from echoscribe.meta import RunMetadata
@@ -594,3 +595,25 @@ def render_report(
         y += SECTION_TITLE_HEIGHT + section.height + SECTION_GAP
     described = "\n".join(part for part in (description, metadata_line(metadata)) if part)
     return svg_document(width, height, children, title=title, description=described)
+
+
+def write_report(path: Path | str, document: str) -> Path:
+    """Write a report as exactly the bytes the renderers produced.
+
+    The file is written with ``newline="\n"``, so no platform translates line
+    endings on the way out: a report written on one operating system digests
+    the same on every other, which is the entire point of having a digest.
+    """
+    require(
+        isinstance(document, str),
+        f"a report document must be a string, got {type(document).__name__}",
+        ConfigError,
+    )
+    target = Path(path)
+    target.write_text(document, encoding="utf-8", newline="\n")
+    return target
+
+
+def read_report(path: Path | str) -> str:
+    """Read a report back as exactly the bytes that were written."""
+    return Path(path).read_text(encoding="utf-8", newline="\n")
