@@ -495,3 +495,22 @@ def test_a_cjk_report_survives_the_round_trip(tmp_path) -> None:
 def test_writing_a_non_string_is_refused(tmp_path) -> None:
     with pytest.raises(ConfigError, match="must be a string"):
         write_report(tmp_path / "report.svg", b"<svg/>")
+
+
+def test_a_second_write_to_the_same_path_is_refused(tmp_path) -> None:
+    target = tmp_path / "report.svg"
+    write_report(target, "<svg/>")
+    with pytest.raises(FileExistsError, match="already exists"):
+        write_report(target, "<svg/>")
+
+
+def test_overwrite_true_replaces_the_old_report(tmp_path) -> None:
+    target = tmp_path / "report.svg"
+    write_report(target, "<svg/>")
+    write_report(target, "<svg><!-- second --></svg>", overwrite=True)
+    assert read_report(target) == "<svg><!-- second --></svg>"
+
+
+def test_a_fresh_path_needs_no_overwrite_flag(tmp_path) -> None:
+    target = write_report(tmp_path / "fresh.svg", "<svg/>")
+    assert read_report(target) == "<svg/>"
