@@ -452,3 +452,12 @@ def test_a_section_needs_an_element() -> None:
 
     with pytest.raises(ConfigError, match="needs an SVG element"):
         Section(title="t", element="<g/>", width=1, height=1)
+
+
+def test_the_eval_subpackage_re_exports_the_renderers() -> None:
+    from echoscribe import eval as evaluation
+
+    assert evaluation.render_report is render_report
+    assert evaluation.alignment_section is alignment_section
+    for name in ("histogram_section", "table_section", "Section", "metadata_line"):
+        assert name in evaluation.__all__
