@@ -597,12 +597,16 @@ def render_report(
     return svg_document(width, height, children, title=title, description=described)
 
 
-def write_report(path: Path | str, document: str) -> Path:
+def write_report(path: Path | str, document: str, overwrite: bool = False) -> Path:
     """Write a report as exactly the bytes the renderers produced.
 
     The file is written with ``newline="\n"``, so no platform translates line
     endings on the way out: a report written on one operating system digests
     the same on every other, which is the entire point of having a digest.
+
+    An existing file is refused unless ``overwrite`` asks for the replacement
+    explicitly: a report is evidence about a run, and evidence should not
+    disappear quietly because a later run reused its filename.
     """
     require(
         isinstance(document, str),
@@ -610,6 +614,8 @@ def write_report(path: Path | str, document: str) -> Path:
         ConfigError,
     )
     target = Path(path)
+    if target.exists() and not overwrite:
+        raise FileExistsError(f"report {target} already exists; pass overwrite=True to replace it")
     target.write_text(document, encoding="utf-8", newline="\n")
     return target
 
