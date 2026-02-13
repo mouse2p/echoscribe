@@ -21,9 +21,11 @@ from echoscribe.eval.report import (
     format_length,
     histogram_counts,
     histogram_section,
+    read_report,
     render_report,
     svg_document,
     table_section,
+    write_report,
 )
 from echoscribe.meta import run_metadata
 
@@ -461,3 +463,35 @@ def test_the_eval_subpackage_re_exports_the_renderers() -> None:
     assert evaluation.alignment_section is alignment_section
     for name in ("histogram_section", "table_section", "Section", "metadata_line"):
         assert name in evaluation.__all__
+
+
+def test_a_written_report_reads_back_identically(tmp_path) -> None:
+    document = svg_document(4, 2, [SvgElement("rect")], title="t")
+    target = write_report(tmp_path / "report.svg", document)
+    assert target.exists()
+    assert read_report(target) == document
+
+
+def test_the_file_holds_exactly_the_rendered_bytes(tmp_path) -> None:
+    document = render_report("t", [table_section([])], run_metadata("x", seed=1))
+    target = write_report(tmp_path / "report.svg", document)
+    assert target.read_bytes() == document.encode("utf-8")
+
+
+def test_the_written_digest_matches_the_in_memory_one(tmp_path) -> None:
+    document = render_report("t", [table_section([])], run_metadata("x", seed=1))
+    target = write_report(tmp_path / "report.svg", document)
+    assert digest_report(read_report(target)) == digest_report(document)
+
+
+def test_a_cjk_report_survives_the_round_trip(tmp_path) -> None:
+    document = render_report(
+        "报告", [table_section([("u1", "CER 16.67% | 今天")])], run_metadata("x", seed=1)
+    )
+    target = write_report(tmp_path / "report.svg", document)
+    assert read_report(target) == document
+
+
+def test_writing_a_non_string_is_refused(tmp_path) -> None:
+    with pytest.raises(ConfigError, match="must be a string"):
+        write_report(tmp_path / "report.svg", b"<svg/>")
