@@ -64,3 +64,15 @@ def test_the_table_report_bytes_are_pinned() -> None:
     assert digest_report(document) == (
         "e4af2cd82b9ef95cdba92053c0ebe44182ad09717cb87e43e0167f8b54bed622"
     )
+
+
+def test_the_combined_report_bytes_are_pinned() -> None:
+    assert digest_report(combined_document()) == (
+        "a3fcb16c197801521fcdcf56ca58dd9b0ea3824746289bec10fcafab13327039"
+    )
+
+
+def test_the_combined_report_stacks_its_three_sections() -> None:
+    document = combined_document()
+    assert document.index(">alignment<") < document.index(">latency<")
+    assert document.index(">latency<") < document.index(">scores<")
