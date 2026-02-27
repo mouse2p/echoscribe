@@ -76,3 +76,16 @@ def test_the_combined_report_stacks_its_three_sections() -> None:
     document = combined_document()
     assert document.index(">alignment<") < document.index(">latency<")
     assert document.index(">latency<") < document.index(">scores<")
+
+
+def test_tiny_sample_noise_renders_the_same_document() -> None:
+    # Perturbations three orders of magnitude below the rounding the length
+    # formatter applies cannot reach the output, on any platform: binning is
+    # integer arithmetic and coordinates round to two decimals.
+    noisy = [1.0, 2.5 + 1e-12, 2.5, 3.0, 7.0 - 1e-12]
+    assert digest_report(combined_document(noisy)) == digest_report(combined_document())
+
+
+def test_a_real_coordinate_change_does_move_the_bytes() -> None:
+    moved = [1.0, 2.5, 2.5, 3.0, 7.01]
+    assert digest_report(combined_document(moved)) != digest_report(combined_document())
