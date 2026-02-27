@@ -18,6 +18,11 @@ integers or pass through :func:`format_length`, counts are integer ratios,
 attributes render in the order they were given, and no renderer reads a
 clock, a locale or a random source.  A golden digest over a rendered report
 is therefore a regression test like any other.
+
+The golden digests live in ``tests/test_eval_report_golden.py`` and are built
+on version-free metadata, so a package release does not move them.  A digest
+is only allowed to change in a commit that says why the bytes moved; an
+unexplained digest change is a layout regression, not a test to update.
 """
 
 from __future__ import annotations
