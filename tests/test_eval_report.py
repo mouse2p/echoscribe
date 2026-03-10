@@ -514,3 +514,12 @@ def test_overwrite_true_replaces_the_old_report(tmp_path) -> None:
 def test_a_fresh_path_needs_no_overwrite_flag(tmp_path) -> None:
     target = write_report(tmp_path / "fresh.svg", "<svg/>")
     assert read_report(target) == "<svg/>"
+
+
+def test_the_eval_subpackage_re_exports_report_file_writing() -> None:
+    from echoscribe import eval as evaluation
+
+    assert evaluation.write_report is write_report
+    assert evaluation.read_report is read_report
+    for name in ("read_report", "write_report"):
+        assert name in evaluation.__all__

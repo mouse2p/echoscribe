@@ -55,9 +55,11 @@ from echoscribe.eval.report import (
     histogram_counts,
     histogram_section,
     metadata_line,
+    read_report,
     render_report,
     svg_document,
     table_section,
+    write_report,
 )
 from echoscribe.eval.wer import (
     CorpusReport,
@@ -102,6 +104,7 @@ __all__ = [
     "measure_rtf",
     "metadata_line",
     "mixed_token_sequence",
+    "read_report",
     "render_report",
     "score_corpus",
     "score_mixed",
@@ -111,4 +114,5 @@ __all__ = [
     "timing_statistics",
     "wer",
     "word_sequence",
+    "write_report",
 ]
