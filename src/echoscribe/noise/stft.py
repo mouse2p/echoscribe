@@ -85,3 +85,52 @@ def stft(signal: np.ndarray, config: StftConfig | None = None) -> np.ndarray:
     starts = np.arange(0, samples.size - settings.frame_length + 1, settings.hop_length)
     frames = samples[starts[:, None] + offsets[None, :]] * window[None, :]
     return np.fft.rfft(frames, n=settings.fft_size, axis=1)
+
+
+def istft(
+    spectrogram: np.ndarray,
+    config: StftConfig | None = None,
+    length: int | None = None,
+) -> np.ndarray:
+    """Rebuild a waveform from a complex spectrogram by normalized overlap-add.
+
+    Each frame is inverse-transformed, windowed again and added into the
+    output; the same positions accumulate the squared window, and dividing
+    the two recovers the samples exactly wherever that sum is nonzero.
+    Positions where it is zero -- possible only at the outermost edges when
+    the window itself vanishes there, as ``hann`` does -- are set to zero
+    rather than divided by nothing.
+    """
+    settings = StftConfig() if config is None else config
+    matrix = np.asarray(spectrogram)
+    require_rank("spectrogram", matrix, 2)
+    require(matrix.shape[0] >= 1, "a spectrogram needs at least one frame", ConfigError)
+    require(
+        matrix.shape[1] == settings.bin_count,
+        f"the spectrogram has {matrix.shape[1]} bins, but this config "
+        f"produces {settings.bin_count}",
+        ConfigError,
+    )
+    window = window_vector(settings.window, settings.frame_length).astype(FEATURE_DTYPE)
+    frames = np.fft.irfft(matrix, n=settings.fft_size, axis=1)[:, : settings.frame_length]
+    out_length = settings.frame_length + (frames.shape[0] - 1) * settings.hop_length
+    if length is not None:
+        require(
+            isinstance(length, int) and not isinstance(length, bool) and length >= 0,
+            f"length must be a non-negative integer, got {length!r}",
+            ConfigError,
+        )
+        require(
+            length <= out_length,
+            f"length {length} exceeds the {out_length} samples this spectrogram can rebuild",
+            ConfigError,
+        )
+    accumulated = np.zeros(out_length, dtype=FEATURE_DTYPE)
+    weights = np.zeros(out_length, dtype=FEATURE_DTYPE)
+    for index in range(frames.shape[0]):
+        start = index * settings.hop_length
+        stop = start + settings.frame_length
+        accumulated[start:stop] += frames[index] * window
+        weights[start:stop] += window * window
+    rebuilt = np.where(weights > 1e-12, accumulated / np.maximum(weights, 1e-12), 0.0)
+    return rebuilt if length is None else rebuilt[:length]
