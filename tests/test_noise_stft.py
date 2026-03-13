@@ -6,7 +6,7 @@ import numpy as np
 import pytest
 
 from echoscribe.errors import ConfigError, FeatureError
-from echoscribe.noise.stft import StftConfig, stft
+from echoscribe.noise.stft import StftConfig, istft, stft
 
 
 def test_the_default_config_describes_a_standard_pair() -> None:
@@ -80,3 +80,44 @@ def test_the_transform_is_deterministic() -> None:
     rng = np.random.default_rng(5)
     signal = rng.standard_normal(1000)
     assert np.array_equal(stft(signal), stft(signal))
+
+
+def test_a_seeded_signal_survives_a_hamming_round_trip_exactly() -> None:
+    rng = np.random.default_rng(11)
+    signal = rng.standard_normal(1000)
+    config = StftConfig(frame_length=400, hop_length=200, fft_size=512, window="hamming")
+    rebuilt = istft(stft(signal, config), config)
+    assert rebuilt.shape == (1000,)
+    assert np.allclose(rebuilt, signal, atol=1e-8)
+
+
+def test_a_hann_round_trip_loses_only_the_zero_weight_edges() -> None:
+    # hann vanishes at its endpoints, so the first and last sample are covered
+    # by a frame whose weight there is zero; everything in between is exact.
+    rng = np.random.default_rng(3)
+    signal = rng.standard_normal(800)
+    config = StftConfig(frame_length=400, hop_length=100, fft_size=512, window="hann")
+    rebuilt = istft(stft(signal, config), config)
+    assert rebuilt[0] == 0.0
+    assert np.allclose(rebuilt[1:-1], signal[1:-1], atol=1e-8)
+
+
+def test_the_round_trip_holds_across_several_hops() -> None:
+    rng = np.random.default_rng(7)
+    signal = rng.standard_normal(1200)
+    for hop in (100, 160, 200, 400):
+        config = StftConfig(frame_length=400, hop_length=hop, fft_size=512, window="hamming")
+        rebuilt = istft(stft(signal, config), config, length=1200)
+        assert np.allclose(rebuilt, signal, atol=1e-8), hop
+
+
+def test_a_spectrogram_with_the_wrong_bin_count_is_refused() -> None:
+    config = StftConfig(fft_size=512)
+    with pytest.raises(ConfigError, match="bins"):
+        istft(np.zeros((3, 129), dtype=complex), config)
+
+
+def test_a_spectrogram_without_frames_is_refused() -> None:
+    config = StftConfig(fft_size=512)
+    with pytest.raises(ConfigError, match="at least one frame"):
+        istft(np.zeros((0, 257), dtype=complex), config)
