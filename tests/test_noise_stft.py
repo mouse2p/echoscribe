@@ -173,3 +173,13 @@ def test_power_of_a_transformed_signal_is_nonnegative() -> None:
 def test_a_rank_one_spectrum_is_refused() -> None:
     with pytest.raises(FeatureError, match="must be 2-D"):
         power_spectrogram(np.zeros(5))
+
+
+def test_the_noise_subpackage_re_exports_the_transform_pair() -> None:
+    from echoscribe import noise
+
+    assert noise.stft is stft
+    assert noise.istft is istft
+    assert noise.StftConfig is StftConfig
+    for name in ("stft", "istft", "power_spectrogram", "StftConfig"):
+        assert name in noise.__all__

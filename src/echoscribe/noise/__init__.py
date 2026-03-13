@@ -26,4 +26,6 @@ The modules:
     signal-to-noise measurement against a clean reference.
 """
 
-__all__: list[str] = []
+from echoscribe.noise.stft import StftConfig, istft, power_spectrogram, stft
+
+__all__ = ["StftConfig", "istft", "power_spectrogram", "stft"]
