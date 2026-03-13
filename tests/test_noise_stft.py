@@ -6,7 +6,7 @@ import numpy as np
 import pytest
 
 from echoscribe.errors import ConfigError, FeatureError
-from echoscribe.noise.stft import StftConfig, istft, stft
+from echoscribe.noise.stft import StftConfig, istft, power_spectrogram, stft
 
 
 def test_the_default_config_describes_a_standard_pair() -> None:
@@ -150,3 +150,26 @@ def test_a_negative_length_is_refused() -> None:
     spectrum = stft(np.zeros(1000), config)
     with pytest.raises(ConfigError, match="non-negative integer"):
         istft(spectrum, config, length=-1)
+
+
+def test_a_hand_computed_bin() -> None:
+    power = power_spectrogram(np.array([[3 + 4j, 0 + 0j, -1 + 0j]]))
+    assert power.tolist() == [[25.0, 0.0, 1.0]]
+
+
+def test_a_real_spectrogram_squares_cleanly() -> None:
+    power = power_spectrogram(np.array([[-2.0, 0.5]]))
+    assert power.tolist() == [[4.0, 0.25]]
+
+
+def test_power_of_a_transformed_signal_is_nonnegative() -> None:
+    rng = np.random.default_rng(17)
+    spectrum = stft(rng.standard_normal(800), StftConfig(frame_length=400, hop_length=200))
+    power = power_spectrogram(spectrum)
+    assert power.shape == spectrum.shape
+    assert np.all(power >= 0.0)
+
+
+def test_a_rank_one_spectrum_is_refused() -> None:
+    with pytest.raises(FeatureError, match="must be 2-D"):
+        power_spectrogram(np.zeros(5))
