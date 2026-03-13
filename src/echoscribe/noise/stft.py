@@ -134,3 +134,15 @@ def istft(
         weights[start:stop] += window * window
     rebuilt = np.where(weights > 1e-12, accumulated / np.maximum(weights, 1e-12), 0.0)
     return rebuilt if length is None else rebuilt[:length]
+
+
+def power_spectrogram(spectrogram: np.ndarray) -> np.ndarray:
+    """The squared magnitude of a complex spectrogram, bin for bin.
+
+    Computed as ``real**2 + imag**2`` rather than ``abs(...) ** 2`` so no
+    square root is taken only to be undone: every gain in this package is a
+    ratio of powers, and this is the quantity they all read.
+    """
+    matrix = np.asarray(spectrogram)
+    require_rank("spectrogram", matrix, 2)
+    return matrix.real.astype(FEATURE_DTYPE) ** 2 + matrix.imag.astype(FEATURE_DTYPE) ** 2
