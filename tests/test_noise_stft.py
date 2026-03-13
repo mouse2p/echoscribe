@@ -121,3 +121,32 @@ def test_a_spectrogram_without_frames_is_refused() -> None:
     config = StftConfig(fft_size=512)
     with pytest.raises(ConfigError, match="at least one frame"):
         istft(np.zeros((0, 257), dtype=complex), config)
+
+
+def test_the_length_argument_truncates_the_rebuild() -> None:
+    rng = np.random.default_rng(13)
+    signal = rng.standard_normal(1000)
+    config = StftConfig(frame_length=400, hop_length=200, fft_size=512, window="hamming")
+    rebuilt = istft(stft(signal, config), config, length=997)
+    assert rebuilt.shape == (997,)
+    assert np.allclose(rebuilt, signal[:997], atol=1e-8)
+
+
+def test_a_length_the_frames_cannot_cover_is_refused() -> None:
+    config = StftConfig(frame_length=400, hop_length=160, fft_size=512)
+    spectrum = stft(np.zeros(1000), config)
+    with pytest.raises(ConfigError, match="exceeds"):
+        istft(spectrum, config, length=1001)
+
+
+def test_a_zero_length_rebuilds_nothing() -> None:
+    config = StftConfig(frame_length=400, hop_length=160, fft_size=512)
+    spectrum = stft(np.zeros(1000), config)
+    assert istft(spectrum, config, length=0).shape == (0,)
+
+
+def test_a_negative_length_is_refused() -> None:
+    config = StftConfig(frame_length=400, hop_length=160, fft_size=512)
+    spectrum = stft(np.zeros(1000), config)
+    with pytest.raises(ConfigError, match="non-negative integer"):
+        istft(spectrum, config, length=-1)
