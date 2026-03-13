@@ -12,6 +12,18 @@ No scaling is applied in either direction: the forward transform multiplies
 by the window once, the inverse multiplies by it again and divides by the
 accumulated square, so a round-trip is the identity rather than the identity
 times some constant a caller has to remember.
+
+What the normalization buys, and what it costs.  The reconstruction is exact
+at every sample position where the accumulated squared window is nonzero,
+for *any* window and *any* hop up to the frame length -- no classical
+constant-overlap-add condition to look up.  The cost is the division itself:
+a window that vanishes at its endpoints, like ``hann``, leaves the outermost
+sample of the signal covered by a zero weight only, and that sample comes
+back as zero.  Windows that stay positive at their endpoints, like
+``hamming``, reconstruct everywhere.  The denoiser uses ``hann`` anyway,
+because one lost sample at each edge of a multi-second utterance is far
+below an audible threshold, and ``hann``'s sidelobe behaviour matters more
+than one edge sample when the goal is subtracting noise.
 """
 
 from __future__ import annotations
