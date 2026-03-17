@@ -6,7 +6,7 @@ import numpy as np
 import pytest
 
 from echoscribe.errors import ConfigError
-from echoscribe.noise.snr import snr_db
+from echoscribe.noise.snr import snr_db, snr_improvement_db
 from echoscribe.synth.noise import generate_noise, mix_at_snr
 from echoscribe.waveform import Audio
 
@@ -56,3 +56,37 @@ def test_more_noise_measures_lower() -> None:
     quiet = mix_at_snr(clean, noise, 15.0)
     loud = mix_at_snr(clean, noise, 3.0)
     assert snr_db(clean.samples, loud.samples) < snr_db(clean.samples, quiet.samples)
+
+
+def test_the_improvement_is_the_difference_of_its_halves() -> None:
+    clean = tone_audio()
+    rng = np.random.default_rng(5)
+    noise = generate_noise("white", clean.num_frames, rng)
+    noisy = mix_at_snr(clean, noise, 6.0)
+    half_clean = (clean.samples.astype(np.float64) + noisy.samples.astype(np.float64)) / 2
+    before, after, improvement = snr_improvement_db(clean.samples, noisy.samples, half_clean)
+    assert before == snr_db(clean.samples, noisy.samples)
+    assert after == snr_db(clean.samples, half_clean)
+    assert improvement == round(after - before, 6)
+
+
+def test_leaving_the_signal_alone_improves_nothing() -> None:
+    clean = tone_audio()
+    rng = np.random.default_rng(6)
+    noise = generate_noise("white", clean.num_frames, rng)
+    noisy = mix_at_snr(clean, noise, 6.0)
+    before, after, improvement = snr_improvement_db(
+        clean.samples, noisy.samples, noisy.samples.copy()
+    )
+    assert before == after
+    assert improvement == 0.0
+
+
+def test_a_change_that_hurts_measures_negative() -> None:
+    clean = tone_audio()
+    rng = np.random.default_rng(7)
+    noise = generate_noise("white", clean.num_frames, rng)
+    noisy = mix_at_snr(clean, noise, 20.0)
+    hurt = mix_at_snr(clean, noise, 5.0)
+    _, _, improvement = snr_improvement_db(clean.samples, noisy.samples, hurt.samples)
+    assert improvement < 0.0
