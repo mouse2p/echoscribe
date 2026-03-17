@@ -46,3 +46,19 @@ def snr_db(clean: np.ndarray, degraded: np.ndarray) -> float:
     if residual_power == 0.0:
         return float("inf")
     return round(10.0 * float(np.log10(signal_power / residual_power)), SNR_DECIMALS)
+
+
+def snr_improvement_db(
+    clean: np.ndarray, noisy: np.ndarray, enhanced: np.ndarray
+) -> tuple[float, float, float]:
+    """``(before, after, improvement)`` of enhancing ``noisy`` toward ``clean``.
+
+    One call measures both sides of a denoiser's work with the same
+    reference, so an improvement can never be assembled from two measurements
+    taken under different assumptions.  A denoiser that makes things worse
+    returns a negative improvement rather than an error: making things worse
+    is a result, not an exception.
+    """
+    before = snr_db(clean, noisy)
+    after = snr_db(clean, enhanced)
+    return before, after, round(after - before, SNR_DECIMALS)
