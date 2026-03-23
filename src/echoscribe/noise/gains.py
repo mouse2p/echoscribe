@@ -45,9 +45,11 @@ def validate_powers(
             f"a per-bin noise profile must hold {signal.shape[1]} values, got {noise.size}",
             ConfigError,
         )
-        noise = noise[None, :]
+        # Broadcast eagerly: the strict shape check below is for genuinely
+        # mismatched matrices, not for the profile case it just ruled legal.
+        noise = np.broadcast_to(noise[None, :], signal.shape)
     require(
-        noise.ndim == 2 and noise.shape == signal.shape,
+        noise.shape == signal.shape,
         f"noise powers have shape {tuple(noise.shape)} but signal powers have "
         f"{tuple(signal.shape)}",
         ConfigError,
