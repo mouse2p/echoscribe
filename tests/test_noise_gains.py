@@ -6,7 +6,7 @@ import numpy as np
 import pytest
 
 from echoscribe.errors import ConfigError
-from echoscribe.noise.gains import spectral_subtraction_gain
+from echoscribe.noise.gains import spectral_subtraction_gain, wiener_gain
 
 
 def test_half_noise_leaves_half_the_bin() -> None:
@@ -68,3 +68,50 @@ def test_a_zero_oversubtraction_is_refused() -> None:
 def test_a_floor_of_one_is_refused() -> None:
     with pytest.raises(ConfigError, match="below 1.0"):
         spectral_subtraction_gain(np.array([[1.0]]), np.array([[1.0]]), floor=1.0)
+
+
+def test_the_first_frame_is_the_instantaneous_estimate() -> None:
+    signal = np.array([[10.0]])
+    noise = np.array([[1.0]])
+    gain = wiener_gain(signal, noise, floor=0.0)
+    # posterior 10 -> instantaneous 9 -> gain 9/10
+    assert np.isclose(gain[0, 0], 0.9)
+
+
+def test_a_stationary_pair_settles_below_its_first_frame() -> None:
+    signal = np.full((4, 1), 10.0)
+    noise = np.full((4, 1), 1.0)
+    gain = wiener_gain(signal, noise, floor=0.0, smoothing=0.9)
+    assert gain[1, 0] < gain[0, 0]
+    assert gain[2, 0] < gain[1, 0]
+    assert gain[3, 0] < gain[2, 0]
+    assert np.all(gain > 0.85)
+
+
+def test_the_hand_computed_second_frame() -> None:
+    signal = np.full((2, 1), 10.0)
+    noise = np.full((2, 1), 1.0)
+    gain = wiener_gain(signal, noise, floor=0.0, smoothing=0.9)
+    # frame 0: gain 0.9, clean estimate 0.81 * 10 = 8.1
+    # frame 1: directed 0.9 * 8.1 = 7.29, prior 7.29 + 0.1 * 9 = 8.19
+    assert np.isclose(gain[1, 0], 8.19 / 9.19)
+
+
+def test_pure_noise_bins_sit_at_the_floor() -> None:
+    signal = np.full((3, 2), 1.0)
+    noise = np.full((3, 2), 1.0)
+    gain = wiener_gain(signal, noise, floor=0.05)
+    assert np.all(gain == 0.05)
+
+
+def test_wiener_and_subtraction_agree_on_one_frame() -> None:
+    signal = np.array([[6.0, 0.5]])
+    noise = np.array([[2.0, 1.0]])
+    directed = wiener_gain(signal, noise, floor=0.0)
+    subtracted = spectral_subtraction_gain(signal, noise, floor=0.0)
+    assert np.allclose(directed, subtracted)
+
+
+def test_a_bad_smoothing_value_is_refused() -> None:
+    with pytest.raises(ConfigError, match="smoothing"):
+        wiener_gain(np.array([[1.0]]), np.array([[1.0]]), smoothing=1.5)
