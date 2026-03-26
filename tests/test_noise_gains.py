@@ -115,3 +115,37 @@ def test_wiener_and_subtraction_agree_on_one_frame() -> None:
 def test_a_bad_smoothing_value_is_refused() -> None:
     with pytest.raises(ConfigError, match="smoothing"):
         wiener_gain(np.array([[1.0]]), np.array([[1.0]]), smoothing=1.5)
+
+
+@pytest.mark.parametrize("seed", range(4))
+def test_random_powers_keep_both_gains_in_bounds(seed: int) -> None:
+    rng = np.random.default_rng(seed)
+    signal = rng.random((6, 5)) * 4.0
+    noise = rng.random((1, 5)) * 2.0
+    for gains in (
+        spectral_subtraction_gain(signal, noise, oversubtraction=1.5, floor=0.1),
+        wiener_gain(signal, noise, floor=0.1, smoothing=0.8),
+    ):
+        assert gains.shape == signal.shape
+        assert np.all(gains >= 0.1)
+        assert np.all(gains <= 1.0)
+        assert np.all(np.isfinite(gains))
+
+
+@pytest.mark.parametrize("seed", range(4))
+def test_a_stronger_signal_is_never_attenuated_harder(seed: int) -> None:
+    rng = np.random.default_rng(20 + seed)
+    weak = rng.random((5, 4))
+    strong = weak + rng.random((5, 4))
+    noise = rng.random((1, 4)) + 0.1
+    for compute in (spectral_subtraction_gain, wiener_gain):
+        assert np.all(compute(strong, noise) >= compute(weak, noise) - 1e-12)
+
+
+def test_both_gains_are_deterministic() -> None:
+    signal = np.array([[3.0, 1.0], [2.0, 4.0]])
+    noise = np.array([[1.0, 1.0], [1.0, 1.0]])
+    assert np.array_equal(
+        spectral_subtraction_gain(signal, noise), spectral_subtraction_gain(signal, noise)
+    )
+    assert np.array_equal(wiener_gain(signal, noise), wiener_gain(signal, noise))
