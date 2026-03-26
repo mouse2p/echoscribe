@@ -49,11 +49,13 @@ def validate_powers(
         # mismatched matrices, not for the profile case it just ruled legal.
         noise = np.broadcast_to(noise[None, :], signal.shape)
     require(
-        noise.shape == signal.shape,
+        noise.ndim == 2 and noise.shape in (signal.shape, (1, signal.shape[1])),
         f"noise powers have shape {tuple(noise.shape)} but signal powers have "
-        f"{tuple(signal.shape)}",
+        f"{tuple(signal.shape)}, and a single row is the only shape that "
+        f"broadcasts",
         ConfigError,
     )
+    noise = np.broadcast_to(noise, signal.shape)
     require(
         np.all(np.isfinite(noise)) and np.all(noise >= 0),
         "noise powers must be finite and non-negative",
