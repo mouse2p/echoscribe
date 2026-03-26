@@ -93,3 +93,39 @@ def spectral_subtraction_gain(
     validated_floor = validate_floor(floor)
     ratio = noise / np.maximum(signal, POWER_EPSILON)
     return np.maximum(1.0 - oversubtraction * ratio, validated_floor)
+
+
+def wiener_gain(
+    signal_power: np.ndarray,
+    noise_power: np.ndarray,
+    floor: float = 0.05,
+    smoothing: float = 0.9,
+) -> FloatArray:
+    """Decision-directed Wiener gain, after Ephraim & Malah (1984).
+
+    The a-priori estimate behind each frame's gain leans on the previous
+    frame's own output -- ``smoothing`` of it -- plus ``(1 - smoothing)`` of
+    what the current frame suggests on its own.  The recursion is the point:
+    it averages the gain over time, which is what suppresses the frame-to-
+    frame flutter plain subtraction leaves behind, at the cost of smearing
+    transients slightly in time.  The first frame has no history and uses
+    its instantaneous estimate alone, so on a single frame this gain and a
+    subtraction with ``oversubtraction=1`` agree.
+    """
+    signal, noise = validate_powers(signal_power, noise_power)
+    validated_floor = validate_floor(floor)
+    require_range("smoothing", smoothing, 0.0, 1.0)
+    posterior = signal / np.maximum(noise, POWER_EPSILON)
+    instantaneous = np.maximum(posterior - 1.0, 0.0)
+    gains = np.empty_like(signal)
+    previous_clean: FloatArray | None = None
+    for frame in range(signal.shape[0]):
+        if previous_clean is None:
+            prior = instantaneous[frame]
+        else:
+            directed = smoothing * previous_clean / np.maximum(noise[frame], POWER_EPSILON)
+            prior = directed + (1.0 - smoothing) * instantaneous[frame]
+        gain = prior / (1.0 + prior)
+        gains[frame] = np.maximum(gain, validated_floor)
+        previous_clean = (gains[frame] ** 2) * signal[frame]
+    return gains
