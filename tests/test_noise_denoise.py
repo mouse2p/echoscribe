@@ -115,3 +115,46 @@ def test_a_profile_of_the_wrong_width_is_refused() -> None:
 def test_an_unknown_method_is_refused() -> None:
     with pytest.raises(ConfigError, match="method"):
         DenoiseConfig(method="magic")
+
+
+def test_a_clean_recording_with_a_lead_in_survives_almost_untouched() -> None:
+    clean = lead_in_tone().samples.astype(np.float64)
+    result = denoise(clean)
+    lead = int(0.2 * 16000)
+    interior = result.samples[lead:]
+    reference = clean[lead:]
+    relative = np.linalg.norm(interior - reference) / np.linalg.norm(reference)
+    assert relative < 1e-4
+
+
+def test_a_stationary_tone_without_a_lead_in_pays_for_the_assumption() -> None:
+    # The profile estimator believes the lead-in is noise.  A tone that starts
+    # at sample zero *is* the lead-in, so the denoiser subtracts the tone
+    # itself -- the documented failure mode, asserted rather than hidden.
+    rate = 16000
+    position = np.arange(rate) / rate
+    tone = 0.5 * np.sin(2 * np.pi * 300.0 * position)
+    result = denoise(tone)
+    kept = float(np.sum(result.samples[400:-400] ** 2) / np.sum(tone[400:-400] ** 2))
+    assert kept < 0.25
+
+
+def test_the_output_always_has_exactly_the_input_length() -> None:
+    rng = np.random.default_rng(9)
+    for size in (400, 401, 1005, 16000):
+        result = denoise(rng.standard_normal(size))
+        assert result.samples.shape == (size,)
+        assert np.all(np.isfinite(result.samples))
+
+
+def test_an_empty_signal_is_refused() -> None:
+    with pytest.raises(ConfigError, match="empty"):
+        denoise(np.zeros(0))
+
+
+def test_denoising_is_deterministic() -> None:
+    _, noisy = planted_pair()
+    first = denoise(noisy)
+    second = denoise(noisy)
+    assert np.array_equal(first.samples, second.samples)
+    assert np.array_equal(first.gains, second.gains)
