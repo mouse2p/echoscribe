@@ -6,7 +6,10 @@ import numpy as np
 import pytest
 
 from echoscribe.errors import ConfigError
-from echoscribe.noise.denoise import estimate_noise_profile
+from echoscribe.noise.denoise import DenoiseConfig, denoise, estimate_noise_profile
+from echoscribe.noise.snr import snr_improvement_db
+from echoscribe.synth.noise import generate_noise, mix_at_snr
+from echoscribe.waveform import Audio
 
 
 def test_the_profile_is_the_lead_in_mean() -> None:
@@ -39,3 +42,76 @@ def test_zero_frames_are_refused() -> None:
 def test_a_flat_spectrum_is_refused() -> None:
     with pytest.raises(ConfigError, match="matrix"):
         estimate_noise_profile(np.ones(5), 2)
+
+
+def lead_in_tone(seconds: float = 1.0, rate: int = 16000, lead: float = 0.2) -> Audio:
+    """A clean signal with a silent lead-in: tones under a slow envelope."""
+    count = int(seconds * rate)
+    lead_samples = int(lead * rate)
+    position = np.arange(count - lead_samples) / rate
+    body = 0.6 * np.sin(2 * np.pi * 220.0 * position) + 0.3 * np.sin(2 * np.pi * 640.0 * position)
+    envelope = 0.4 + 0.6 * 0.5 * (1.0 - np.cos(2 * np.pi * position / position[-1] * 3))
+    samples = np.zeros(count)
+    samples[lead_samples:] = body * envelope
+    return Audio(samples, rate)
+
+
+def planted_pair(seed: int = 5, snr: float = 5.0) -> tuple[np.ndarray, np.ndarray]:
+    clean = lead_in_tone()
+    rng = np.random.default_rng(seed)
+    noise = generate_noise("white", clean.num_frames, rng)
+    mixed = mix_at_snr(clean, noise, snr)
+    return clean.samples.astype(np.float64), mixed.samples.astype(np.float64)
+
+
+def test_subtraction_improves_the_measured_snr() -> None:
+    clean, noisy = planted_pair()
+    result = denoise(noisy, DenoiseConfig(method="subtraction"))
+    before, after, improvement = snr_improvement_db(clean, noisy, result.samples)
+    assert before == pytest.approx(5.0, abs=0.05)
+    assert after > before
+    assert improvement > 2.0
+
+
+def test_the_wiener_method_improves_the_measured_snr_too() -> None:
+    clean, noisy = planted_pair()
+    result = denoise(noisy, DenoiseConfig(method="wiener"))
+    _, _, improvement = snr_improvement_db(clean, noisy, result.samples)
+    assert improvement > 2.0
+
+
+def test_a_louder_mix_leaves_less_to_recover() -> None:
+    clean_quiet, noisy_quiet = planted_pair(seed=6, snr=0.0)
+    clean_loud, noisy_loud = planted_pair(seed=6, snr=20.0)
+    low = denoise(noisy_quiet, DenoiseConfig()).samples
+    high = denoise(noisy_loud, DenoiseConfig()).samples
+    gain_at_zero = snr_improvement_db(clean_quiet, noisy_quiet, low)[2]
+    gain_at_twenty = snr_improvement_db(clean_loud, noisy_loud, high)[2]
+    assert gain_at_zero > gain_at_twenty
+
+
+def test_the_result_carries_the_gains_and_profile_that_explain_it() -> None:
+    _, noisy = planted_pair()
+    result = denoise(noisy)
+    assert result.gains.shape[1] == 257
+    assert result.noise_profile.shape == (257,)
+    assert np.all(result.gains >= 0.05)
+    assert np.all(result.gains <= 1.0)
+
+
+def test_an_explicit_zero_profile_changes_nothing() -> None:
+    _, noisy = planted_pair()
+    result = denoise(noisy, noise_profile=np.zeros(257))
+    assert np.all(result.gains == 1.0)
+    assert np.allclose(result.samples, noisy, atol=1e-8)
+
+
+def test_a_profile_of_the_wrong_width_is_refused() -> None:
+    _, noisy = planted_pair()
+    with pytest.raises(ConfigError, match="one value per bin"):
+        denoise(noisy, noise_profile=np.zeros(7))
+
+
+def test_an_unknown_method_is_refused() -> None:
+    with pytest.raises(ConfigError, match="method"):
+        DenoiseConfig(method="magic")
