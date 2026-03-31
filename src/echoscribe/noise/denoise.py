@@ -8,6 +8,14 @@ room tone before the first word.  A tracker that followed a moving noise
 floor (minimum statistics) would drop the assumption; it would also stop
 being a dozen testable lines, and everything downstream only needs *a*
 profile, not the best possible one.
+
+What the whole approach cannot do, stated once so no test has to pretend:
+a gain multiplies what a bin already contains, so a bin where noise and
+signal overlap in time *and* frequency loses part of the signal with the
+noise.  Measured SNR improvement on the synthetic pairs is real and is
+reported honestly, but it comes with distortion the SNR number does not
+show -- which is why the result record carries the gains themselves, and
+why the tests include the cases where the denoiser loses.
 """
 
 from __future__ import annotations
