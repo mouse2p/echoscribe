@@ -6,7 +6,11 @@ import numpy as np
 import pytest
 
 from echoscribe.errors import ConfigError
-from echoscribe.noise.denoise import DenoiseConfig, denoise, estimate_noise_profile
+from echoscribe.noise.denoise import (
+    DenoiseConfig,
+    denoise,
+    estimate_noise_profile,
+)
 from echoscribe.noise.snr import snr_improvement_db
 from echoscribe.synth.noise import generate_noise, mix_at_snr
 from echoscribe.waveform import Audio
@@ -158,3 +162,18 @@ def test_denoising_is_deterministic() -> None:
     second = denoise(noisy)
     assert np.array_equal(first.samples, second.samples)
     assert np.array_equal(first.gains, second.gains)
+
+
+def test_the_noise_subpackage_re_exports_the_denoiser_surface() -> None:
+    from echoscribe import noise
+
+    assert noise.denoise is denoise
+    assert noise.snr_db is not None
+    for name in (
+        "DenoiseConfig",
+        "DenoiseResult",
+        "estimate_noise_profile",
+        "spectral_subtraction_gain",
+        "wiener_gain",
+    ):
+        assert name in noise.__all__

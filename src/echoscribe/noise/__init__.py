@@ -26,6 +26,28 @@ The modules:
     signal-to-noise measurement against a clean reference.
 """
 
+from echoscribe.noise.denoise import (
+    DenoiseConfig,
+    DenoiseResult,
+    denoise,
+    estimate_noise_profile,
+)
+from echoscribe.noise.gains import GAIN_METHODS, spectral_subtraction_gain, wiener_gain
+from echoscribe.noise.snr import snr_db, snr_improvement_db
 from echoscribe.noise.stft import StftConfig, istft, power_spectrogram, stft
 
-__all__ = ["StftConfig", "istft", "power_spectrogram", "stft"]
+__all__ = [
+    "GAIN_METHODS",
+    "DenoiseConfig",
+    "DenoiseResult",
+    "StftConfig",
+    "denoise",
+    "estimate_noise_profile",
+    "istft",
+    "power_spectrogram",
+    "snr_db",
+    "snr_improvement_db",
+    "spectral_subtraction_gain",
+    "stft",
+    "wiener_gain",
+]
