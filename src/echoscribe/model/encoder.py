@@ -17,10 +17,12 @@ hidden feature.
 from __future__ import annotations
 
 from dataclasses import dataclass
+from pathlib import Path
 
 import torch
 
 from echoscribe.errors import ConfigError, ModelError, require
+from echoscribe.model.schema import load_bundle, save_bundle
 from echoscribe.model.stack import stack_frames
 
 
@@ -104,3 +106,17 @@ class Encoder(torch.nn.Module):
     def num_parameters(self) -> int:
         """Every scalar this encoder holds, biases included."""
         return sum(parameter.numel() for parameter in self.parameters())
+
+    def save(self, path: Path | str) -> Path:
+        """Write this encoder to a versioned bundle file."""
+        return save_bundle(path, "encoder", self.config.to_dict(), self.state_dict())
+
+    @classmethod
+    def load(cls, path: Path | str) -> Encoder:
+        """Rebuild an encoder from a bundle, weights and shape together."""
+        payload = load_bundle(path, kind="encoder")
+        config = EncoderConfig.from_dict(payload["config"])
+        encoder = cls(config)
+        encoder.load_state_dict(payload["state"])
+        encoder.eval()
+        return encoder
