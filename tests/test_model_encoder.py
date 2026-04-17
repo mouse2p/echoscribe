@@ -91,3 +91,37 @@ def test_an_incomplete_config_dict_is_refused() -> None:
 
     with pytest.raises(ModelError, match="missing 'stack'"):
         EncoderConfig.from_dict({"input_dim": 8, "hidden_dim": 4, "output_dim": 4})
+
+
+def test_an_encoder_survives_a_bundle_round_trip(tmp_path) -> None:
+    encoder = seeded_encoder(input_dim=6, stack=2, hidden_dim=8, output_dim=4)
+    encoder.eval()
+    target = encoder.save(tmp_path / "encoder.pt")
+    restored = Encoder.load(target)
+    features = torch.randn(1, 7, 6)
+    assert restored.config == encoder.config
+    assert torch.equal(encoder(features), restored(features))
+
+
+def test_the_bundle_records_the_encoder_kind(tmp_path) -> None:
+    from echoscribe.model.schema import load_bundle
+
+    target = seeded_encoder(input_dim=6, stack=1, hidden_dim=8, output_dim=4).save(
+        tmp_path / "e.pt"
+    )
+    assert load_bundle(target)["kind"] == "encoder"
+
+
+def test_a_foreign_kind_is_refused_on_load(tmp_path) -> None:
+    from echoscribe.errors import ModelError
+
+    foreign = tmp_path / "c.pt"
+    torch.save({"schema": 1, "kind": "ctc", "config": {}, "state": {}}, foreign)
+    with pytest.raises(ModelError, match="not the requested"):
+        Encoder.load(foreign)
+
+
+def test_a_loaded_encoder_is_in_eval_mode(tmp_path) -> None:
+    encoder = seeded_encoder(input_dim=6, stack=1, hidden_dim=8, output_dim=4)
+    restored = Encoder.load(encoder.save(tmp_path / "e.pt"))
+    assert not restored.training
