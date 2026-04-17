@@ -52,3 +52,42 @@ def test_bad_config_values_are_refused() -> None:
 def test_the_config_round_trips_through_a_dict() -> None:
     config = EncoderConfig(input_dim=12, stack=2, hidden_dim=8, output_dim=6)
     assert EncoderConfig.from_dict(config.to_dict()) == config
+
+
+def test_the_same_seed_builds_identical_encoders() -> None:
+    left = seeded_encoder()
+    right = seeded_encoder()
+    assert all(
+        torch.equal(one, two)
+        for one, two in zip(left.state_dict().values(), right.state_dict().values(), strict=True)
+    )
+
+
+def test_different_seeds_build_different_encoders() -> None:
+    torch.manual_seed(1)
+    left = Encoder(EncoderConfig())
+    torch.manual_seed(2)
+    right = Encoder(EncoderConfig())
+    assert any(
+        not torch.equal(one, two)
+        for one, two in zip(left.state_dict().values(), right.state_dict().values(), strict=True)
+    )
+
+
+def test_the_default_encoder_stays_under_two_hundred_thousand_parameters() -> None:
+    encoder = seeded_encoder()
+    assert encoder.num_parameters() < 200_000
+
+
+def test_the_parameter_count_is_the_sum_of_every_tensor() -> None:
+    encoder = seeded_encoder(input_dim=6, stack=2, hidden_dim=8, output_dim=4)
+    assert encoder.num_parameters() == sum(
+        tensor.numel() for tensor in encoder.state_dict().values()
+    )
+
+
+def test_an_incomplete_config_dict_is_refused() -> None:
+    from echoscribe.errors import ModelError
+
+    with pytest.raises(ModelError, match="missing 'stack'"):
+        EncoderConfig.from_dict({"input_dim": 8, "hidden_dim": 4, "output_dim": 4})
