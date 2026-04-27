@@ -13,6 +13,26 @@ a clean :class:`~echoscribe.errors.ModelError` instead of an ``ImportError``
 from somewhere deep.  The submodules below *do* import torch at their top, so
 callers check the gate first; the test suite enforces the same contract with
 ``pytest.mark.model`` and a module-level skip.
+
+The modules:
+
+:mod:`~echoscribe.model.schema`
+    versioned bundle files, so weights never travel without their shape;
+:mod:`~echoscribe.model.stack`
+    frame stacking, the cheap local context a tiny encoder needs;
+:mod:`~echoscribe.model.encoder`
+    the compact bidirectional encoder itself;
+:mod:`~echoscribe.model.ctc`
+    the CTC head and its lattice loss;
+:mod:`~echoscribe.model.transducer`
+    predictor and joint of a transducer head;
+:mod:`~echoscribe.model.train`
+    seeded training loops over the synthetic laboratory.
+
+What no module here is: a path to a usable recognizer.  The training demos
+show real loss decrease on synthetic speech from the laboratory, with
+planted transcripts and fixed seeds -- evidence that the plumbing computes
+the gradients it claims to, and nothing more.
 """
 
 from __future__ import annotations
