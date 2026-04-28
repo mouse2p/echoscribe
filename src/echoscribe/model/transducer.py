@@ -106,3 +106,93 @@ class Predictor(torch.nn.Module):
             state = self.step(inputs[:, position], state)
             states.append(state[0])
         return torch.stack(states, dim=1)
+
+
+@dataclass(frozen=True)
+class JointConfig:
+    """Shape of the joint: both input widths, the alphabet, the mixing width."""
+
+    encoder_dim: int = 64
+    predictor_dim: int = 64
+    vocab_size: int = 40
+    hidden_dim: int = 64
+
+    def __post_init__(self) -> None:
+        for name, value in (
+            ("encoder_dim", self.encoder_dim),
+            ("predictor_dim", self.predictor_dim),
+            ("vocab_size", self.vocab_size),
+            ("hidden_dim", self.hidden_dim),
+        ):
+            require(
+                isinstance(value, int) and not isinstance(value, bool) and value >= 1,
+                f"{name} must be a positive integer, got {value!r}",
+                ConfigError,
+            )
+
+    @property
+    def output_dim(self) -> int:
+        """One logit per symbol, plus the blank."""
+        return self.vocab_size + 1
+
+    def to_dict(self) -> dict:
+        """A JSON-ready mapping of every field."""
+        return {
+            "encoder_dim": self.encoder_dim,
+            "predictor_dim": self.predictor_dim,
+            "vocab_size": self.vocab_size,
+            "hidden_dim": self.hidden_dim,
+        }
+
+    @classmethod
+    def from_dict(cls, payload: dict) -> JointConfig:
+        """Rebuild a config, refusing anything incomplete."""
+        for name in ("encoder_dim", "predictor_dim", "vocab_size", "hidden_dim"):
+            require(name in payload, f"the joint config is missing {name!r}", ModelError)
+        return cls(
+            encoder_dim=int(payload["encoder_dim"]),
+            predictor_dim=int(payload["predictor_dim"]),
+            vocab_size=int(payload["vocab_size"]),
+            hidden_dim=int(payload["hidden_dim"]),
+        )
+
+
+class Joint(torch.nn.Module):
+    """The transducer joint: a tanh-MLP over one frame and one prefix state.
+
+    ``logits[b, t, u] = W_out * tanh(W_enc * e[b, t] + W_pred * p[b, u])``
+
+    -- the structure Graves (2012) defined the transducer with.  The sum
+    inside the tanh is what makes the joint cheap to evaluate over a whole
+    ``(t, u)`` lattice at once: both projections are computed once per row
+    and broadcast against each other.
+    """
+
+    def __init__(self, config: JointConfig) -> None:
+        super().__init__()
+        self.config = config
+        self.encoder_projection = torch.nn.Linear(config.encoder_dim, config.hidden_dim)
+        self.predictor_projection = torch.nn.Linear(config.predictor_dim, config.hidden_dim)
+        self.output = torch.nn.Linear(config.hidden_dim, config.output_dim)
+
+    def forward(self, encoder_states: torch.Tensor, predictor_states: torch.Tensor) -> torch.Tensor:
+        """Score every lattice point: ``(B, T, He)`` x ``(B, U, Hp)`` -> ``(B, T, U, V+1)``."""
+        require(
+            encoder_states.dim() == 3 and predictor_states.dim() == 3,
+            "the joint needs (batch, time, dim) and (batch, prefix, dim) states",
+            ModelError,
+        )
+        require(
+            encoder_states.shape[0] == predictor_states.shape[0],
+            f"the joint got batches of {encoder_states.shape[0]} and {predictor_states.shape[0]}",
+            ModelError,
+        )
+        mixed = (
+            self.encoder_projection(encoder_states)[:, :, None, :]
+            + self.predictor_projection(predictor_states)[:, None, :, :]
+        )
+        return self.output(torch.tanh(mixed))
+
+    def num_parameters(self) -> int:
+        """Every scalar in the joint, biases included."""
+        return sum(parameter.numel() for parameter in self.parameters())
