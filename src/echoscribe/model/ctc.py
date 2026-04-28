@@ -71,3 +71,53 @@ class CtcHead(torch.nn.Module):
     def num_parameters(self) -> int:
         """Every scalar in the head, biases included."""
         return sum(parameter.numel() for parameter in self.parameters())
+
+
+def ctc_loss(
+    logits: torch.Tensor,
+    targets: torch.Tensor,
+    input_lengths: torch.Tensor,
+    target_lengths: torch.Tensor,
+    blank: int = BLANK_INDEX,
+) -> torch.Tensor:
+    """The CTC lattice loss over raw logits, averaged across the batch.
+
+    ``logits`` are ``(batch, time, vocab_size + 1)`` and are log-softmaxed
+    here, so callers pass exactly what :class:`CtcHead` emits and never
+    pre-normalized values.  ``targets`` hold symbol indices in
+    1..vocab_size -- the blank never appears in a reference -- padded to a
+    common width whose true extents ``target_lengths`` gives.  Infinities
+    from degenerate batches are zeroed rather than propagated, matching the
+    convention of the underlying torch loss.
+    """
+    require(
+        logits.dim() == 3,
+        f"logits must be (batch, time, classes), got {tuple(logits.shape)}",
+        ModelError,
+    )
+    require(
+        logits.shape[-1] >= 2,
+        "an alphabet needs the blank plus at least one symbol",
+        ModelError,
+    )
+    require(
+        targets.dim() == 2 and targets.shape[0] == logits.shape[0],
+        f"targets must be (batch, symbols) for a batch of {logits.shape[0]}, "
+        f"got {tuple(targets.shape)}",
+        ModelError,
+    )
+    require(
+        targets.dtype == torch.long,
+        f"targets must hold int64 symbol indices, got {targets.dtype}",
+        ModelError,
+    )
+    log_probs = torch.log_softmax(logits, dim=-1).transpose(0, 1)
+    return torch.nn.functional.ctc_loss(
+        log_probs,
+        targets,
+        input_lengths.to(torch.long),
+        target_lengths.to(torch.long),
+        blank=blank,
+        reduction="mean",
+        zero_infinity=True,
+    )
