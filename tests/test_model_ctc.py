@@ -96,3 +96,38 @@ def test_wrong_shaped_inputs_are_refused() -> None:
             torch.tensor([2, 2]),
             torch.tensor([1, 1]),
         )
+
+
+def test_a_planted_posterior_beats_a_random_one() -> None:
+    # Frames dominated by the blank, with the three target symbols planted at
+    # frames 1, 3 and 5: one cheap aligning path exists, so the loss is small.
+    planted = torch.zeros(1, 8, 4)
+    planted[0, :, BLANK_INDEX] = 5.0
+    planted[0, 1, 1] = 8.0
+    planted[0, 3, 2] = 8.0
+    planted[0, 5, 3] = 8.0
+    torch.manual_seed(0)
+    random_logits = torch.randn(1, 8, 4)
+    targets = torch.tensor([[1, 2, 3]])
+    lengths = torch.tensor([3])
+    frames = torch.tensor([8])
+    planted_loss = ctc_loss(planted, targets, frames, lengths)
+    random_loss = ctc_loss(random_logits, targets, frames, lengths)
+    assert planted_loss < 0.2
+    assert random_loss > planted_loss
+
+
+def test_the_loss_is_differentiable() -> None:
+    head = seeded_head(input_dim=6, vocab_size=3)
+    features = torch.randn(1, 9, 6)
+    loss = ctc_loss(
+        head(features),
+        torch.tensor([[1, 2]]),
+        torch.tensor([9]),
+        torch.tensor([2]),
+    )
+    loss.backward()
+    gradients = head.projection.weight.grad
+    assert gradients is not None
+    assert torch.isfinite(gradients).all()
+    assert gradients.abs().sum() > 0
