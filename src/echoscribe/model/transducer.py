@@ -196,3 +196,83 @@ class Joint(torch.nn.Module):
     def num_parameters(self) -> int:
         """Every scalar in the joint, biases included."""
         return sum(parameter.numel() for parameter in self.parameters())
+
+
+def transducer_loss(
+    joint_logits: torch.Tensor,
+    targets: torch.Tensor,
+    input_lengths: torch.Tensor,
+    target_lengths: torch.Tensor,
+    blank: int = BOS_INDEX,
+) -> torch.Tensor:
+    """Exact negative log-likelihood of the targets, by forward recursion.
+
+    The same lattice the NumPy decoder searches, but instead of picking the
+    best path this sums *every* path in the log domain:
+
+        alpha[0, 0]  = 0
+        alpha[t, u+1] = alpha[t, u] + log p(y_{u+1} | t, u)    (emit a symbol)
+        alpha[t+1, u] = alpha[t, u] + log p(blank   | t, u)    (consume a frame)
+
+    combined with a log-add-exp, read at alpha[T_b, U_b].  Positions beyond
+    an utterance's true lengths are masked with -inf, so padded batch
+    entries cannot leak into the sum, and a finished utterance's row is
+    frozen rather than blanked onward past its last frame.
+
+    ``joint_logits`` must hold exactly one state per target prefix plus the
+    start state -- what :meth:`Predictor.forward` produces -- so its third
+    dimension is ``targets.shape[1] + 1``.
+    """
+    require(
+        joint_logits.dim() == 4,
+        f"joint logits must be (batch, time, states, classes), got {tuple(joint_logits.shape)}",
+        ModelError,
+    )
+    batch, frames, states, classes = joint_logits.shape
+    require(
+        targets.dim() == 2 and targets.shape[0] == batch,
+        f"targets must be (batch, symbols) for a batch of {batch}, got {tuple(targets.shape)}",
+        ModelError,
+    )
+    require(
+        states == targets.shape[1] + 1,
+        f"the joint needs one state per prefix plus the start: {targets.shape[1] + 1}, "
+        f"got {states}",
+        ModelError,
+    )
+    require(
+        0 <= blank < classes,
+        f"blank {blank} does not index an alphabet of {classes}",
+        ModelError,
+    )
+    lengths_t = input_lengths.to(torch.long)
+    lengths_u = target_lengths.to(torch.long)
+    require(
+        lengths_t.shape == (batch,) and lengths_u.shape == (batch,),
+        "the length tensors must both be (batch,)",
+        ModelError,
+    )
+    log_probs = torch.log_softmax(joint_logits, dim=-1)
+    negative = torch.tensor(float("-inf"), dtype=log_probs.dtype)
+    symbol_log = (
+        log_probs[:, :, : states - 1, :]
+        .gather(-1, targets[:, None, :, None].expand(-1, frames, -1, -1))
+        .squeeze(-1)
+    )
+    blank_log = log_probs[:, :, :, blank]
+    positions = torch.arange(states - 1)[None, :]
+    prefix_open = positions < lengths_u[:, None]
+    alpha = torch.full((batch, states), float("-inf"), dtype=log_probs.dtype)
+    alpha[:, 0] = 0.0
+    for frame in range(frames):
+        active = frame < lengths_t
+        emitted = torch.where(
+            prefix_open & active[:, None],
+            alpha[:, : states - 1] + symbol_log[:, frame, :],
+            negative,
+        )
+        alpha = torch.cat([alpha[:, :1], torch.logaddexp(alpha[:, 1:], emitted)], dim=1)
+        consumed = torch.where(active[:, None], alpha + blank_log[:, frame, :], negative)
+        alpha = torch.where(active[:, None], consumed, alpha)
+    losses = -alpha.gather(1, lengths_u[:, None]).squeeze(1)
+    return losses.mean()
