@@ -131,3 +131,25 @@ def test_the_loss_is_differentiable() -> None:
     assert gradients is not None
     assert torch.isfinite(gradients).all()
     assert gradients.abs().sum() > 0
+
+
+def test_a_head_survives_a_bundle_round_trip(tmp_path) -> None:
+    head = seeded_head(input_dim=6, vocab_size=3)
+    head.eval()
+    restored = CtcHead.load(head.save(tmp_path / "ctc.pt"))
+    features = torch.randn(1, 5, 6)
+    assert restored.config == head.config
+    assert torch.equal(head(features), restored(features))
+
+
+def test_a_foreign_kind_is_refused_on_load(tmp_path) -> None:
+    from echoscribe.model.schema import save_bundle
+
+    foreign = save_bundle(tmp_path / "e.pt", "encoder", {}, {})
+    with pytest.raises(ModelError, match="not the requested"):
+        CtcHead.load(foreign)
+
+
+def test_a_loaded_head_is_in_eval_mode(tmp_path) -> None:
+    head = seeded_head(input_dim=6, vocab_size=3)
+    assert not CtcHead.load(head.save(tmp_path / "ctc.pt")).training
