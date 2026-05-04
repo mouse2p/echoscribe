@@ -253,7 +253,13 @@ def transducer_loss(
         ModelError,
     )
     log_probs = torch.log_softmax(joint_logits, dim=-1)
-    negative = torch.tensor(float("-inf"), dtype=log_probs.dtype)
+    # A finite sentinel rather than -inf: logaddexp of two -inf values is
+    # -inf going forward but NaN coming back, and every padded lattice
+    # position would poison the gradients of the whole batch.  At half of
+    # float min the sentinel can never rise within reach of a real log
+    # likelihood, however many frames add log(2) to it.
+    sentinel = torch.finfo(log_probs.dtype).min / 2
+    negative = torch.tensor(sentinel, dtype=log_probs.dtype)
     symbol_log = (
         log_probs[:, :, : states - 1, :]
         .gather(-1, targets[:, None, :, None].expand(-1, frames, -1, -1))
@@ -262,7 +268,7 @@ def transducer_loss(
     blank_log = log_probs[:, :, :, blank]
     positions = torch.arange(states - 1)[None, :]
     prefix_open = positions < lengths_u[:, None]
-    alpha = torch.full((batch, states), float("-inf"), dtype=log_probs.dtype)
+    alpha = torch.full((batch, states), sentinel, dtype=log_probs.dtype)
     alpha[:, 0] = 0.0
     for frame in range(frames):
         active = frame < lengths_t
