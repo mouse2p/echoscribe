@@ -12,10 +12,12 @@ integration checks do.
 from __future__ import annotations
 
 from dataclasses import dataclass
+from pathlib import Path
 
 import torch
 
 from echoscribe.errors import ConfigError, ModelError, require
+from echoscribe.model.schema import load_bundle, save_bundle
 
 BLANK_INDEX = 0
 
@@ -71,6 +73,20 @@ class CtcHead(torch.nn.Module):
     def num_parameters(self) -> int:
         """Every scalar in the head, biases included."""
         return sum(parameter.numel() for parameter in self.parameters())
+
+    def save(self, path: Path | str) -> Path:
+        """Write this head to a versioned bundle file."""
+        return save_bundle(path, "ctc", self.config.to_dict(), self.state_dict())
+
+    @classmethod
+    def load(cls, path: Path | str) -> CtcHead:
+        """Rebuild a head from a bundle, weights and shape together."""
+        payload = load_bundle(path, kind="ctc")
+        config = CtcConfig.from_dict(payload["config"])
+        head = cls(config)
+        head.load_state_dict(payload["state"])
+        head.eval()
+        return head
 
 
 def ctc_loss(
