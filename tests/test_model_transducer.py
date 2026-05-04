@@ -16,6 +16,7 @@ from echoscribe.model.transducer import (
     JointConfig,
     Predictor,
     PredictorConfig,
+    transducer_loss,
 )
 
 pytestmark = pytest.mark.model
@@ -118,3 +119,65 @@ def test_the_joint_config_round_trips() -> None:
     config = JointConfig(encoder_dim=3, predictor_dim=4, vocab_size=5, hidden_dim=6)
     assert JointConfig.from_dict(config.to_dict()) == config
     assert config.output_dim == 6
+
+
+def test_two_frames_one_symbol_uniform_logits() -> None:
+    import math
+
+    # Four classes, two frames, one target symbol: exactly two aligning paths
+    # (symbol then blank blank, or blank then symbol then blank), each with
+    # probability (1/4)**3, so the loss is -log(2 / 64) = log(32).
+    logits = torch.zeros(1, 2, 2, 4)
+    loss = transducer_loss(logits, torch.tensor([[1]]), torch.tensor([2]), torch.tensor([1]))
+    assert torch.isclose(loss, torch.tensor(math.log(32.0)), rtol=1e-5)
+
+
+def test_an_empty_target_is_the_all_blank_path() -> None:
+    import math
+
+    logits = torch.zeros(1, 3, 1, 4)
+    loss = transducer_loss(
+        logits, torch.zeros(1, 0, dtype=torch.long), torch.tensor([3]), torch.tensor([0])
+    )
+    assert torch.isclose(loss, torch.tensor(3 * math.log(4.0)), rtol=1e-5)
+
+
+def test_a_planted_joint_beats_a_uniform_one() -> None:
+    # Blank-dominated logits with the symbol planted at frame 1 of 4.
+    planted = torch.full((1, 4, 2, 5), -6.0)
+    planted[:, :, :, 0] = 6.0
+    planted[0, 1, 0, 2] = 6.0
+    uniform = torch.zeros(1, 4, 2, 5)
+    targets = torch.tensor([[2]])
+    lengths = torch.tensor([4])
+    symbols = torch.tensor([1])
+    planted_loss = transducer_loss(planted, targets, lengths, symbols)
+    uniform_loss = transducer_loss(uniform, targets, lengths, symbols)
+    assert planted_loss < uniform_loss
+
+
+def test_the_loss_is_differentiable_through_the_joint() -> None:
+    joint = seeded_joint(encoder_dim=4, predictor_dim=6, vocab_size=3, hidden_dim=5)
+    logits = joint(torch.randn(1, 5, 4), torch.randn(1, 3, 6))
+    loss = transducer_loss(logits, torch.tensor([[1, 2]]), torch.tensor([5]), torch.tensor([2]))
+    loss.backward()
+    gradient = joint.output.weight.grad
+    assert gradient is not None
+    assert gradient.abs().sum() > 0
+
+
+def test_a_states_targets_mismatch_is_refused() -> None:
+    with pytest.raises(ModelError, match="one state per prefix"):
+        transducer_loss(
+            torch.zeros(1, 2, 4, 3),
+            torch.tensor([[1]]),
+            torch.tensor([2]),
+            torch.tensor([1]),
+        )
+
+
+def test_a_flat_joint_tensor_is_refused() -> None:
+    with pytest.raises(ModelError, match="batch, time, states, classes"):
+        transducer_loss(
+            torch.zeros(2, 2, 3), torch.tensor([[1]]), torch.tensor([2]), torch.tensor([1])
+        )
