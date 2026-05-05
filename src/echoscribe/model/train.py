@@ -17,7 +17,7 @@ from dataclasses import dataclass
 import torch
 
 from echoscribe.cmvn import CmvnStatistics, apply_cmvn
-from echoscribe.errors import ConfigError, require
+from echoscribe.errors import ConfigError, require, require_positive
 from echoscribe.features import FeatureConfig, extract_log_mel
 from echoscribe.framing import FrameConfig
 from echoscribe.seeds import Seed
@@ -119,3 +119,118 @@ def pad_batch(
         input_lengths[index] = frames
         target_lengths[index] = symbols
     return features, targets, input_lengths, target_lengths
+
+
+LOSS_DECIMALS = 6
+
+
+@dataclass(frozen=True)
+class TrainConfig:
+    """Loop knobs, validated once, serialized with any bundle they produce."""
+
+    epochs: int = 12
+    learning_rate: float = 0.01
+    batch_size: int = 4
+    seed: int = 20250
+    gradient_clip: float = 5.0
+    patience: int | None = None
+
+    def __post_init__(self) -> None:
+        for name, value in (("epochs", self.epochs), ("batch_size", self.batch_size)):
+            require(
+                isinstance(value, int) and not isinstance(value, bool) and value >= 1,
+                f"{name} must be a positive integer, got {value!r}",
+                ConfigError,
+            )
+        require_positive("learning_rate", self.learning_rate, ConfigError)
+        require_positive("gradient_clip", self.gradient_clip, ConfigError)
+        if self.patience is not None:
+            require(
+                isinstance(self.patience, int)
+                and not isinstance(self.patience, bool)
+                and self.patience >= 1,
+                f"patience must be an integer >= 1 or None, got {self.patience!r}",
+                ConfigError,
+            )
+
+    def to_dict(self) -> dict:
+        """A JSON-ready mapping of every knob."""
+        return {
+            "epochs": self.epochs,
+            "learning_rate": self.learning_rate,
+            "batch_size": self.batch_size,
+            "seed": self.seed,
+            "gradient_clip": self.gradient_clip,
+            "patience": self.patience,
+        }
+
+
+@dataclass(frozen=True)
+class TrainHistory:
+    """Per-epoch mean losses, rounded where they are recorded."""
+
+    losses: tuple[float, ...]
+    seed: int
+
+    @property
+    def epochs_completed(self) -> int:
+        """How many epochs actually ran, which patience may cut short."""
+        return len(self.losses)
+
+    @property
+    def first_loss(self) -> float:
+        """The loss of the first epoch."""
+        return self.losses[0]
+
+    @property
+    def last_loss(self) -> float:
+        """The loss of the last epoch that ran."""
+        return self.losses[-1]
+
+    @property
+    def best_loss(self) -> float:
+        """The lowest epoch mean seen."""
+        return min(self.losses)
+
+    @property
+    def improved(self) -> bool:
+        """Whether the last epoch beat the first -- the honest headline."""
+        return self.last_loss < self.first_loss
+
+    @property
+    def total_improvement(self) -> float:
+        """first minus last, rounded at the source."""
+        return round(self.first_loss - self.last_loss, LOSS_DECIMALS)
+
+    def to_dict(self) -> dict:
+        """A JSON-ready mapping, suitable for a bundle's history slot."""
+        return {
+            "seed": self.seed,
+            "losses": list(self.losses),
+            "epochs_completed": self.epochs_completed,
+        }
+
+    @classmethod
+    def from_dict(cls, payload: dict) -> TrainHistory:
+        """Rebuild a history from :meth:`to_dict`."""
+        return cls(
+            losses=tuple(float(loss) for loss in payload["losses"]),
+            seed=int(payload["seed"]),
+        )
+
+
+def should_stop(losses: Sequence[float], patience: int) -> bool:
+    """True when the last ``patience`` epochs all failed to beat the earlier best.
+
+    A pure function of the loss list so the stopping rule can be tested
+    without running a single gradient step.
+    """
+    require(
+        isinstance(patience, int) and not isinstance(patience, bool) and patience >= 1,
+        f"patience must be an integer >= 1, got {patience!r}",
+        ConfigError,
+    )
+    if len(losses) <= patience:
+        return False
+    best_before = min(losses[: len(losses) - patience])
+    return all(loss >= best_before for loss in losses[len(losses) - patience :])
