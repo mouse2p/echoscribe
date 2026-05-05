@@ -181,3 +181,27 @@ def test_a_flat_joint_tensor_is_refused() -> None:
         transducer_loss(
             torch.zeros(2, 2, 3), torch.tensor([[1]]), torch.tensor([2]), torch.tensor([1])
         )
+
+
+def test_the_pieces_assemble_into_a_trainable_graph() -> None:
+    from echoscribe.model.encoder import Encoder, EncoderConfig
+
+    torch.manual_seed(9)
+    encoder = Encoder(EncoderConfig(input_dim=6, stack=1, hidden_dim=8, output_dim=4))
+    predictor = Predictor(PredictorConfig(vocab_size=3, embed_dim=4, hidden_dim=5))
+    joint = Joint(JointConfig(encoder_dim=4, predictor_dim=5, vocab_size=3, hidden_dim=6))
+    features = torch.randn(2, 7, 6)
+    targets = torch.tensor([[1, 2], [3, 0]])  # 0 pads; lengths give the truth
+    target_lengths = torch.tensor([2, 1])
+    encoder_states = encoder(features)
+    predictor_states = predictor(targets[:, : int(target_lengths.max())])
+    logits = joint(encoder_states, predictor_states)
+    loss = transducer_loss(
+        logits, targets[:, : int(target_lengths.max())], torch.tensor([7, 7]), target_lengths
+    )
+    assert torch.isfinite(loss)
+    loss.backward()
+    for module in (encoder, predictor, joint):
+        gradients = [p.grad for p in module.parameters() if p.grad is not None]
+        assert gradients, "every module should receive at least one gradient"
+        assert any(float(g.abs().sum()) > 0 for g in gradients)
