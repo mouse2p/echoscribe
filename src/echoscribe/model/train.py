@@ -11,6 +11,7 @@ on CPU, with no downloaded weights anywhere in the loop.
 
 from __future__ import annotations
 
+from collections.abc import Sequence
 from dataclasses import dataclass
 
 import torch
@@ -86,3 +87,35 @@ def laboratory_examples(
             )
         )
     return tuple(examples), vocabulary
+
+
+def pad_batch(
+    examples: Sequence[TrainExample],
+) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]:
+    """One right-padded batch plus the true extents of both sides.
+
+    Padding value zero is safe on both sides: padded frames are excluded by
+    ``input_lengths`` and padded symbols are index 0, the blank, which no
+    loss reads past ``target_lengths``.
+    """
+    require(len(examples) > 0, "a batch needs at least one example", ConfigError)
+    widths = {example.features.shape[1] for example in examples}
+    require(
+        len(widths) == 1,
+        f"examples disagree on feature width: {sorted(widths)}",
+        ConfigError,
+    )
+    longest_frames = max(example.features.shape[0] for example in examples)
+    longest_targets = max(example.targets.shape[0] for example in examples)
+    features = torch.zeros(len(examples), longest_frames, widths.pop())
+    targets = torch.zeros(len(examples), longest_targets, dtype=torch.int64)
+    input_lengths = torch.zeros(len(examples), dtype=torch.long)
+    target_lengths = torch.zeros(len(examples), dtype=torch.long)
+    for index, example in enumerate(examples):
+        frames = example.features.shape[0]
+        symbols = example.targets.shape[0]
+        features[index, :frames] = example.features
+        targets[index, :symbols] = example.targets
+        input_lengths[index] = frames
+        target_lengths[index] = symbols
+    return features, targets, input_lengths, target_lengths
