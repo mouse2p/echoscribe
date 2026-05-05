@@ -11,6 +11,15 @@ the blank is index 0, real symbols are 1..vocab_size, and the joint emits
 The predictor embeds the blank row as its start-of-sequence input.  That is
 safe because a transducer never emits the blank as a *label* -- blanks only
 advance time -- so embedding row 0 has no second meaning to conflict with.
+
+Where the mechanics come from, for anyone checking the math: the joint
+structure and the two-dimensional lattice are Graves (2012),
+"Sequence Transduction with Recurrent Neural Networks"; the forward
+recursion in :func:`transducer_loss` is the standard exact training
+criterion over that lattice, the same one label-synchronous decoding
+(Sak et al., 2018) searches at inference time.  The implementation here is
+original, vectorized across the batch and written against this package's
+own blank-at-zero convention.
 """
 
 from __future__ import annotations
