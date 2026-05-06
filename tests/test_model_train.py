@@ -10,7 +10,14 @@ except ImportError:
     pytest.skip("the torch extra is not installed", allow_module_level=True)
 
 from echoscribe.errors import ConfigError
-from echoscribe.model.train import TrainExample, laboratory_examples, pad_batch
+from echoscribe.model.train import (
+    TrainConfig,
+    TrainExample,
+    TrainHistory,
+    laboratory_examples,
+    pad_batch,
+    should_stop,
+)
 
 pytestmark = pytest.mark.model
 
@@ -94,3 +101,59 @@ def test_an_empty_batch_is_refused() -> None:
 def test_mixed_feature_widths_are_refused() -> None:
     with pytest.raises(ConfigError, match="disagree on feature width"):
         pad_batch([example("a", 3, 2, dim=4), example("b", 3, 2, dim=5)])
+
+
+def test_the_history_reports_its_improvement() -> None:
+    history = TrainHistory(losses=(4.0, 3.0, 2.0), seed=1)
+    assert history.first_loss == 4.0
+    assert history.last_loss == 2.0
+    assert history.best_loss == 2.0
+    assert history.improved
+    assert history.total_improvement == 2.0
+    assert history.epochs_completed == 3
+
+
+def test_a_flat_history_does_not_claim_improvement() -> None:
+    history = TrainHistory(losses=(2.0, 2.0), seed=1)
+    assert not history.improved
+    assert history.total_improvement == 0.0
+
+
+def test_the_history_round_trips_through_a_dict() -> None:
+    history = TrainHistory(losses=(4.0, 2.0), seed=9)
+    payload = history.to_dict()
+    assert payload["epochs_completed"] == 2
+    assert TrainHistory.from_dict(payload) == history
+
+
+def test_should_stop_waits_for_a_full_window() -> None:
+    assert not should_stop([3.0, 2.0], 2)
+    assert not should_stop([], 3)
+
+
+def test_should_stop_fires_after_patience_flat_epochs() -> None:
+    assert should_stop([3.0, 2.0, 1.0, 1.5, 1.6], 2)
+
+
+def test_should_stop_stays_quiet_while_the_loss_falls() -> None:
+    assert not should_stop([3.0, 2.5, 2.0, 1.5, 1.0], 2)
+
+
+def test_a_bad_patience_is_refused() -> None:
+    with pytest.raises(ConfigError, match="patience"):
+        should_stop([1.0, 2.0], 0)
+
+
+def test_a_train_config_rejects_zero_epochs() -> None:
+    with pytest.raises(ConfigError, match="positive integer"):
+        TrainConfig(epochs=0)
+
+
+def test_a_train_config_rejects_a_negative_rate() -> None:
+    with pytest.raises(ConfigError, match="positive"):
+        TrainConfig(learning_rate=-0.1)
+
+
+def test_a_train_config_round_trips_through_a_dict() -> None:
+    config = TrainConfig(epochs=3, patience=2)
+    assert TrainConfig(**config.to_dict()) == config
