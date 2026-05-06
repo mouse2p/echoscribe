@@ -22,6 +22,7 @@ from echoscribe.features import FeatureConfig, extract_log_mel
 from echoscribe.framing import FrameConfig
 from echoscribe.model.ctc import CtcHead, ctc_loss
 from echoscribe.model.encoder import Encoder
+from echoscribe.model.transducer import Joint, Predictor, transducer_loss
 from echoscribe.seeds import Seed
 from echoscribe.synth.corpus import CorpusConfig, generate_corpus
 from echoscribe.synth.render import RenderConfig, render_utterance
@@ -266,6 +267,49 @@ def train_ctc(
             features, targets, input_lengths, target_lengths = pad_batch(chunk)
             optimizer.zero_grad()
             loss = ctc_loss(head(encoder(features)), targets, input_lengths, target_lengths)
+            loss.backward()
+            torch.nn.utils.clip_grad_norm_(parameters, settings.gradient_clip)
+            optimizer.step()
+            total += float(loss.detach())
+            batches += 1
+        losses.append(round(total / batches, LOSS_DECIMALS))
+        if settings.patience is not None and should_stop(losses, settings.patience):
+            break
+    return TrainHistory(losses=tuple(losses), seed=settings.seed)
+
+
+def train_transducer(
+    encoder: Encoder,
+    predictor: Predictor,
+    joint: Joint,
+    examples: Sequence[TrainExample],
+    config: TrainConfig | None = None,
+) -> TrainHistory:
+    """Train encoder, predictor and joint against the exact RNN-T loss.
+
+    The predictor sees each batch's padded targets and produces one state per
+    prefix, which is exactly the state axis the joint scores the lattice
+    over; nothing about the loop is transducer-specific except the loss line,
+    and that is the point of keeping the two loops side by side.
+    """
+    settings = TrainConfig() if config is None else config
+    require(len(examples) > 0, "training needs at least one example", ConfigError)
+    torch.manual_seed(settings.seed)
+    generator = torch.Generator().manual_seed(settings.seed)
+    parameters = (
+        list(encoder.parameters()) + list(predictor.parameters()) + list(joint.parameters())
+    )
+    optimizer = torch.optim.Adam(parameters, lr=settings.learning_rate)
+    losses: list[float] = []
+    for _ in range(settings.epochs):
+        order = torch.randperm(len(examples), generator=generator).tolist()
+        total, batches = 0.0, 0
+        for start in range(0, len(order), settings.batch_size):
+            chunk = [examples[index] for index in order[start : start + settings.batch_size]]
+            features, targets, input_lengths, target_lengths = pad_batch(chunk)
+            optimizer.zero_grad()
+            logits = joint(encoder(features), predictor(targets))
+            loss = transducer_loss(logits, targets, input_lengths, target_lengths)
             loss.backward()
             torch.nn.utils.clip_grad_norm_(parameters, settings.gradient_clip)
             optimizer.step()
