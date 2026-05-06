@@ -20,6 +20,8 @@ from echoscribe.cmvn import CmvnStatistics, apply_cmvn
 from echoscribe.errors import ConfigError, require, require_positive
 from echoscribe.features import FeatureConfig, extract_log_mel
 from echoscribe.framing import FrameConfig
+from echoscribe.model.ctc import CtcHead, ctc_loss
+from echoscribe.model.encoder import Encoder
 from echoscribe.seeds import Seed
 from echoscribe.synth.corpus import CorpusConfig, generate_corpus
 from echoscribe.synth.render import RenderConfig, render_utterance
@@ -234,3 +236,42 @@ def should_stop(losses: Sequence[float], patience: int) -> bool:
         return False
     best_before = min(losses[: len(losses) - patience])
     return all(loss >= best_before for loss in losses[len(losses) - patience :])
+
+
+def train_ctc(
+    encoder: Encoder,
+    head: CtcHead,
+    examples: Sequence[TrainExample],
+    config: TrainConfig | None = None,
+) -> TrainHistory:
+    """Train an encoder and CTC head, recording one mean loss per epoch.
+
+    Seeded twice over: ``torch.manual_seed`` for anything the loop itself
+    draws, and a dedicated generator for the per-epoch shuffle order, so the
+    epoch sequence is a function of the config seed alone and does not
+    depend on what the caller did before.
+    """
+    settings = TrainConfig() if config is None else config
+    require(len(examples) > 0, "training needs at least one example", ConfigError)
+    torch.manual_seed(settings.seed)
+    generator = torch.Generator().manual_seed(settings.seed)
+    parameters = list(encoder.parameters()) + list(head.parameters())
+    optimizer = torch.optim.Adam(parameters, lr=settings.learning_rate)
+    losses: list[float] = []
+    for _ in range(settings.epochs):
+        order = torch.randperm(len(examples), generator=generator).tolist()
+        total, batches = 0.0, 0
+        for start in range(0, len(order), settings.batch_size):
+            chunk = [examples[index] for index in order[start : start + settings.batch_size]]
+            features, targets, input_lengths, target_lengths = pad_batch(chunk)
+            optimizer.zero_grad()
+            loss = ctc_loss(head(encoder(features)), targets, input_lengths, target_lengths)
+            loss.backward()
+            torch.nn.utils.clip_grad_norm_(parameters, settings.gradient_clip)
+            optimizer.step()
+            total += float(loss.detach())
+            batches += 1
+        losses.append(round(total / batches, LOSS_DECIMALS))
+        if settings.patience is not None and should_stop(losses, settings.patience):
+            break
+    return TrainHistory(losses=tuple(losses), seed=settings.seed)
