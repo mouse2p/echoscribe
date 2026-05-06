@@ -157,3 +157,21 @@ def test_a_train_config_rejects_a_negative_rate() -> None:
 def test_a_train_config_round_trips_through_a_dict() -> None:
     config = TrainConfig(epochs=3, patience=2)
     assert TrainConfig(**config.to_dict()) == config
+
+
+@pytest.mark.slow
+def test_ctc_training_decreases_the_loss_on_synthetic_speech() -> None:
+    from echoscribe.model.ctc import CtcConfig, CtcHead
+    from echoscribe.model.encoder import Encoder, EncoderConfig
+    from echoscribe.model.train import train_ctc
+
+    examples, vocabulary = laboratory_examples(seed=11, utterances=16)
+    torch.manual_seed(3)
+    encoder = Encoder(EncoderConfig(input_dim=40, stack=2, hidden_dim=48, output_dim=48))
+    head = CtcHead(CtcConfig(input_dim=48, vocab_size=len(vocabulary) - 1))
+    history = train_ctc(
+        encoder, head, examples, TrainConfig(epochs=8, learning_rate=0.01, batch_size=4)
+    )
+    assert history.epochs_completed == 8
+    assert history.improved
+    assert history.last_loss < history.first_loss * 0.9
