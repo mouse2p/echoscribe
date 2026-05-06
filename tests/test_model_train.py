@@ -175,3 +175,23 @@ def test_ctc_training_decreases_the_loss_on_synthetic_speech() -> None:
     assert history.epochs_completed == 8
     assert history.improved
     assert history.last_loss < history.first_loss * 0.9
+
+
+def test_the_same_seed_trains_the_same_losses() -> None:
+    from echoscribe.model.ctc import CtcConfig, CtcHead
+    from echoscribe.model.encoder import Encoder, EncoderConfig
+    from echoscribe.model.train import train_ctc
+
+    examples, vocabulary = laboratory_examples(seed=12, utterances=8)
+
+    def fresh() -> tuple:
+        torch.manual_seed(4)
+        encoder = Encoder(EncoderConfig(input_dim=40, stack=1, hidden_dim=16, output_dim=16))
+        head = CtcHead(CtcConfig(input_dim=16, vocab_size=len(vocabulary) - 1))
+        return encoder, head
+
+    config = TrainConfig(epochs=2, batch_size=4, seed=77)
+    left = train_ctc(*fresh(), examples, config)
+    right = train_ctc(*fresh(), examples, config)
+    assert left.losses == right.losses
+    assert left.losses[0] != left.losses[-1] or left.epochs_completed == 1
