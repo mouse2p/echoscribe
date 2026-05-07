@@ -195,3 +195,29 @@ def test_the_same_seed_trains_the_same_losses() -> None:
     right = train_ctc(*fresh(), examples, config)
     assert left.losses == right.losses
     assert left.losses[0] != left.losses[-1] or left.epochs_completed == 1
+
+
+@pytest.mark.slow
+def test_transducer_training_decreases_the_loss_on_synthetic_speech() -> None:
+    from echoscribe.model.encoder import Encoder, EncoderConfig
+    from echoscribe.model.train import train_transducer
+    from echoscribe.model.transducer import Joint, JointConfig, Predictor, PredictorConfig
+
+    examples, vocabulary = laboratory_examples(seed=13, utterances=12)
+    vocab_size = len(vocabulary) - 1
+    torch.manual_seed(5)
+    encoder = Encoder(EncoderConfig(input_dim=40, stack=2, hidden_dim=32, output_dim=32))
+    predictor = Predictor(PredictorConfig(vocab_size=vocab_size, embed_dim=16, hidden_dim=32))
+    joint = Joint(
+        JointConfig(encoder_dim=32, predictor_dim=32, vocab_size=vocab_size, hidden_dim=32)
+    )
+    history = train_transducer(
+        encoder,
+        predictor,
+        joint,
+        examples,
+        TrainConfig(epochs=4, learning_rate=0.01, batch_size=4, seed=99),
+    )
+    assert history.epochs_completed == 4
+    assert history.improved
+    assert history.last_loss < history.first_loss * 0.95
