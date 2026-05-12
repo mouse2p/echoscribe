@@ -11,7 +11,7 @@ on CPU, with no downloaded weights anywhere in the loop.
 
 from __future__ import annotations
 
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 
 import torch
@@ -22,6 +22,7 @@ from echoscribe.features import FeatureConfig, extract_log_mel
 from echoscribe.framing import FrameConfig
 from echoscribe.model.ctc import CtcHead, ctc_loss
 from echoscribe.model.encoder import Encoder
+from echoscribe.model.schema import save_bundle
 from echoscribe.model.transducer import Joint, Predictor, transducer_loss
 from echoscribe.seeds import Seed
 from echoscribe.synth.corpus import CorpusConfig, generate_corpus
@@ -319,3 +320,24 @@ def train_transducer(
         if settings.patience is not None and should_stop(losses, settings.patience):
             break
     return TrainHistory(losses=tuple(losses), seed=settings.seed)
+
+
+def save_training_bundle(
+    path,
+    kind: str,
+    configs: Mapping[str, object],
+    modules: Mapping[str, torch.nn.Module],
+    history: TrainHistory,
+):
+    """One bundle holding every trained module plus the history it earned.
+
+    State keys are prefixed with each module's name, so a bundle of an
+    encoder, a predictor and a joint stays readable -- and a loader can tell
+    which tensors belong to which piece without a naming convention of its
+    own.
+    """
+    state: dict[str, torch.Tensor] = {}
+    for prefix, module in modules.items():
+        for name, tensor in module.state_dict().items():
+            state[f"{prefix}.{name}"] = tensor
+    return save_bundle(path, kind, dict(configs), state, history=history.to_dict())
