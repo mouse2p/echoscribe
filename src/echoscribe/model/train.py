@@ -7,6 +7,14 @@ proves nothing about recognizing speech -- the vocabulary is tiny, the audio
 is rendered formants, and the models are a few tens of thousands of
 parameters.  Every number this module produces is reproducible from its seed,
 on CPU, with no downloaded weights anywhere in the loop.
+
+The training tests are marked slow and carry real wall-clock costs of a few
+seconds each, so the loops train on a dozen utterances for a handful of
+epochs and assert *ratios* of decrease rather than final values: a ratio
+survives a faster machine, a different BLAS or a torch patch release, while
+a pinned final loss would not.  Where an exact number matters -- a seeded
+run reproducing its own history -- the test pins the whole loss tuple
+instead, which is deterministic by construction rather than by luck.
 """
 
 from __future__ import annotations
