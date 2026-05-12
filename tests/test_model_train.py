@@ -221,3 +221,33 @@ def test_transducer_training_decreases_the_loss_on_synthetic_speech() -> None:
     assert history.epochs_completed == 4
     assert history.improved
     assert history.last_loss < history.first_loss * 0.95
+
+
+def test_a_training_bundle_carries_its_history(tmp_path) -> None:
+    from echoscribe.model.ctc import CtcConfig, CtcHead
+    from echoscribe.model.encoder import Encoder, EncoderConfig
+    from echoscribe.model.schema import load_bundle
+    from echoscribe.model.train import save_training_bundle, train_ctc
+
+    examples, vocabulary = laboratory_examples(seed=14, utterances=4)
+    torch.manual_seed(6)
+    encoder = Encoder(EncoderConfig(input_dim=40, stack=1, hidden_dim=8, output_dim=8))
+    head = CtcHead(CtcConfig(input_dim=8, vocab_size=len(vocabulary) - 1))
+    history = train_ctc(encoder, head, examples, TrainConfig(epochs=1, batch_size=2, seed=5))
+    target = save_training_bundle(
+        tmp_path / "ctc.pt",
+        "ctc",
+        {"encoder": encoder.config.to_dict(), "head": head.config.to_dict()},
+        {"encoder": encoder, "head": head},
+        history,
+    )
+    payload = load_bundle(target, kind="ctc")
+    assert TrainHistory.from_dict(payload["history"]) == history
+    assert any(key.startswith("encoder.") for key in payload["state"])
+    assert any(key.startswith("head.") for key in payload["state"])
+
+
+def test_a_patience_config_serializes_with_its_bundle() -> None:
+    config = TrainConfig(epochs=3, patience=2)
+    assert config.to_dict()["patience"] == 2
+    assert TrainConfig(**config.to_dict()) == config
