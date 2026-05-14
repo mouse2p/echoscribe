@@ -15,6 +15,7 @@ import sys
 from collections.abc import Sequence
 
 from echoscribe import __version__
+from echoscribe.cli import synth
 from echoscribe.cli.common import EXIT_FAILURE, EXIT_USAGE
 from echoscribe.errors import EchoscribeError
 
@@ -26,6 +27,8 @@ def build_parser() -> argparse.ArgumentParser:
         description="Offline workbench for streaming speech-recognition mechanics.",
     )
     parser.add_argument("--version", action="version", version=f"echoscribe {__version__}")
+    subparsers = parser.add_subparsers(dest="command", metavar="COMMAND")
+    synth.register(subparsers)
     return parser
 
 
