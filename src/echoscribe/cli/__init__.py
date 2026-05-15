@@ -6,6 +6,12 @@ stdout, and return an exit code -- 0 when the job succeeded, 1 when a job
 failed on valid usage, 2 when the usage itself was wrong.  Library errors
 surface as one line on stderr instead of a traceback, because a traceback
 answers "what broke in the code" when the user asked "what do I do now".
+
+The work directory is the contract *between* subcommands: ``synth`` fills it
+with ``wav/`` and ``manifest.jsonl``, ``feats`` adds ``features.npz``, and
+the decoding, scoring and reporting stages read their inputs from exactly
+those paths.  Nothing is hidden in the user's home directory, every stage
+can be rerun on its own, and deleting the directory deletes the run.
 """
 
 from __future__ import annotations
