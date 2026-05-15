@@ -75,3 +75,25 @@ def test_one_delta_order_doubles_the_width(tmp_path) -> None:
     with np.load(tmp_path / "features.npz") as bundle:
         widths = {bundle[key].shape[1] for key in bundle.files if key != "meta"}
     assert widths == {80}
+
+
+def test_a_missing_manifest_is_explained(tmp_path, capsys) -> None:
+    code = main(["feats", "--workdir", str(tmp_path)])
+    assert code == 1
+    message = capsys.readouterr().err
+    assert "run `echoscribe synth` first" in message
+
+
+def test_a_nonexistent_workdir_is_an_oserror_not_a_traceback(tmp_path, capsys) -> None:
+    # read_wav on a missing wav would raise OSError; a missing directory is
+    # caught one level up, at the manifest check, with the same one-line shape.
+    code = main(["feats", "--workdir", str(tmp_path / "absent")])
+    assert code == 1
+    assert capsys.readouterr().err.startswith("echoscribe: error:")
+
+
+def test_the_output_name_is_caller_chosen(tmp_path) -> None:
+    render_two(tmp_path)
+    main(["feats", "--workdir", str(tmp_path), "--num-mel-bins", "24", "--out", "fbank.npz"])
+    assert (tmp_path / "fbank.npz").exists()
+    assert not (tmp_path / "features.npz").exists()
