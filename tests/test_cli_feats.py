@@ -45,3 +45,33 @@ def test_the_frame_counts_in_the_summary_match_the_archive(tmp_path) -> None:
         meta = json.loads(str(bundle["meta"]))
         frames = sum(bundle[key].shape[0] for key in bundle.files if key != "meta")
     assert meta["frames"] == frames
+
+
+def test_deltas_triple_the_width_at_the_default_order(tmp_path) -> None:
+    render_two(tmp_path)
+    main(["feats", "--workdir", str(tmp_path), "--num-mel-bins", "40", "--deltas"])
+    with np.load(tmp_path / "features.npz") as bundle:
+        meta = json.loads(str(bundle["meta"]))
+        widths = {bundle[key].shape[1] for key in bundle.files if key != "meta"}
+    assert widths == {120}
+    assert meta["deltas"] is True
+    assert meta["delta_order"] == 2
+
+
+def test_one_delta_order_doubles_the_width(tmp_path) -> None:
+    render_two(tmp_path)
+    main(
+        [
+            "feats",
+            "--workdir",
+            str(tmp_path),
+            "--num-mel-bins",
+            "40",
+            "--deltas",
+            "--delta-order",
+            "1",
+        ]
+    )
+    with np.load(tmp_path / "features.npz") as bundle:
+        widths = {bundle[key].shape[1] for key in bundle.files if key != "meta"}
+    assert widths == {80}
