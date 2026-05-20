@@ -46,3 +46,19 @@ def test_the_shared_json_helpers_round_trip(tmp_path) -> None:
     target = write_json(tmp_path / "doc.json", {"b": 1, "a": [1, 2]})
     assert target.read_text() == '{\n  "a": [\n    1,\n    2\n  ],\n  "b": 1\n}\n'
     assert read_json(target) == {"a": [1, 2], "b": 1}
+
+
+def test_the_jsonl_helpers_round_trip(tmp_path) -> None:
+    from echoscribe.cli.common import read_jsonl, write_jsonl
+
+    target = write_jsonl(tmp_path / "rows.jsonl", [{"b": 1}, {"a": [1, 2]}])
+    assert target.read_text() == '{"b": 1}\n{"a": [1, 2]}\n'
+    assert read_jsonl(target) == [{"b": 1}, {"a": [1, 2]}]
+
+
+def test_reading_jsonl_skips_blank_lines(tmp_path) -> None:
+    from echoscribe.cli.common import read_jsonl
+
+    target = tmp_path / "rows.jsonl"
+    target.write_text('{"a": 1}\n\n{"b": 2}\n', encoding="utf-8")
+    assert read_jsonl(target) == [{"a": 1}, {"b": 2}]
