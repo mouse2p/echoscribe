@@ -25,3 +25,24 @@ def test_an_unknown_command_is_a_usage_error() -> None:
     with pytest.raises(SystemExit) as exit_info:
         main(["nonsense"])
     assert exit_info.value.code == 2
+
+
+def test_the_declared_console_script_points_at_main() -> None:
+    from importlib import metadata
+
+    scripts = [
+        entry
+        for entry in metadata.entry_points(group="console_scripts")
+        if entry.name == "echoscribe"
+    ]
+    assert len(scripts) == 1
+    assert scripts[0].value == "echoscribe.cli:main"
+    assert scripts[0].load() is main
+
+
+def test_the_shared_json_helpers_round_trip(tmp_path) -> None:
+    from echoscribe.cli.common import read_json, write_json
+
+    target = write_json(tmp_path / "doc.json", {"b": 1, "a": [1, 2]})
+    assert target.read_text() == '{\n  "a": [\n    1,\n    2\n  ],\n  "b": 1\n}\n'
+    assert read_json(target) == {"a": [1, 2], "b": 1}
