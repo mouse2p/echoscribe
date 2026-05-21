@@ -70,3 +70,35 @@ def test_an_unknown_method_is_a_usage_error(tmp_path) -> None:
     with pytest.raises(SystemExit) as exit_info:
         main(["decode", "--workdir", str(tmp_path), "--method", "magic"])
     assert exit_info.value.code == 2
+
+
+def test_the_prefix_beam_replays_the_same_units_as_greedy(tmp_path) -> None:
+    prepare(tmp_path)
+    main(["decode", "--workdir", str(tmp_path)])
+    main(
+        [
+            "decode",
+            "--workdir",
+            str(tmp_path),
+            "--method",
+            "prefix",
+            "--beam",
+            "4",
+            "--out",
+            "prefix.jsonl",
+        ]
+    )
+    greedy = {
+        row["utterance_id"]: row["hypothesis_ids"] for row in read_jsonl(tmp_path / "decode.jsonl")
+    }
+    prefix = {
+        row["utterance_id"]: row["hypothesis_ids"] for row in read_jsonl(tmp_path / "prefix.jsonl")
+    }
+    assert greedy == prefix
+
+
+def test_the_output_name_is_caller_chosen(tmp_path) -> None:
+    prepare(tmp_path)
+    main(["decode", "--workdir", str(tmp_path), "--out", "hyps.jsonl"])
+    assert (tmp_path / "hyps.jsonl").exists()
+    assert not (tmp_path / "decode.jsonl").exists()
