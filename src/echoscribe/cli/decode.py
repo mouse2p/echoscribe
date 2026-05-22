@@ -5,6 +5,13 @@ repeats and drops blanks -- the baseline a streaming system actually runs.
 ``prefix`` keeps the beam_size most probable collapsed sequences instead,
 which costs more and buys an n-best list; on the unambiguous fixtures the two
 must agree, and a test says so.
+
+What the agreement is worth: on a fixture whose argmax path is planted,
+greedy and prefix *have* to coincide, so a disagreement is a bug in one of
+the two searches rather than a modelling question.  On a trained model's
+posteriors the same check says nothing -- there the methods differ by design
+-- which is why the invariant lives in the tests over fixtures and not in
+the command's output.
 """
 
 from __future__ import annotations
