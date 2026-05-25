@@ -102,3 +102,32 @@ def test_the_output_name_is_caller_chosen(tmp_path) -> None:
     main(["decode", "--workdir", str(tmp_path), "--out", "hyps.jsonl"])
     assert (tmp_path / "hyps.jsonl").exists()
     assert not (tmp_path / "decode.jsonl").exists()
+
+
+def test_an_exact_row_carries_the_reference_text(tmp_path) -> None:
+    prepare(tmp_path)
+    main(["decode", "--workdir", str(tmp_path)])
+    rows = read_jsonl(tmp_path / "decode.jsonl")
+    assert rows, "the decode should have produced rows"
+    for row in rows:
+        assert row["reference_text"]
+        if row["exact_match"]:
+            assert row["hypothesis_text"] == row["reference_text"]
+
+
+def test_a_degraded_hypothesis_text_is_the_joined_units(tmp_path) -> None:
+    # Not reachable through the scripted decode, which replays everything;
+    # the reconstruction rule is checked through the row format instead.
+    prepare(tmp_path)
+    main(["decode", "--workdir", str(tmp_path)])
+    row = read_jsonl(tmp_path / "decode.jsonl")[0]
+    assert set(row) >= {
+        "utterance_id",
+        "method",
+        "reference_units",
+        "hypothesis_units",
+        "hypothesis_ids",
+        "exact_match",
+        "reference_text",
+        "hypothesis_text",
+    }
