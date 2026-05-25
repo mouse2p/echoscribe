@@ -78,3 +78,53 @@ def test_an_unknown_hotword_fails_with_a_message(tmp_path, capsys) -> None:
     code = main(["bias", "--workdir", str(tmp_path), "--hotword", "not-a-unit"])
     assert code == 1
     assert "not in the modelling-unit vocabulary" in capsys.readouterr().err
+
+
+def test_a_wide_margin_survives_the_default_bonus(tmp_path) -> None:
+    prepare(tmp_path)
+    main(
+        [
+            "bias",
+            "--workdir",
+            str(tmp_path),
+            "--hotword",
+            hotword_of(tmp_path),
+            "--margin",
+            "3.0",
+        ]
+    )
+    assert read_jsonl(tmp_path / "bias.jsonl")[0]["flipped"] is False
+
+
+def test_a_wide_margin_flips_with_a_wider_bonus(tmp_path) -> None:
+    prepare(tmp_path)
+    main(
+        [
+            "bias",
+            "--workdir",
+            str(tmp_path),
+            "--hotword",
+            hotword_of(tmp_path),
+            "--margin",
+            "3.0",
+            "--bonus",
+            "4.0",
+        ]
+    )
+    assert read_jsonl(tmp_path / "bias.jsonl")[0]["flipped"] is True
+
+
+def test_a_nonpositive_margin_is_refused(tmp_path) -> None:
+    prepare(tmp_path)
+    code = main(
+        [
+            "bias",
+            "--workdir",
+            str(tmp_path),
+            "--hotword",
+            hotword_of(tmp_path),
+            "--margin",
+            "0",
+        ]
+    )
+    assert code == 1
