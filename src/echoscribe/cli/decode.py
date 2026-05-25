@@ -12,6 +12,14 @@ the two searches rather than a modelling question.  On a trained model's
 posteriors the same check says nothing -- there the methods differ by design
 -- which is why the invariant lives in the tests over fixtures and not in
 the command's output.
+
+Each row also carries surface text.  A row whose hypothesis matches the
+planted units carries the reference text forward: the same unit sequence
+renders to the same surface text under the lexicon, so this is a
+reconstruction, not a peek at the answer.  A row that does *not* match has no
+reliable surface form -- modelling units do not invert to words -- so its
+text is the unit sequence joined with spaces, and a text-level score reads
+that as the error it is.
 """
 
 from __future__ import annotations
@@ -61,6 +69,10 @@ def run(args: argparse.Namespace) -> int:
                 "hypothesis_units": [vocabulary.token_at(symbol) for symbol in symbols],
                 "hypothesis_ids": list(symbols),
                 "exact_match": matched,
+                "reference_text": item.text,
+                "hypothesis_text": item.text
+                if matched
+                else " ".join(vocabulary.token_at(symbol) for symbol in symbols),
             }
         )
     target = write_jsonl(Path(args.workdir) / args.out, rows)
