@@ -123,3 +123,26 @@ def load_scripted_corpus(
             )
         )
     return tuple(utterances), vocabulary
+
+
+def sparse_path(unit_ids: Sequence[int], num_frames: int, blank_id: int = 0) -> list[int]:
+    """One frame per unit, blanks everywhere else: the transducer fixture.
+
+    A transducer emits at *every* frame whose argmax is a label, so the
+    CTC-style runs from :func:`scripted_path` would be emitted once per frame
+    they span.  The sparse path gives each unit exactly one frame, which
+    under a per-frame cap of one is exactly one emission, and the blanks
+    around it are what advance the stream.
+    """
+    count = len(unit_ids)
+    require(count > 0, "a scripted path needs at least one unit", ConfigError)
+    require(
+        isinstance(num_frames, int) and not isinstance(num_frames, bool) and num_frames >= count,
+        f"{num_frames} frames cannot carry {count} units",
+        ConfigError,
+    )
+    gap = num_frames // count
+    path = [blank_id] * num_frames
+    for index, unit in enumerate(unit_ids):
+        path[index * gap] = int(unit)
+    return path
