@@ -6,7 +6,7 @@ import numpy as np
 import pytest
 
 from echoscribe.cli import main
-from echoscribe.cli.scripted import load_scripted_corpus, scripted_path
+from echoscribe.cli.scripted import load_scripted_corpus, scripted_path, sparse_path
 from echoscribe.decode.ctc_greedy import ctc_greedy
 from echoscribe.decode.posteriors import scripted_posteriors
 from echoscribe.errors import ConfigError
@@ -91,3 +91,26 @@ def test_an_empty_unit_list_is_refused() -> None:
 def test_more_units_than_frames_is_refused() -> None:
     with pytest.raises(ConfigError, match="cannot carry"):
         scripted_path([1, 2, 3], 2)
+
+
+def test_the_sparse_path_plants_one_frame_per_unit() -> None:
+    path = sparse_path([3, 1, 2], 12)
+    assert len(path) == 12
+    assert path[0] == 3 and path[4] == 1 and path[8] == 2
+    assert path.count(0) == 9
+
+
+def test_tight_frames_still_fit() -> None:
+    assert sparse_path([2, 3], 2) == [2, 3]
+
+
+def test_a_sparse_path_also_survives_a_greedy_ctc_decode() -> None:
+    posteriors = scripted_posteriors(sparse_path([3, 1, 3], 9), num_symbols=5)
+    assert ctc_greedy(posteriors).symbols == (3, 1, 3)
+
+
+def test_sparse_validation_matches_the_run_path() -> None:
+    with pytest.raises(ConfigError, match="at least one unit"):
+        sparse_path([], 4)
+    with pytest.raises(ConfigError, match="cannot carry"):
+        sparse_path([1, 2, 3], 2)
