@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from echoscribe.cli import main
+from echoscribe.cli.common import read_jsonl
 from echoscribe.cli.scripted import load_scripted_corpus
 from echoscribe.stream.session import read_session
 
@@ -73,3 +74,24 @@ def test_the_session_id_is_a_function_of_the_corpus(tmp_path) -> None:
         read_session(tmp_path / "one.jsonl").session_id
         == read_session(tmp_path / "two.jsonl").session_id
     )
+
+
+def test_the_session_metadata_records_the_command(tmp_path) -> None:
+    prepare(tmp_path)
+    main(["stream", "--workdir", str(tmp_path), "--frames-per-chunk", "8"])
+    session = read_session(tmp_path / "session.jsonl")
+    assert session.metadata["command"] == "stream"
+    assert session.metadata["frames_per_chunk"] == 8
+    assert session.metadata["posteriors"] == "scripted fixtures"
+
+
+def test_the_stream_agrees_with_the_batch_decode(tmp_path) -> None:
+    prepare(tmp_path)
+    main(["decode", "--workdir", str(tmp_path)])
+    main(["stream", "--workdir", str(tmp_path)])
+    decode_rows = {
+        row["utterance_id"]: row["hypothesis_ids"] for row in read_jsonl(tmp_path / "decode.jsonl")
+    }
+    session = read_session(tmp_path / "session.jsonl")
+    for record in session.utterances:
+        assert list(record.hypothesis) == decode_rows[record.utterance_id]
