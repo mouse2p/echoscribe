@@ -5,7 +5,7 @@ from __future__ import annotations
 import pytest
 
 from echoscribe.cli import main
-from echoscribe.cli.common import read_json
+from echoscribe.cli.common import read_json, read_jsonl, write_jsonl
 
 
 def prepare(tmp_path, utterances: int = 2):
@@ -79,3 +79,50 @@ def test_an_unknown_metric_is_a_usage_error(tmp_path) -> None:
     with pytest.raises(SystemExit) as exit_info:
         main(["eval", "--workdir", str(tmp_path), "--metric", "magic"])
     assert exit_info.value.code == 2
+
+
+def test_dropping_one_unit_scores_one_deletion(tmp_path) -> None:
+    decode_first(tmp_path)
+    rows = read_jsonl(tmp_path / "decode.jsonl")
+    rows[0]["hypothesis_units"] = rows[0]["hypothesis_units"][:-1]
+    write_jsonl(tmp_path / "decode.jsonl", rows)
+    main(["eval", "--workdir", str(tmp_path)])
+    payload = read_json(tmp_path / "scores.json")
+    assert payload["totals"]["errors"] == 1
+    assert payload["totals"]["deletions"] == 1
+    assert payload["utterances"][0]["errors"] == 1
+    assert payload["utterances"][1]["errors"] == 0
+
+
+def test_dropping_one_word_scores_one_deletion(tmp_path) -> None:
+    decode_first(tmp_path)
+    rows = read_jsonl(tmp_path / "decode.jsonl")
+    words = rows[0]["reference_text"].split()
+    rows[0]["hypothesis_text"] = " ".join(words[:-1])
+    write_jsonl(tmp_path / "decode.jsonl", rows)
+    main(["eval", "--workdir", str(tmp_path), "--level", "text", "--metric", "wer"])
+    payload = read_json(tmp_path / "scores.json")
+    assert payload["totals"]["errors"] == 1
+    assert payload["totals"]["deletions"] == 1
+
+
+def test_swapping_one_character_scores_one_substitution(tmp_path) -> None:
+    decode_first(tmp_path)
+    rows = read_jsonl(tmp_path / "decode.jsonl")
+    text = rows[0]["reference_text"]
+    characters = [character for character in text if not character.isspace()]
+    characters[-1] = "X" if characters[-1] != "X" else "Y"
+    rows[0]["hypothesis_text"] = "".join(characters)
+    write_jsonl(tmp_path / "decode.jsonl", rows)
+    main(["eval", "--workdir", str(tmp_path), "--level", "text", "--metric", "cer"])
+    payload = read_json(tmp_path / "scores.json")
+    assert payload["totals"]["errors"] == 1
+    assert payload["totals"]["substitutions"] == 1
+
+
+def test_a_hypothesis_missing_from_the_decode_file_fails(tmp_path, capsys) -> None:
+    decode_first(tmp_path)
+    rows = read_jsonl(tmp_path / "decode.jsonl")[:1]
+    write_jsonl(tmp_path / "decode.jsonl", rows)
+    assert main(["eval", "--workdir", str(tmp_path)]) == 1
+    assert "no hypothesis" in capsys.readouterr().err
