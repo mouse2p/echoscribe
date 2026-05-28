@@ -180,12 +180,45 @@ def format_summary(report: ScoreReport, label: str = "WER") -> str:
     value never carries a rounding of a rounding.  The format is fixed and
     covered by golden tests, because logs are compared between runs.
     """
-    if report.reference_length == 0:
+    return summary_line(
+        label,
+        report.substitutions,
+        report.deletions,
+        report.insertions,
+        report.reference_length,
+    )
+
+
+def summary_line(
+    label: str,
+    substitutions: int,
+    deletions: int,
+    insertions: int,
+    reference_length: int,
+) -> str:
+    """The one summary format, from integer counts alone.
+
+    Both report levels print through here, so a corpus line and an utterance
+    line can never drift apart in format; the percentage is a single division
+    of integers, never a rounding of a rounding.
+    """
+    if reference_length == 0:
         percent = 0.0
     else:
-        percent = round(report.errors * 100 / report.reference_length, 2)
+        percent = round((substitutions + deletions + insertions) * 100 / reference_length, 2)
     return (
         f"{label} {percent:.2f}% | "
-        f"S{report.substitutions} D{report.deletions} I{report.insertions} | "
-        f"N{report.reference_length}"
+        f"S{substitutions} D{deletions} I{insertions} | "
+        f"N{reference_length}"
+    )
+
+
+def format_corpus_summary(corpus: CorpusReport, label: str = "WER") -> str:
+    """The same line as :func:`format_summary`, over a whole corpus's totals."""
+    return summary_line(
+        label,
+        corpus.substitutions,
+        corpus.deletions,
+        corpus.insertions,
+        corpus.reference_length,
     )

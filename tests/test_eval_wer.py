@@ -226,3 +226,23 @@ def test_the_eval_subpackage_re_exports_the_scoring_api() -> None:
     assert evaluation.score_tokens is score_tokens
     for name in ("score_corpus", "format_summary", "CorpusReport", "word_sequence"):
         assert name in evaluation.__all__
+
+
+def test_the_corpus_summary_uses_the_same_line_format() -> None:
+    from echoscribe.eval.wer import format_corpus_summary
+
+    corpus = score_corpus([(["a", "b", "c"], ["a", "x"]), (["d"], ["d"])])
+    assert format_corpus_summary(corpus) == "WER 50.00% | S1 D1 I0 | N4"
+
+
+def test_the_corpus_label_is_caller_chosen() -> None:
+    from echoscribe.eval.wer import format_corpus_summary
+
+    corpus = score_corpus([(list("abc"), list("axc"))])
+    assert format_corpus_summary(corpus, label="CER") == "CER 33.33% | S1 D0 I0 | N3"
+
+
+def test_an_empty_corpus_summarizes_without_dividing() -> None:
+    from echoscribe.eval.wer import format_corpus_summary
+
+    assert format_corpus_summary(score_corpus([])) == "WER 0.00% | S0 D0 I0 | N0"
