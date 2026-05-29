@@ -126,3 +126,31 @@ def test_a_hypothesis_missing_from_the_decode_file_fails(tmp_path, capsys) -> No
     write_jsonl(tmp_path / "decode.jsonl", rows)
     assert main(["eval", "--workdir", str(tmp_path)]) == 1
     assert "no hypothesis" in capsys.readouterr().err
+
+
+def test_a_chinese_corpus_scores_characters(tmp_path) -> None:
+    assert (
+        main(
+            [
+                "synth",
+                "--workdir",
+                str(tmp_path),
+                "--utterances",
+                "2",
+                "--seed",
+                "6",
+                "--english-probability",
+                "0",
+            ]
+        )
+        == 0
+    )
+    assert main(["feats", "--workdir", str(tmp_path), "--num-mel-bins", "40"]) == 0
+    assert main(["decode", "--workdir", str(tmp_path)]) == 0
+    assert main(["eval", "--workdir", str(tmp_path), "--level", "text", "--metric", "cer"]) == 0
+    payload = read_json(tmp_path / "scores.json")
+    assert payload["totals"]["errors"] == 0
+    rows = read_jsonl(tmp_path / "decode.jsonl")
+    assert any(
+        "\u4e00" <= character <= "\u9fff" for row in rows for character in row["reference_text"]
+    )
