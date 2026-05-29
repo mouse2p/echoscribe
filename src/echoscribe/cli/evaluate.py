@@ -4,6 +4,14 @@ Two granularities, because a code-switched corpus has two.  ``--level units``
 scores the modelling-unit sequences the decoder actually emits; ``--level
 text`` scores surface text with plain ``wer``, plain ``cer``, or the
 ``hybrid`` metric that measures each script run with the metric it deserves.
+
+On the scripted fixtures an exact decode scores zero at every level, and
+that zero is worth stating plainly: it certifies the join, the alignment and
+the arithmetic between a hypothesis file and a manifest -- a scoring
+pipeline that misjoins utterances or miscounts edits does not score zero --
+and it says nothing about recognition, because nothing was recognized.  A
+nonzero score from a real system's hypotheses is the number that means
+something; this command computes both the same way.
 """
 
 from __future__ import annotations
