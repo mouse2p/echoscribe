@@ -2,8 +2,11 @@
 
 from __future__ import annotations
 
+import pytest
+
 from echoscribe.cli import main
 from echoscribe.cli.common import read_json
+from echoscribe.cli.scripted import load_scripted_corpus
 from echoscribe.eval.bench import BenchResult
 
 
@@ -73,3 +76,21 @@ def test_zero_repeats_is_refused(tmp_path, capsys) -> None:
     prepare(tmp_path)
     assert main(["bench", "--workdir", str(tmp_path), "--repeats", "0"]) == 1
     assert "at least 1" in capsys.readouterr().err
+
+
+def test_audio_seconds_are_the_frame_count_times_the_shift(tmp_path) -> None:
+    prepare(tmp_path)
+    utterances, _ = load_scripted_corpus(tmp_path)
+    expected = sum(item.num_frames for item in utterances) * 0.01
+    main(["bench", "--workdir", str(tmp_path), "--warmups", "0", "--repeats", "1"])
+    assert read_json(tmp_path / "bench.json")["audio_seconds"] == pytest.approx(expected)
+
+
+def test_the_rtf_is_the_median_over_that_denominator(tmp_path) -> None:
+    prepare(tmp_path)
+    main(["bench", "--workdir", str(tmp_path), "--warmups", "0", "--repeats", "3"])
+    payload = read_json(tmp_path / "bench.json")
+    median = sorted(payload["samples"])[1]
+    assert payload["audio_seconds"] > 0
+    restored = BenchResult.from_dict(payload)
+    assert restored.rtf == round(median / payload["audio_seconds"], 6)
