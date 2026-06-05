@@ -107,3 +107,20 @@ def test_a_corrupt_score_file_is_refused(tmp_path) -> None:
     prepare(tmp_path)
     (tmp_path / "scores.json").write_text("[1, 2, 3]", encoding="utf-8")
     assert main(["report", "--workdir", str(tmp_path)]) == 1
+
+
+def test_the_alignment_section_names_the_first_utterance(tmp_path) -> None:
+    score_first(tmp_path)
+    main(["report", "--workdir", str(tmp_path)])
+    document = (tmp_path / "report.svg").read_text(encoding="utf-8")
+    scores = read_json(tmp_path / "scores.json")
+    first_id = scores["utterances"][0]["utterance_id"]
+    assert f">alignment of {first_id}<" in document
+
+
+def test_the_report_still_renders_without_a_decode_file(tmp_path) -> None:
+    score_first(tmp_path)
+    (tmp_path / "decode.jsonl").unlink()
+    assert main(["report", "--workdir", str(tmp_path)]) == 0
+    document = (tmp_path / "report.svg").read_text(encoding="utf-8")
+    assert ">alignment of" not in document
