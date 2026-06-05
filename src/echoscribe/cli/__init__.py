@@ -21,7 +21,16 @@ import sys
 from collections.abc import Sequence
 
 from echoscribe import __version__
-from echoscribe.cli import bench, bias, decode, evaluate, feats, stream, synth
+from echoscribe.cli import (
+    bench,
+    bias,
+    decode,
+    evaluate,
+    feats,
+    report,
+    stream,
+    synth,
+)
 from echoscribe.cli.common import EXIT_FAILURE, EXIT_USAGE
 from echoscribe.errors import EchoscribeError
 
@@ -39,6 +48,7 @@ def build_parser() -> argparse.ArgumentParser:
     decode.register(subparsers)
     evaluate.register(subparsers)
     feats.register(subparsers)
+    report.register(subparsers)
     stream.register(subparsers)
     synth.register(subparsers)
     return parser
