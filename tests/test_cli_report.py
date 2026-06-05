@@ -65,3 +65,24 @@ def test_report_without_scores_fails_helpfully(tmp_path, capsys) -> None:
     prepare(tmp_path)
     assert main(["report", "--workdir", str(tmp_path)]) == 1
     assert "run `echoscribe eval` first" in capsys.readouterr().err
+
+
+def test_two_runs_over_the_same_files_agree_byte_for_byte(tmp_path, capsys) -> None:
+    score_first(tmp_path)
+    main(["report", "--workdir", str(tmp_path), "--out", "one.svg"])
+    main(["report", "--workdir", str(tmp_path), "--out", "two.svg"])
+    assert (tmp_path / "one.svg").read_bytes() == (tmp_path / "two.svg").read_bytes()
+    digests = [
+        line.split("digest: ")[1]
+        for line in capsys.readouterr().out.splitlines()
+        if "digest: " in line
+    ]
+    assert len(digests) == 2
+    assert digests[0] == digests[1]
+
+
+def test_a_different_label_moves_the_digest(tmp_path, capsys) -> None:
+    score_first(tmp_path)
+    main(["report", "--workdir", str(tmp_path), "--label", "a", "--out", "a.svg"])
+    main(["report", "--workdir", str(tmp_path), "--label", "b", "--out", "b.svg"])
+    assert (tmp_path / "a.svg").read_bytes() != (tmp_path / "b.svg").read_bytes()
