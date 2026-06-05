@@ -13,9 +13,11 @@ from __future__ import annotations
 import argparse
 from pathlib import Path
 
-from echoscribe.cli.common import EXIT_OK, fail, read_json
+from echoscribe.cli.common import EXIT_OK, fail, read_json, read_jsonl
 from echoscribe.eval.bench import BenchResult
+from echoscribe.eval.edit import align
 from echoscribe.eval.report import (
+    alignment_section,
     digest_report,
     histogram_section,
     render_report,
@@ -67,6 +69,17 @@ def run(args: argparse.Namespace) -> int:
                 bins=max(1, min(4, len(bench.samples))),
             )
         )
+    decode_path = root / "decode.jsonl"
+    if decode_path.exists():
+        rows_decoded = read_jsonl(decode_path)
+        if rows_decoded:
+            first = rows_decoded[0]
+            sections.append(
+                alignment_section(
+                    align(list(first["reference_units"]), list(first["hypothesis_units"])).pairs(),
+                    title=f"alignment of {first['utterance_id']}",
+                )
+            )
     metadata = run_metadata(
         args.label,
         seed=0,
