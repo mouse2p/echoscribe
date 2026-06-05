@@ -86,3 +86,24 @@ def test_a_different_label_moves_the_digest(tmp_path, capsys) -> None:
     main(["report", "--workdir", str(tmp_path), "--label", "a", "--out", "a.svg"])
     main(["report", "--workdir", str(tmp_path), "--label", "b", "--out", "b.svg"])
     assert (tmp_path / "a.svg").read_bytes() != (tmp_path / "b.svg").read_bytes()
+
+
+def test_the_bench_section_appears_when_bench_ran(tmp_path) -> None:
+    score_first(tmp_path)
+    main(["bench", "--workdir", str(tmp_path), "--warmups", "0", "--repeats", "3"])
+    main(["report", "--workdir", str(tmp_path)])
+    document = (tmp_path / "report.svg").read_text(encoding="utf-8")
+    assert ">decode seconds per repeat<" in document
+
+
+def test_the_report_works_without_a_bench_file(tmp_path) -> None:
+    score_first(tmp_path)
+    main(["report", "--workdir", str(tmp_path)])
+    document = (tmp_path / "report.svg").read_text(encoding="utf-8")
+    assert ">decode seconds per repeat<" not in document
+
+
+def test_a_corrupt_score_file_is_refused(tmp_path) -> None:
+    prepare(tmp_path)
+    (tmp_path / "scores.json").write_text("[1, 2, 3]", encoding="utf-8")
+    assert main(["report", "--workdir", str(tmp_path)]) == 1
