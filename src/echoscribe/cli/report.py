@@ -6,6 +6,11 @@ that is not already on disk.  Its metadata stamp deliberately excludes the
 work directory's *path*: two runs over identical inputs produce identical
 bytes even when they live in different temporary directories, which is what
 makes the report itself diffable.
+
+The digest printed on stdout is the same SHA-256 the golden tests over
+:mod:`echoscribe.eval.report` use, so "the report changed" is decidable
+without opening it, and a regenerated report can be checked against an
+archived one with a single string comparison.
 """
 
 from __future__ import annotations
