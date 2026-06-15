@@ -30,6 +30,7 @@ from echoscribe.cli import (
     report,
     stream,
     synth,
+    train,
 )
 from echoscribe.cli.common import EXIT_FAILURE, EXIT_USAGE
 from echoscribe.errors import EchoscribeError
@@ -51,6 +52,7 @@ def build_parser() -> argparse.ArgumentParser:
     report.register(subparsers)
     stream.register(subparsers)
     synth.register(subparsers)
+    train.register(subparsers)
     return parser
 
 
