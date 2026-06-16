@@ -49,3 +49,11 @@ def test_ctc_training_writes_a_bundle_and_a_history(tmp_path, capsys) -> None:
     assert all(isinstance(value, torch.Tensor) for value in payload["state"].values())
     assert any(key.startswith("encoder.") for key in payload["state"])
     assert any(key.startswith("head.") for key in payload["state"])
+
+
+@pytest.mark.slow
+def test_two_runs_with_one_seed_agree(tmp_path) -> None:
+    first, second = tmp_path / "a", tmp_path / "b"
+    assert main(train_arguments(first, model_seed=11)) == 0
+    assert main(train_arguments(second, model_seed=11)) == 0
+    assert read_json(first / "train-history.json") == read_json(second / "train-history.json")
