@@ -57,3 +57,14 @@ def test_two_runs_with_one_seed_agree(tmp_path) -> None:
     assert main(train_arguments(first, model_seed=11)) == 0
     assert main(train_arguments(second, model_seed=11)) == 0
     assert read_json(first / "train-history.json") == read_json(second / "train-history.json")
+
+
+@pytest.mark.slow
+def test_transducer_training_writes_encoder_predictor_and_joint(tmp_path) -> None:
+    code = main(train_arguments(tmp_path, method="transducer"))
+    assert code == 0
+    payload = load_bundle(tmp_path / "model.pt", kind="transducer")
+    prefixes = {key.split(".")[0] for key in payload["state"]}
+    assert prefixes == {"encoder", "predictor", "joint"}
+    history = read_json(tmp_path / "train-history.json")
+    assert history["epochs_completed"] == 2
