@@ -25,6 +25,7 @@ from echoscribe.cli import (
     bench,
     bias,
     decode,
+    demo,
     evaluate,
     feats,
     report,
@@ -47,6 +48,7 @@ def build_parser() -> argparse.ArgumentParser:
     bench.register(subparsers)
     bias.register(subparsers)
     decode.register(subparsers)
+    demo.register(subparsers)
     evaluate.register(subparsers)
     feats.register(subparsers)
     report.register(subparsers)
