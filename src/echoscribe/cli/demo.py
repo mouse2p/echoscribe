@@ -11,6 +11,14 @@ posteriors built from the planted transcripts.  What the demo demonstrates
 is therefore the *pipeline* -- every stage handing the next one artifacts it
 can read -- and the printed error rates certify the mechanics against known
 answers rather than measuring a recognizer.
+
+The zero error rates are the strongest thing the demo can honestly say: a
+scoring pipeline that misjoined utterances, or a decoder that dropped
+symbols, would not score zero against the planted transcripts.  A number
+that would measure a recognizer -- WER on real speech -- requires real
+speech and a real acoustic model, and this package ships neither.  For the
+trainable path, ``echoscribe train`` decreases a lattice loss on the same
+synthetic corpus, which is evidence about gradients, not about words.
 """
 
 from __future__ import annotations
