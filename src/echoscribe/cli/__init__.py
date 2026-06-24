@@ -12,6 +12,29 @@ with ``wav/`` and ``manifest.jsonl``, ``feats`` adds ``features.npz``, and
 the decoding, scoring and reporting stages read their inputs from exactly
 those paths.  Nothing is hidden in the user's home directory, every stage
 can be rerun on its own, and deleting the directory deletes the run.
+
+The commands, in the order a full run uses them:
+
+``synth``
+    render a seeded synthetic corpus with planted transcripts;
+``feats``
+    extract log-mel features for every rendered utterance;
+``decode``
+    CTC-decode the corpus, greedily or with a prefix beam;
+``stream``
+    decode the same corpus through the chunked streaming runtime;
+``bias``
+    show what a hotword bonus changes on an ambiguous fixture;
+``eval``
+    score hypotheses against the planted transcripts, at unit or text level;
+``bench``
+    measure the decoder's real-time factor with warmup and repeats;
+``train``
+    train a tiny CTC or transducer model on the laboratory (torch extra);
+``report``
+    render everything a work directory holds into one SVG;
+``demo``
+    run the whole loop once and print the numbers it measured.
 """
 
 from __future__ import annotations

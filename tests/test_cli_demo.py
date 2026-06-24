@@ -53,3 +53,22 @@ def test_the_demo_reports_which_stage_failed(tmp_path, monkeypatch, capsys) -> N
     code = main(["demo", "--workdir", str(tmp_path)])
     assert code == 1
     assert "failed inside its synth stage" in capsys.readouterr().err
+
+
+def test_every_registered_command_appears_in_the_help(capsys) -> None:
+    with pytest.raises(SystemExit):
+        main(["--help"])
+    out = capsys.readouterr().out
+    for command in (
+        "bench",
+        "bias",
+        "decode",
+        "demo",
+        "eval",
+        "feats",
+        "report",
+        "stream",
+        "synth",
+        "train",
+    ):
+        assert command in out
