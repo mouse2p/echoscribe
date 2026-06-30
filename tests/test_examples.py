@@ -30,3 +30,12 @@ def test_the_corpus_walkthrough_runs_offline(tmp_path) -> None:
     assert len(list((tmp_path / "wav").glob("*.wav"))) == 4
     assert "planted ground truth" in result.stdout
     assert "reproduced the same manifest digest" in result.stdout
+
+
+@pytest.mark.slow
+def test_the_decoding_comparison_runs_offline(tmp_path) -> None:
+    result = run_example("decoding_comparison", tmp_path)
+    assert result.returncode == 0, result.stderr
+    assert (tmp_path / "comparison.json").exists()
+    assert "replayed the planted sequence exactly" in result.stdout
+    assert "scripted fixture" in result.stdout
