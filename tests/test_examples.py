@@ -62,3 +62,22 @@ def test_the_streaming_session_endpoints_after_the_units(tmp_path) -> None:
     assert record.endpointed
     # the last planted unit sits at frame 25 + 48; the endpoint must be later
     assert record.endpoint_frames is not None and record.endpoint_frames > 73
+
+
+@pytest.mark.slow
+def test_the_code_switch_report_runs_offline(tmp_path) -> None:
+    result = run_example("codeswitch_report", tmp_path)
+    assert result.returncode == 0, result.stderr
+    document = (tmp_path / "codeswitch_report.svg").read_text(encoding="utf-8")
+    assert document.startswith('<?xml version="1.0" encoding="UTF-8"?>')
+    assert "hybrid scores" in document
+    assert "hand-written" in result.stdout
+
+
+@pytest.mark.slow
+def test_the_code_switch_scores_match_the_planted_errors(tmp_path) -> None:
+    result = run_example("codeswitch_report", tmp_path)
+    assert result.returncode == 0, result.stderr
+    # u1: one word substituted; u2: one character deleted; u3: one word deleted;
+    # u4: exact -- 3 errors over 6 + 6 + 4 + 4 = 20 mixed reference tokens
+    assert "corpus totals: 3 errors over 20 mixed tokens" in result.stdout
