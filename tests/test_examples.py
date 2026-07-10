@@ -39,3 +39,26 @@ def test_the_decoding_comparison_runs_offline(tmp_path) -> None:
     assert (tmp_path / "comparison.json").exists()
     assert "replayed the planted sequence exactly" in result.stdout
     assert "scripted fixture" in result.stdout
+
+
+@pytest.mark.slow
+def test_the_streaming_session_runs_offline(tmp_path) -> None:
+    result = run_example("streaming_session", tmp_path)
+    assert result.returncode == 0, result.stderr
+    assert (tmp_path / "session.jsonl").exists()
+    assert "identical event trace" in result.stdout
+
+
+@pytest.mark.slow
+def test_the_streaming_session_endpoints_after_the_units(tmp_path) -> None:
+    from echoscribe.stream.session import read_session
+
+    result = run_example("streaming_session", tmp_path)
+    assert result.returncode == 0, result.stderr
+    session = read_session(tmp_path / "session.jsonl")
+    assert len(session.utterances) == 1
+    record = session.utterances[0]
+    assert record.hypothesis == (3, 1, 4, 1, 5)
+    assert record.endpointed
+    # the last planted unit sits at frame 25 + 48; the endpoint must be later
+    assert record.endpoint_frames is not None and record.endpoint_frames > 73
