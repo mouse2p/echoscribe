@@ -93,3 +93,10 @@ def test_the_training_demo_decreases_the_loss_or_explains_itself(tmp_path) -> No
     assert (tmp_path / "train-history.json").exists()
     assert "loss fell" in result.stdout
     assert "not recognizer accuracy" in result.stdout
+
+
+def test_every_example_directory_is_indexed_in_the_readme() -> None:
+    readme = (EXAMPLES / "README.md").read_text(encoding="utf-8")
+    for directory in sorted(EXAMPLES.iterdir()):
+        if directory.is_dir() and (directory / "run.py").exists():
+            assert directory.name in readme, directory.name
