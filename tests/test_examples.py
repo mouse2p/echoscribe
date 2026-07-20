@@ -81,3 +81,15 @@ def test_the_code_switch_scores_match_the_planted_errors(tmp_path) -> None:
     # u1: one word substituted; u2: one character deleted; u3: one word deleted;
     # u4: exact -- 3 errors over 6 + 6 + 4 + 4 = 20 mixed reference tokens
     assert "corpus totals: 3 errors over 20 mixed tokens" in result.stdout
+
+
+@pytest.mark.slow
+def test_the_training_demo_decreases_the_loss_or_explains_itself(tmp_path) -> None:
+    result = run_example("training_demo", tmp_path, "--epochs", "4", "--utterances", "8")
+    assert result.returncode == 0, result.stderr
+    if "torch extra is not installed" in result.stdout:
+        # an honest skip: nothing ran, nothing was claimed
+        return
+    assert (tmp_path / "train-history.json").exists()
+    assert "loss fell" in result.stdout
+    assert "not recognizer accuracy" in result.stdout
