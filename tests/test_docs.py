@@ -42,3 +42,18 @@ def test_every_source_module_is_documented() -> None:
         # root.parent is src/, so the relative parts already start with "echoscribe"
         module = ".".join(path.relative_to(root.parent).with_suffix("").parts)
         assert module in documented, f"{module} is missing from docs/api.md"
+
+
+def test_the_docs_index_links_to_real_files() -> None:
+    text = (DOCS / "README.md").read_text(encoding="utf-8")
+    links = re.findall(r"\]\(([^)]+)\)", text)
+    assert links, "the index should link somewhere"
+    for link in links:
+        assert (DOCS / link).exists(), link
+
+
+def test_the_guides_agree_on_what_is_not_claimed() -> None:
+    honesty = (DOCS / "honesty.md").read_text(encoding="utf-8")
+    usage = (DOCS / "usage.md").read_text(encoding="utf-8")
+    assert "does not claim" in honesty.lower() or "not claim" in honesty.lower()
+    assert "scripted fixture" in usage
