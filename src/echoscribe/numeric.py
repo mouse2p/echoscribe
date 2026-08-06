@@ -18,6 +18,7 @@ from __future__ import annotations
 import math
 
 import numpy as np
+from numpy.typing import ArrayLike
 
 from echoscribe.errors import FeatureError, require, require_positive
 from echoscribe.types import FEATURE_DTYPE, FloatArray
@@ -108,7 +109,7 @@ def safe_log(values: np.ndarray, floor: float = PROBABILITY_FLOOR) -> FloatArray
     return np.log(np.maximum(array, floor))
 
 
-def geometric_mean(values, floor: float = 1e-300) -> np.ndarray | float:
+def geometric_mean(values: ArrayLike, floor: float = 1e-300) -> np.ndarray | float:
     """Geometric mean of values in ``[0, 1]``, computed through the logarithm.
 
     Going through logs is what keeps a product of many small numbers from
