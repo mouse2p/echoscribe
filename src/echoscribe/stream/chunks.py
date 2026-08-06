@@ -141,7 +141,7 @@ class ChunkSchedule:
         size; it still reports the right context it would like, so a caller can see
         that the tail of an utterance is decoded with less lookahead than the middle.
         """
-        plans = []
+        plans: list[ChunkPlan] = []
         first = 0
         while first < num_frames:
             end = min(first + self.frames_per_chunk, num_frames)

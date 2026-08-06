@@ -13,7 +13,9 @@ silently disagree with it; keeping frames means one source of truth.
 
 from __future__ import annotations
 
+import json
 from dataclasses import dataclass
+from pathlib import Path
 
 from echoscribe.errors import SchemaError, StreamError, require, require_positive
 
@@ -161,8 +163,6 @@ def session_to_lines(session: Session) -> list[str]:
     The header carries the session id, the run metadata and the schema version, so a
     reader can refuse a file it does not understand before parsing any utterance.
     """
-    import json
-
     header = {
         "kind": "session",
         "schema": SESSION_SCHEMA_VERSION,
@@ -177,20 +177,15 @@ def session_to_lines(session: Session) -> list[str]:
     return lines
 
 
-def write_session(path, session: Session) -> None:
+def write_session(path: str | Path, session: Session) -> None:
     """Write a session to ``path``, creating parent directories as needed."""
-    from pathlib import Path
-
     resolved = Path(path)
     resolved.parent.mkdir(parents=True, exist_ok=True)
     resolved.write_text("\n".join(session_to_lines(session)) + "\n", encoding="utf-8")
 
 
-def read_session(path) -> Session:
+def read_session(path: str | Path) -> Session:
     """Read a session back, reporting the offending line number on any failure."""
-    import json
-    from pathlib import Path
-
     resolved = Path(path)
     require(resolved.is_file(), f"session file not found: {resolved}", StreamError)
     header: dict | None = None
@@ -226,7 +221,10 @@ def read_session(path) -> Session:
                 records.append(UtteranceRecord.from_dict(payload))
             else:
                 raise StreamError(f"{resolved}:{number}: unknown line kind {kind!r}")
-    require(header is not None, f"{resolved}: the file holds no session header", StreamError)
+    if header is None:
+        # An explicit raise rather than require(): mypy only narrows what it
+        # can see, and everything below reads fields off the header.
+        raise StreamError(f"{resolved}: the file holds no session header")
     declared = int(header.get("utterances", len(records)))
     require(
         declared == len(records),
