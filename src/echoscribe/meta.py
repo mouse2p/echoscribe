@@ -214,11 +214,25 @@ class RunMetadata:
         )
         for name in ("label", "seed", "versions", "configs"):
             require(name in payload, f"run metadata is missing {name!r}", SchemaError)
+        seed = payload["seed"]
+        versions = payload["versions"]
+        configs = payload["configs"]
+        require(
+            isinstance(seed, int) and not isinstance(seed, bool),
+            f"run metadata seed must be an integer, got {seed!r}",
+            SchemaError,
+        )
+        require(
+            isinstance(versions, dict) and isinstance(configs, dict),
+            f"run metadata versions and configs must be mappings, got "
+            f"{type(versions).__name__} and {type(configs).__name__}",
+            SchemaError,
+        )
         restored = cls(
             label=str(payload["label"]),
-            seed=int(payload["seed"]),  # type: ignore[arg-type]
-            versions=dict(payload["versions"]),  # type: ignore[arg-type]
-            configs=dict(payload["configs"]),  # type: ignore[arg-type]
+            seed=seed,
+            versions=dict(versions),
+            configs=dict(configs),
         )
         recorded = payload.get("digest")
         require(
