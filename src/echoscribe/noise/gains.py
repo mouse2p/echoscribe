@@ -35,7 +35,7 @@ def validate_powers(
         ConfigError,
     )
     require(
-        np.all(np.isfinite(signal)) and np.all(signal >= 0),
+        bool(np.all(np.isfinite(signal))) and bool(np.all(signal >= 0)),
         "signal powers must be finite and non-negative",
         ConfigError,
     )
@@ -57,7 +57,7 @@ def validate_powers(
     )
     noise = np.broadcast_to(noise, signal.shape)
     require(
-        np.all(np.isfinite(noise)) and np.all(noise >= 0),
+        bool(np.all(np.isfinite(noise))) and bool(np.all(noise >= 0)),
         "noise powers must be finite and non-negative",
         ConfigError,
     )

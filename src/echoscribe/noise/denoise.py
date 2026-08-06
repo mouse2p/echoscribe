@@ -144,7 +144,7 @@ def denoise(
             ConfigError,
         )
         require(
-            np.all(np.isfinite(profile)) and np.all(profile >= 0),
+            bool(np.all(np.isfinite(profile))) and bool(np.all(profile >= 0)),
             "the noise profile must be finite and non-negative",
             ConfigError,
         )
