@@ -17,6 +17,7 @@ something; this command computes both the same way.
 from __future__ import annotations
 
 import argparse
+from collections.abc import Sequence
 from pathlib import Path
 
 from echoscribe.cli.common import EXIT_OK, fail, read_jsonl, write_json
@@ -80,6 +81,7 @@ def run(args: argparse.Namespace) -> int:
     field = "hypothesis_units" if args.level == "units" else "hypothesis_text"
     if any(field not in row for row in rows.values()):
         return fail(f"decode rows carry no {field!r}; rerun `echoscribe decode`")
+    pairs: list[tuple[Sequence[str], Sequence[str]]]
     if args.level == "units":
         pairs = [
             (

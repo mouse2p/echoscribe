@@ -11,6 +11,7 @@ from __future__ import annotations
 import argparse
 import json
 from pathlib import Path
+from typing import Any
 
 import numpy as np
 
@@ -79,7 +80,11 @@ def run(args: argparse.Namespace) -> int:
         "width": width,
     }
     target = workdir / args.out
-    np.savez(target, meta=np.array(json.dumps(meta, sort_keys=True)), **arrays)
+    # Typed as dict[str, Any] because np.savez's stubs model **kwds narrowly;
+    # the values are all arrays, and the keys are utterance ids plus "meta".
+    archive: dict[str, Any] = dict(arrays)
+    archive["meta"] = np.array(json.dumps(meta, sort_keys=True))
+    np.savez(target, **archive)
     print(
         f"echoscribe feats: {len(records)} utterances, {frames} frames of width {width} -> {target}"
     )
