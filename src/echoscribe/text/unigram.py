@@ -206,12 +206,11 @@ def learn_unigram(
     table = estimate_log_probabilities(frequencies.elements(), pieces, iterations)
     while len(pieces) > target_size:
         droppable = _lowest_droppable(pieces, table, frequencies)
-        require(
-            droppable is not None,
-            f"no further piece can be removed without losing a corpus word; stuck at "
-            f"{len(pieces)} pieces",
-            TokenizerError,
-        )
+        if droppable is None:
+            raise TokenizerError(
+                f"no further piece can be removed without losing a corpus word; "
+                f"stuck at {len(pieces)} pieces"
+            )
         pieces.remove(droppable)
         del table[droppable]
         table = estimate_log_probabilities(frequencies.elements(), pieces, iterations)
