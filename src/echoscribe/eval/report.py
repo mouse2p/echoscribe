@@ -112,7 +112,7 @@ class SvgElement:
     def __post_init__(self) -> None:
         require(
             isinstance(self.tag, str)
-            and self.tag
+            and bool(self.tag)
             and not any(character in self.tag for character in FORBIDDEN_NAME_CHARACTERS),
             f"{self.tag!r} is not a usable SVG tag name",
             ConfigError,
@@ -126,7 +126,7 @@ class SvgElement:
         for name, value in self.attributes:
             require(
                 isinstance(name, str)
-                and name
+                and bool(name)
                 and not any(character in name for character in FORBIDDEN_NAME_CHARACTERS),
                 f"{name!r} is not a usable SVG attribute name",
                 ConfigError,
@@ -153,7 +153,9 @@ class SvgElement:
         if not self.children:
             return f"{pad}{opening}/>"
         if all(isinstance(child, str) for child in self.children):
-            text = "".join(escape_text(child) for child in self.children)
+            # The isinstance inside the join is redundant at runtime and load
+            # bearing for the checker: all() does not narrow a comprehension.
+            text = "".join(escape_text(child) for child in self.children if isinstance(child, str))
             return f"{pad}{opening}>{text}</{self.tag}>"
         child_pad = "  " * (indent + 1)
         parts = [
