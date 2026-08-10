@@ -21,6 +21,7 @@ from __future__ import annotations
 
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
+from pathlib import Path
 
 import torch
 
@@ -331,12 +332,12 @@ def train_transducer(
 
 
 def save_training_bundle(
-    path,
+    path: Path | str,
     kind: str,
     configs: Mapping[str, object],
     modules: Mapping[str, torch.nn.Module],
     history: TrainHistory,
-):
+) -> Path:
     """One bundle holding every trained module plus the history it earned.
 
     State keys are prefixed with each module's name, so a bundle of an
