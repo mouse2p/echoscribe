@@ -1,0 +1,20 @@
+version: 2
+updates:
+  - package-ecosystem: "pip"
+    directory: "/"
+    schedule:
+      interval: "monthly"
+    groups:
+      dev-tooling:
+        patterns:
+          - "ruff*"
+          - "mypy*"
+          - "pytest*"
+    ignore:
+      # torch is pinned to the CPU index by hand; a bot bumping it could pull
+      # a CUDA build, which this project must never ship or test against.
+      - dependency-name: "torch"
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "monthly"
