@@ -1,0 +1,51 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  test:
+    name: Python ${{ matrix.python-version }} on ${{ matrix.os }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest]
+        python-version: ["3.11", "3.12", "3.13"]
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+
+      - name: Create the project virtualenv
+        run: python -m venv .venv
+
+      # The CPU wheel index is the only extra index: this project never uses a
+      # GPU, and torch's local-version (+cpu) wheels win over PyPI's under
+      # pip's resolution, so no CUDA build is ever downloaded.
+      - name: Install with dev and torch extras
+        run: |
+          .venv/bin/pip install --upgrade pip
+          .venv/bin/pip install -e ".[dev,torch]" \
+            --extra-index-url https://download.pytorch.org/whl/cpu
+
+      # The remaining steps mirror the Makefile targets one for one, so a
+      # green CI and a green `make` are the same statement.
+      - name: Build the wheel
+        run: make build
+
+      - name: Run the whole suite, slow and model tests included
+        run: make test-all
+
+      - name: Check formatting
+        run: make format-check
+
+      - name: Lint
+        run: make lint
+
+      - name: Typecheck
+        run: make typecheck
