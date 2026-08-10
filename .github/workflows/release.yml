@@ -1,0 +1,47 @@
+name: Release
+
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    name: Build and attach release artifacts
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Create the project virtualenv
+        run: python -m venv .venv
+
+      - name: Install release tooling
+        run: |
+          .venv/bin/pip install --upgrade pip
+          .venv/bin/pip install -e ".[dev]"
+
+      # make release writes dist/*.whl, dist/*.tar.gz and dist/SHA256SUMS.
+      - name: Build the sdist, the wheel and their checksums
+        run: make release
+
+      # The wheel that gets attached to the release is the wheel the smoke
+      # check installed, imported and decoded through -- in a throwaway venv,
+      # never against the source tree.
+      - name: Smoke-check the built wheel
+        run: .venv/bin/python scripts/check_package.py
+
+      # Artifacts only: no package registry, no registry credentials.
+      - name: Create the GitHub release with the built artifacts
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "${GITHUB_REF_NAME}" \
+            dist/*.whl dist/*.tar.gz dist/SHA256SUMS \
+            --title "${GITHUB_REF_NAME}" \
+            --generate-notes
