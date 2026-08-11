@@ -104,3 +104,23 @@ round-trip test: corpus manifests (`manifest.jsonl`, checksummed wavs),
 vocabularies, stream sessions (`session.jsonl`), stream recordings (base64
 float64, digest-checked), bench results and model bundles (torch payloads
 with config, state and history).
+
+
+## Continuous integration
+
+Two workflows guard the repository:
+
+* **CI** runs on every push and pull request across Python 3.11, 3.12 and
+  3.13 on Ubuntu: install with the dev and torch extras (CPU wheel index
+  only), then `make build`, `make test-all`, `make format-check`, `make lint`
+  and `make typecheck` -- the Makefile targets one for one, so "CI is green"
+  and "make is green" are the same statement.
+* **Release** runs on `v*` tags: `make release` builds the sdist, the wheel
+  and `SHA256SUMS`; `scripts/check_package.py` installs the wheel into a
+  throwaway venv and decodes through it; `gh release create` attaches the
+  artifacts to the GitHub release. No package registry and no registry
+  credentials are involved anywhere.
+
+Dependabot watches pip and GitHub Actions monthly. torch updates are ignored
+by configuration: the CPU-only pin is a project invariant, not a version to
+chase.
