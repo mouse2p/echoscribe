@@ -23,7 +23,7 @@ from echoscribe.resample import resample as resample_audio
 from echoscribe.spectrum import log_power_spectrum, power_spectrum
 from echoscribe.waveform import Audio, concatenate, silence
 
-__version__ = "0.1.0"
+__version__ = "0.1.1"
 
 __all__ = [
     "Audio",
