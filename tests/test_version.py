@@ -41,3 +41,15 @@ def test_the_package_declares_itself_typed() -> None:
 
     marker = Path(echoscribe.__file__).parent / "py.typed"
     assert marker.is_file()
+
+
+def test_the_version_agrees_with_pyproject_and_the_changelog() -> None:
+    from pathlib import Path
+
+    root = Path(echoscribe.__file__).resolve().parents[2]
+    pyproject = (root / "pyproject.toml").read_text(encoding="utf-8")
+    assert f'version = "{echoscribe.__version__}"' in pyproject
+    changelog = (root / "CHANGELOG.md").read_text(encoding="utf-8")
+    assert f"## [{echoscribe.__version__}]" in changelog
+    latest = changelog.split("## [", 1)[1].split("]", 1)[0]
+    assert latest == echoscribe.__version__, "the changelog must lead with the release"
