@@ -106,6 +106,7 @@ names a module that does not exist.
 | `echoscribe.model.schema` | versioned bundle files, `save_bundle`/`load_bundle` |
 | `echoscribe.model.stack` | `stack_frames` |
 | `echoscribe.model.encoder` | `Encoder`, a compact frame-stacked BiLSTM |
+| `echoscribe.model.infer` | bundle -> posterior bridge to the NumPy decoders |
 | `echoscribe.model.ctc` | `CtcHead`, `ctc_loss` |
 | `echoscribe.model.transducer` | `Predictor`, `Joint`, the exact RNN-T lattice loss |
 | `echoscribe.model.train` | seeded CTC and transducer loops over the laboratory |
