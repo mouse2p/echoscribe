@@ -7,6 +7,12 @@ code-switch aware scoring.  Every measurable number it reports comes from the
 bundled synthetic acoustic laboratory, which renders waveforms from a seeded
 formant synthesizer and carries its own planted transcripts as ground truth.
 Nothing here evaluates a real acoustic system.
+
+The guides in ``docs/`` are part of the contract: ``architecture.md`` for the
+layer map, ``usage.md`` for the CLI and library, ``api.md`` for the public
+surface, ``honesty.md`` for what any number coming out of this package is
+allowed to mean, and ``references.md`` for the literature behind each
+mechanism.
 """
 
 from echoscribe.audio import read_wav, write_wav
