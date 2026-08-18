@@ -57,3 +57,38 @@ def test_the_guides_agree_on_what_is_not_claimed() -> None:
     usage = (DOCS / "usage.md").read_text(encoding="utf-8")
     assert "does not claim" in honesty.lower() or "not claim" in honesty.lower()
     assert "scripted fixture" in usage
+
+
+def test_the_readme_lists_every_command_and_example() -> None:
+    root = Path(__file__).resolve().parents[1]
+    readme = (root / "README.md").read_text(encoding="utf-8")
+    for command in (
+        "synth",
+        "feats",
+        "decode",
+        "stream",
+        "bias",
+        "eval",
+        "bench",
+        "report",
+        "train",
+        "demo",
+    ):
+        assert f"echoscribe {command}" in readme or f"`{command}`" in readme, command
+    for example in (
+        "corpus_and_features",
+        "decoding_comparison",
+        "streaming_session",
+        "codeswitch_report",
+        "training_demo",
+    ):
+        assert example in readme, example
+
+
+def test_the_readme_links_resolve() -> None:
+    root = Path(__file__).resolve().parents[1]
+    readme = (root / "README.md").read_text(encoding="utf-8")
+    for link in re.findall(r"\]\(([^)#]+)\)", readme):
+        if link.startswith("http"):
+            continue
+        assert (root / link).exists(), link
