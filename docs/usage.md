@@ -45,6 +45,23 @@ from the planted transcripts. It exercises features, decoders, streaming,
 scoring and reporting against known answers; it does not run an acoustic
 model, and a zero error rate from it certifies the mechanics, not recognition.
 
+The trained path runs through the same seam in the other direction:
+
+```bash
+echoscribe train  --workdir run --method ctc --epochs 8   # model.pt + vocab.json
+echoscribe decode --workdir run --bundle run/model.pt --out decode-bundle.jsonl
+echoscribe eval   --workdir run --decode-file decode-bundle.jsonl
+```
+
+`train` renders its own laboratory, trains a tiny encoder + CTC head, and
+saves a versioned bundle plus the vocabulary the targets used. `decode
+--bundle` reloads both, produces real model posteriors through
+`echoscribe.model.infer`, and scores like any other decode. One caveat is
+printed with every bundle decode and repeated here: when train and decode see
+the same laboratory, a low error rate is **memorization of planted data**,
+not evidence of recognition. `echoscribe demo --train` runs the whole loop,
+scripted and trained, side by side.
+
 ## The library
 
 Features from a waveform:
