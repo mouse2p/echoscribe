@@ -100,11 +100,13 @@ def run(args: argparse.Namespace) -> int:
         }
     target = save_training_bundle(workdir / args.out, args.method, configs, modules, history)
     write_json(workdir / "train-history.json", history.to_dict())
+    write_json(workdir / "vocab.json", vocabulary.to_dict())
     print(
         f"echoscribe train ({args.method}): loss {history.first_loss:.4f} -> "
         f"{history.last_loss:.4f} over {history.epochs_completed} epochs"
     )
     print(f"  bundle: {target}")
+    print(f"  vocabulary: {workdir / 'vocab.json'} ({len(vocabulary)} tokens)")
     print(
         "  note: synthetic speech with planted transcripts; the decrease shows the "
         "loop works, not that a recognizer does"

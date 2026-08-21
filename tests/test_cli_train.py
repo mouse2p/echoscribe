@@ -68,3 +68,16 @@ def test_transducer_training_writes_encoder_predictor_and_joint(tmp_path) -> Non
     assert prefixes == {"encoder", "predictor", "joint"}
     history = read_json(tmp_path / "train-history.json")
     assert history["epochs_completed"] == 2
+
+
+@pytest.mark.slow
+def test_training_saves_a_vocabulary_the_decoder_can_read(tmp_path) -> None:
+    from echoscribe.cli.common import read_json
+    from echoscribe.text.vocab import Vocabulary
+
+    assert main(train_arguments(tmp_path)) == 0
+    vocabulary = Vocabulary.from_dict(read_json(tmp_path / "vocab.json"))
+    assert len(vocabulary) > 4
+    assert vocabulary.blank_id == 0
+    # the ids the trainer used are the ids the vocabulary still resolves
+    assert vocabulary.token_at(4)
