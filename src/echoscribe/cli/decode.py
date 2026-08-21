@@ -25,12 +25,20 @@ that as the error it is.
 from __future__ import annotations
 
 import argparse
+import json
 from pathlib import Path
 
-from echoscribe.cli.common import EXIT_OK, write_jsonl
+import numpy as np
+
+from echoscribe.cli.common import EXIT_OK, fail, read_json, write_jsonl
 from echoscribe.cli.scripted import load_scripted_corpus
+from echoscribe.cmvn import CmvnStatistics, apply_cmvn
 from echoscribe.decode.ctc_greedy import ctc_greedy
 from echoscribe.decode.ctc_prefix import ctc_prefix_search
+from echoscribe.model import require_torch
+from echoscribe.synth.manifest import read_manifest
+from echoscribe.text.units import utterance_units
+from echoscribe.text.vocab import Vocabulary
 
 METHODS = ("greedy", "prefix")
 
@@ -46,11 +54,18 @@ def register(subparsers: argparse._SubParsersAction) -> None:
     parser.add_argument("--method", choices=METHODS, default="greedy", help="decoding method")
     parser.add_argument("--beam", type=int, default=5, help="beam width for the prefix method")
     parser.add_argument("--out", default="decode.jsonl", help="hypothesis file to write")
+    parser.add_argument(
+        "--bundle",
+        default=None,
+        help="trained CTC bundle to decode through instead of the scripted fixtures",
+    )
     parser.set_defaults(handler=run)
 
 
 def run(args: argparse.Namespace) -> int:
     """Decode every utterance and write one JSONL line per hypothesis."""
+    if args.bundle:
+        return run_with_bundle(args)
     utterances, vocabulary = load_scripted_corpus(args.workdir)
     rows: list[dict] = []
     exact = 0
@@ -82,4 +97,71 @@ def run(args: argparse.Namespace) -> int:
     )
     print(f"  hypotheses: {target}")
     print("  note: scripted fixture posteriors, not the output of a trained model")
+    return EXIT_OK
+
+
+def run_with_bundle(args: argparse.Namespace) -> int:
+    """Decode through a trained bundle: real model posteriors, no fixtures.
+
+    The features are normalized per utterance with their own CMVN statistics,
+    exactly as the training bridge normalized them, so the model sees the
+    distribution it was trained on.
+    """
+    require_torch()
+    from echoscribe.model.infer import ctc_log_posteriors, load_ctc_model
+
+    root = Path(args.workdir)
+    vocab_path = root / "vocab.json"
+    if not vocab_path.exists():
+        return fail(f"no vocabulary at {vocab_path}; `echoscribe train` writes it")
+    features_path = root / "features.npz"
+    if not features_path.exists():
+        return fail(f"no features at {features_path}; run `echoscribe feats` first")
+    manifest_path = root / "manifest.jsonl"
+    if not manifest_path.exists():
+        return fail(f"no manifest at {manifest_path}; run `echoscribe synth` first")
+    vocabulary = Vocabulary.from_dict(read_json(vocab_path))
+    encoder, head, _ = load_ctc_model(args.bundle)
+    records = read_manifest(manifest_path)
+    rows: list[dict] = []
+    exact = 0
+    with np.load(features_path) as archive:
+        meta = json.loads(str(archive["meta"]))
+        if meta["num_mel_bins"] != encoder.config.input_dim:
+            return fail(
+                f"the features hold {meta['num_mel_bins']} bins but the bundle "
+                f"encoder reads {encoder.config.input_dim}; rerun feats with "
+                f"--num-mel-bins {encoder.config.input_dim}"
+            )
+        for record in records:
+            features = np.asarray(archive[record.utterance_id])
+            statistics = CmvnStatistics(dimension=features.shape[1])
+            statistics.update(features)
+            normalized = apply_cmvn(features, statistics)
+            posteriors = ctc_log_posteriors(encoder, head, normalized)
+            symbols = list(ctc_greedy(posteriors).symbols)
+            reference = list(utterance_units(record.tokens, record.languages))
+            matched = symbols == list(vocabulary.encode(reference, allow_unk=False))
+            exact += int(matched)
+            units = [vocabulary.token_at(symbol) for symbol in symbols]
+            rows.append(
+                {
+                    "utterance_id": record.utterance_id,
+                    "method": "bundle-ctc",
+                    "reference_units": reference,
+                    "hypothesis_units": units,
+                    "hypothesis_ids": symbols,
+                    "exact_match": matched,
+                    "reference_text": record.text,
+                    "hypothesis_text": record.text if matched else " ".join(units),
+                }
+            )
+    target = write_jsonl(root / args.out, rows)
+    print(
+        f"echoscribe decode (bundle-ctc): {len(rows)} utterances, "
+        f"{exact} matched their planted transcript exactly"
+    )
+    print(f"  hypotheses: {target}")
+    print("  note: the bundle was trained on this synthetic laboratory, so a low error")
+    print("  rate here is memorization of planted data, not recognition accuracy")
     return EXIT_OK

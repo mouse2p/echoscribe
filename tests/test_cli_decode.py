@@ -131,3 +131,90 @@ def test_a_degraded_hypothesis_text_is_the_joined_units(tmp_path) -> None:
         "reference_text",
         "hypothesis_text",
     }
+
+
+def test_bundle_decoding_without_a_vocabulary_fails(tmp_path, capsys) -> None:
+    code = main(["decode", "--workdir", str(tmp_path), "--bundle", "absent.pt"])
+    assert code == 1
+    assert "echoscribe train" in capsys.readouterr().err
+
+
+@pytest.mark.slow
+def test_a_trained_bundle_decodes_through_the_seam(tmp_path, capsys) -> None:
+    pytest.importorskip("torch", reason="the torch extra is not installed")
+    prepare(tmp_path)
+    assert (
+        main(
+            [
+                "train",
+                "--workdir",
+                str(tmp_path),
+                "--epochs",
+                "3",
+                "--utterances",
+                "6",
+                "--hidden",
+                "24",
+            ]
+        )
+        == 0
+    )
+    code = main(
+        [
+            "decode",
+            "--workdir",
+            str(tmp_path),
+            "--bundle",
+            str(tmp_path / "model.pt"),
+            "--out",
+            "bundle.jsonl",
+        ]
+    )
+    assert code == 0
+    rows = read_jsonl(tmp_path / "bundle.jsonl")
+    assert len(rows) == 2
+    assert all(row["method"] == "bundle-ctc" for row in rows)
+    for row in rows:
+        assert len(row["hypothesis_ids"]) == len(row["hypothesis_units"])
+        assert all(symbol >= 0 for symbol in row["hypothesis_ids"])
+    assert "memorization" in capsys.readouterr().out
+
+
+@pytest.mark.slow
+def test_a_bundle_rejects_features_of_the_wrong_width(tmp_path, capsys) -> None:
+    pytest.importorskip("torch", reason="the torch extra is not installed")
+    assert (
+        main(
+            [
+                "synth",
+                "--workdir",
+                str(tmp_path),
+                "--utterances",
+                "2",
+                "--max-tokens",
+                "2",
+                "--seed",
+                "5",
+            ]
+        )
+        == 0
+    )
+    assert main(["feats", "--workdir", str(tmp_path), "--num-mel-bins", "24"]) == 0
+    assert (
+        main(
+            [
+                "train",
+                "--workdir",
+                str(tmp_path),
+                "--epochs",
+                "1",
+                "--utterances",
+                "4",
+                "--hidden",
+                "16",
+            ]
+        )
+        == 0
+    )
+    assert main(["decode", "--workdir", str(tmp_path), "--bundle", str(tmp_path / "model.pt")]) == 1
+    assert "rerun feats" in capsys.readouterr().err
