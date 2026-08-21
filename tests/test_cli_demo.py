@@ -72,3 +72,28 @@ def test_every_registered_command_appears_in_the_help(capsys) -> None:
         "train",
     ):
         assert command in out
+
+
+@pytest.mark.slow
+def test_the_demo_can_train_and_decode_through_the_model(tmp_path, capsys) -> None:
+    pytest.importorskip("torch", reason="the torch extra is not installed")
+    code = main(
+        [
+            "demo",
+            "--workdir",
+            str(tmp_path),
+            "--utterances",
+            "4",
+            "--repeats",
+            "1",
+            "--train",
+            "--epochs",
+            "2",
+        ]
+    )
+    assert code == 0
+    out = capsys.readouterr().out
+    assert (tmp_path / "scores-bundle.json").exists()
+    assert (tmp_path / "decode-bundle.jsonl").exists()
+    assert "trained-bundle UER" in out
+    assert "memorization" in out

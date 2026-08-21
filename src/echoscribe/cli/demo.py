@@ -35,8 +35,10 @@ from echoscribe.cli.feats import run as run_feats
 from echoscribe.cli.report import run as run_report
 from echoscribe.cli.stream import run as run_stream
 from echoscribe.cli.synth import run as run_synth
+from echoscribe.cli.train import run as run_train
 from echoscribe.eval.bench import BenchResult
 from echoscribe.eval.report import digest_report
+from echoscribe.model import require_torch
 
 
 def register(subparsers: argparse._SubParsersAction) -> None:
@@ -50,6 +52,12 @@ def register(subparsers: argparse._SubParsersAction) -> None:
     parser.add_argument("--utterances", type=int, default=8, help="corpus size to synthesize")
     parser.add_argument("--seed", type=int, default=2025, help="corpus seed")
     parser.add_argument("--repeats", type=int, default=3, help="timed decode repeats")
+    parser.add_argument(
+        "--train",
+        action="store_true",
+        help="also train a tiny CTC model and decode the corpus through it (torch extra)",
+    )
+    parser.add_argument("--epochs", type=int, default=6, help="epochs for the --train path")
     parser.set_defaults(handler=run)
 
 
@@ -84,7 +92,9 @@ def run(args: argparse.Namespace) -> int:
         (
             "decode",
             run_decode,
-            Namespace(workdir=str(workdir), method="greedy", beam=5, out="decode.jsonl"),
+            Namespace(
+                workdir=str(workdir), method="greedy", beam=5, out="decode.jsonl", bundle=None
+            ),
         ),
         (
             "stream",
@@ -133,6 +143,52 @@ def run(args: argparse.Namespace) -> int:
             Namespace(workdir=str(workdir), label="demo", out="report.svg"),
         ),
     ]
+    if args.train:
+        require_torch()
+        stages.append(
+            (
+                "train",
+                run_train,
+                Namespace(
+                    workdir=str(workdir),
+                    method="ctc",
+                    epochs=args.epochs,
+                    utterances=args.utterances,
+                    learning_rate=0.01,
+                    batch_size=4,
+                    seed=args.seed,
+                    model_seed=3,
+                    hidden=32,
+                    out="model.pt",
+                ),
+            )
+        )
+        stages.append(
+            (
+                "decode-bundle",
+                run_decode,
+                Namespace(
+                    workdir=str(workdir),
+                    method="greedy",
+                    beam=5,
+                    out="decode-bundle.jsonl",
+                    bundle=str(workdir / "model.pt"),
+                ),
+            )
+        )
+        stages.append(
+            (
+                "eval-bundle",
+                run_eval,
+                Namespace(
+                    workdir=str(workdir),
+                    level="units",
+                    metric="wer",
+                    decode_file="decode-bundle.jsonl",
+                    out="scores-bundle.json",
+                ),
+            )
+        )
     for name, handler, namespace in stages:
         code = handler(namespace)
         if code != EXIT_OK:
@@ -157,6 +213,14 @@ def run(args: argparse.Namespace) -> int:
         f"over {text_scores['totals']['reference_length']} mixed tokens"
     )
     print(f"  decode RTF:        {bench.rtf} (median of {bench.repeats} repeats)")
+    if args.train:
+        bundle_scores = read_json(workdir / "scores-bundle.json")
+        if isinstance(bundle_scores, dict):
+            print(
+                f"  trained-bundle UER: {bundle_scores['totals']['error_rate']:.4f} "
+                f"over {bundle_scores['totals']['reference_length']} units "
+                f"(memorization of the laboratory it trained on)"
+            )
     print(f"  report digest:     {digest_report(document)}")
     print()
     print("The audio is synthetic and the transcripts are planted. These numbers")
