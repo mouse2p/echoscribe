@@ -43,6 +43,11 @@ python -m venv .venv
 make demo        # 等价于 echoscribe demo --workdir /tmp/echoscribe-demo
 ```
 
+加上 `--train`（需要 torch extra）后，demo 还会训练一个小 CTC 模型并通过
+`echoscribe.model.infer` 的接缝用它解码同一批合成语料，打印训练损失与
+trained-bundle 的 UER——并明确标注：训练与解码使用同一合成实验室时，低错误率
+是对 planted 数据的记忆，而不是识别精度。
+
 或者按阶段执行，每个阶段读上一阶段写进同一 workdir 的文件：
 
 ```bash
