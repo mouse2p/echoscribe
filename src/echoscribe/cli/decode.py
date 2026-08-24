@@ -33,6 +33,7 @@ import numpy as np
 from echoscribe.cli.common import EXIT_OK, fail, read_json, write_jsonl
 from echoscribe.cli.scripted import load_scripted_corpus
 from echoscribe.cmvn import CmvnStatistics, apply_cmvn
+from echoscribe.decode.confidence import token_confidences, utterance_confidence
 from echoscribe.decode.ctc_greedy import ctc_greedy
 from echoscribe.decode.ctc_prefix import ctc_prefix_search
 from echoscribe.model import require_torch
@@ -59,6 +60,11 @@ def register(subparsers: argparse._SubParsersAction) -> None:
         default=None,
         help="trained CTC bundle to decode through instead of the scripted fixtures",
     )
+    parser.add_argument(
+        "--confidences",
+        action="store_true",
+        help="attach per-token posterior confidences (scripted greedy path)",
+    )
     parser.set_defaults(handler=run)
 
 
@@ -66,30 +72,41 @@ def run(args: argparse.Namespace) -> int:
     """Decode every utterance and write one JSONL line per hypothesis."""
     if args.bundle:
         return run_with_bundle(args)
+    if args.confidences and args.method != "greedy":
+        return fail(
+            "confidences need the greedy method; the prefix beam keeps no single token path"
+        )
     utterances, vocabulary = load_scripted_corpus(args.workdir)
     rows: list[dict] = []
     exact = 0
     for item in utterances:
+        greedy = None
         if args.method == "greedy":
-            symbols = ctc_greedy(item.posteriors).symbols
+            greedy = ctc_greedy(item.posteriors)
+            symbols = greedy.symbols
         else:
             symbols = ctc_prefix_search(item.posteriors, beam_size=args.beam).symbols
         matched = symbols == item.unit_ids
         exact += int(matched)
-        rows.append(
-            {
-                "utterance_id": item.utterance_id,
-                "method": args.method,
-                "reference_units": list(item.units),
-                "hypothesis_units": [vocabulary.token_at(symbol) for symbol in symbols],
-                "hypothesis_ids": list(symbols),
-                "exact_match": matched,
-                "reference_text": item.text,
-                "hypothesis_text": item.text
-                if matched
-                else " ".join(vocabulary.token_at(symbol) for symbol in symbols),
-            }
-        )
+        row = {
+            "utterance_id": item.utterance_id,
+            "method": args.method,
+            "reference_units": list(item.units),
+            "hypothesis_units": [vocabulary.token_at(symbol) for symbol in symbols],
+            "hypothesis_ids": list(symbols),
+            "exact_match": matched,
+            "reference_text": item.text,
+            "hypothesis_text": item.text
+            if matched
+            else " ".join(vocabulary.token_at(symbol) for symbol in symbols),
+        }
+        if greedy is not None and args.confidences:
+            confidences = token_confidences(item.posteriors, greedy.tokens)
+            row["token_confidences"] = [
+                round(float(confidence.probability), 6) for confidence in confidences
+            ]
+            row["utterance_confidence"] = round(float(utterance_confidence(confidences)), 6)
+        rows.append(row)
     target = write_jsonl(Path(args.workdir) / args.out, rows)
     print(
         f"echoscribe decode ({args.method}): {len(rows)} utterances, "

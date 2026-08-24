@@ -218,3 +218,22 @@ def test_a_bundle_rejects_features_of_the_wrong_width(tmp_path, capsys) -> None:
     )
     assert main(["decode", "--workdir", str(tmp_path), "--bundle", str(tmp_path / "model.pt")]) == 1
     assert "rerun feats" in capsys.readouterr().err
+
+
+def test_confidences_ride_along_with_a_greedy_decode(tmp_path) -> None:
+    prepare(tmp_path)
+    main(["decode", "--workdir", str(tmp_path), "--confidences"])
+    rows = read_jsonl(tmp_path / "decode.jsonl")
+    for row in rows:
+        assert len(row["token_confidences"]) == len(row["hypothesis_ids"])
+        assert all(0.0 <= probability <= 1.0 for probability in row["token_confidences"])
+        assert 0.0 <= row["utterance_confidence"] <= 1.0
+        # scripted posteriors are unambiguous, so the decoder should be sure
+        assert row["utterance_confidence"] > 0.9
+
+
+def test_confidences_with_the_prefix_method_are_refused(tmp_path, capsys) -> None:
+    prepare(tmp_path)
+    code = main(["decode", "--workdir", str(tmp_path), "--method", "prefix", "--confidences"])
+    assert code == 1
+    assert "greedy" in capsys.readouterr().err
