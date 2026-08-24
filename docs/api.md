@@ -120,6 +120,7 @@ names a module that does not exist.
 | `echoscribe.cli.synth` | render a seeded corpus into a work directory |
 | `echoscribe.cli.feats` | log-mel extraction over a rendered corpus |
 | `echoscribe.cli.decode` | CTC greedy and prefix-beam decoding |
+| `echoscribe.cli.denoise` | spectral denoising with planted-pair SNR measurement |
 | `echoscribe.cli.stream` | chunked streaming decode into a session file |
 | `echoscribe.cli.bias` | hotword biasing over an ambiguous fixture joint |
 | `echoscribe.cli.evaluate` | unit- and text-level scoring of hypotheses |
