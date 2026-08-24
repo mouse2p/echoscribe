@@ -10,11 +10,11 @@ from __future__ import annotations
 
 import argparse
 
-from echoscribe.cli.common import EXIT_OK
+from echoscribe.cli.common import EXIT_OK, fail
 from echoscribe.seeds import Seed
 from echoscribe.synth.corpus import CorpusConfig, generate_corpus
 from echoscribe.synth.manifest import manifest_digest
-from echoscribe.synth.render import RenderConfig, render_corpus
+from echoscribe.synth.render import AcousticCondition, RenderConfig, render_corpus
 
 
 def register(subparsers: argparse._SubParsersAction) -> None:
@@ -41,6 +41,18 @@ def register(subparsers: argparse._SubParsersAction) -> None:
         default=0.5,
         help="chance each token is English rather than Chinese",
     )
+    parser.add_argument(
+        "--noise-kind",
+        choices=("white", "pink", "modulated"),
+        default=None,
+        help="mix this noise into every rendered utterance",
+    )
+    parser.add_argument(
+        "--snr",
+        type=float,
+        default=None,
+        help="planted mix SNR in dB; needs --noise-kind",
+    )
     parser.set_defaults(handler=run)
 
 
@@ -55,11 +67,23 @@ def run(args: argparse.Namespace) -> int:
             seed=Seed(args.seed, "cli.synth"),
         )
     )
-    records = render_corpus(corpus, RenderConfig(), args.workdir)
+    if args.snr is not None and args.noise_kind is None:
+        return fail("--snr needs --noise-kind; a clean corpus has no SNR to set")
+    condition = (
+        AcousticCondition()
+        if args.noise_kind is None
+        else AcousticCondition(
+            noise_kind=args.noise_kind,
+            noise_snr_db=args.snr if args.snr is not None else 20.0,
+        )
+    )
+    records = render_corpus(corpus, RenderConfig(condition=condition), args.workdir)
     seconds = sum(record.duration for record in records)
     print(
         f"echoscribe synth: {len(records)} utterances, {seconds:.2f} s of audio, "
         f"manifest digest {manifest_digest(records)}"
     )
     print(f"  workdir: {args.workdir}")
+    if args.noise_kind is not None:
+        print(f"  condition: {args.noise_kind} noise at {condition.noise_snr_db:.1f} dB SNR")
     return EXIT_OK

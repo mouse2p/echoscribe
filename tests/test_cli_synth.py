@@ -76,3 +76,50 @@ def test_an_english_probability_above_one_fails(tmp_path, capsys) -> None:
     )
     assert code == 1
     assert capsys.readouterr().err.startswith("echoscribe: error:")
+
+
+def test_a_clean_corpus_records_a_clean_condition(tmp_path) -> None:
+    main(["synth", "--workdir", str(tmp_path), "--utterances", "2", "--seed", "5"])
+    record = json.loads((tmp_path / "manifest.jsonl").read_text().splitlines()[0])
+    assert record["condition"]["noise_kind"] is None
+
+
+def test_a_planted_mix_measures_close_to_its_requested_snr(tmp_path) -> None:
+    import numpy as np
+
+    from echoscribe.audio import read_wav
+    from echoscribe.noise.snr import snr_db
+
+    clean, noisy = tmp_path / "clean", tmp_path / "noisy"
+    main(["synth", "--workdir", str(clean), "--utterances", "2", "--seed", "5"])
+    main(
+        [
+            "synth",
+            "--workdir",
+            str(noisy),
+            "--utterances",
+            "2",
+            "--seed",
+            "5",
+            "--noise-kind",
+            "white",
+            "--snr",
+            "5",
+        ]
+    )
+    rows = (noisy / "manifest.jsonl").read_text().splitlines()
+    record = json.loads(rows[0])
+    assert record["condition"]["noise_kind"] == "white"
+    assert record["condition"]["noise_snr_db"] == 5.0
+    clean_audio = read_wav(
+        clean / json.loads((clean / "manifest.jsonl").read_text().splitlines()[0])["wav_path"]
+    )
+    noisy_audio = read_wav(noisy / record["wav_path"])
+    assert not np.array_equal(clean_audio.samples, noisy_audio.samples)
+    measured = snr_db(clean_audio.samples, noisy_audio.samples)
+    assert abs(measured - 5.0) < 0.5
+
+
+def test_an_snr_without_a_noise_kind_fails(tmp_path, capsys) -> None:
+    assert main(["synth", "--workdir", str(tmp_path), "--snr", "5"]) == 1
+    assert "--noise-kind" in capsys.readouterr().err
