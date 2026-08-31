@@ -56,6 +56,12 @@ def session_id_for(identifiers: list[str]) -> str:
 def run(args: argparse.Namespace) -> int:
     """Stream every utterance through a fresh decoder and write one session."""
     utterances, vocabulary = load_scripted_corpus(args.workdir)
+    schedule = ChunkSchedule(frames_per_chunk=args.frames_per_chunk)
+    print(
+        f"echoscribe stream: chunks of {schedule.chunk_ms:.0f} ms, "
+        f"right context {schedule.right_context_ms:.0f} ms, "
+        f"cap {args.max_symbols} symbol per frame"
+    )
     records: list[UtteranceRecord] = []
     exact = 0
     for item in utterances:
@@ -66,7 +72,7 @@ def run(args: argparse.Namespace) -> int:
         decoder = StreamDecoder(
             joint,
             StreamConfig(
-                schedule=ChunkSchedule(frames_per_chunk=args.frames_per_chunk),
+                schedule=schedule,
                 max_symbols_per_frame=args.max_symbols,
             ),
         )

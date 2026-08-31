@@ -95,3 +95,11 @@ def test_the_stream_agrees_with_the_batch_decode(tmp_path) -> None:
     session = read_session(tmp_path / "session.jsonl")
     for record in session.utterances:
         assert list(record.hypothesis) == decode_rows[record.utterance_id]
+
+
+def test_the_summary_states_the_latency_budget(tmp_path, capsys) -> None:
+    prepare(tmp_path)
+    main(["stream", "--workdir", str(tmp_path), "--frames-per-chunk", "8"])
+    out = capsys.readouterr().out
+    assert "chunks of 80 ms" in out
+    assert "right context 40 ms" in out
