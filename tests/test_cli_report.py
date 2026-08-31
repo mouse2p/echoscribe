@@ -124,3 +124,18 @@ def test_the_report_still_renders_without_a_decode_file(tmp_path) -> None:
     assert main(["report", "--workdir", str(tmp_path)]) == 0
     document = (tmp_path / "report.svg").read_text(encoding="utf-8")
     assert ">alignment of" not in document
+
+
+def test_session_lengths_appear_when_stream_ran(tmp_path) -> None:
+    score_first(tmp_path)
+    assert main(["stream", "--workdir", str(tmp_path)]) == 0
+    assert main(["report", "--workdir", str(tmp_path)]) == 0
+    document = (tmp_path / "report.svg").read_text(encoding="utf-8")
+    assert ">utterance length (frames)<" in document
+
+
+def test_no_session_section_without_a_session_file(tmp_path) -> None:
+    score_first(tmp_path)
+    main(["report", "--workdir", str(tmp_path)])
+    document = (tmp_path / "report.svg").read_text(encoding="utf-8")
+    assert ">utterance length" not in document

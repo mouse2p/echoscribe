@@ -30,6 +30,7 @@ from echoscribe.eval.report import (
     write_report,
 )
 from echoscribe.meta import run_metadata
+from echoscribe.stream.session import read_session
 
 
 def register(subparsers: argparse._SubParsersAction) -> None:
@@ -83,6 +84,18 @@ def run(args: argparse.Namespace) -> int:
                 alignment_section(
                     align(list(first["reference_units"]), list(first["hypothesis_units"])).pairs(),
                     title=f"alignment of {first['utterance_id']}",
+                )
+            )
+    session_path = root / "session.jsonl"
+    if session_path.exists():
+        session = read_session(session_path)
+        lengths = [float(record.frames) for record in session.utterances]
+        if lengths:
+            sections.append(
+                histogram_section(
+                    lengths,
+                    title="utterance length (frames)",
+                    bins=max(1, min(4, len(lengths))),
                 )
             )
     metadata = run_metadata(
