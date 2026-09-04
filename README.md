@@ -98,7 +98,7 @@ audio front end → synthetic laboratory → text/units → decoding math
 
 ## CLI 命令
 
-`synth` `feats` `decode` `stream` `bias` `eval` `bench` `report` `train` `demo`，
+`synth` `feats` `decode` `stream` `bias` `denoise` `eval` `bench` `report` `train` `demo`，
 统一退出码：0 成功、1 任务失败（stderr 一行说明）、2 用法错误。
 逐个说明见 [docs/usage.md](docs/usage.md)。
 

@@ -68,6 +68,7 @@ def test_the_readme_lists_every_command_and_example() -> None:
         "decode",
         "stream",
         "bias",
+        "denoise",
         "eval",
         "bench",
         "report",

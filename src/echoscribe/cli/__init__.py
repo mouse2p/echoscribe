@@ -25,6 +25,9 @@ The commands, in the order a full run uses them:
     decode the same corpus through the chunked streaming runtime;
 ``bias``
     show what a hotword bonus changes on an ambiguous fixture;
+``denoise``
+    spectral denoising over a rendered corpus, with measured SNR when a
+    clean render of the same seed is given;
 ``eval``
     score hypotheses against the planted transcripts, at unit or text level;
 ``bench``

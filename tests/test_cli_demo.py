@@ -64,6 +64,7 @@ def test_every_registered_command_appears_in_the_help(capsys) -> None:
         "bias",
         "decode",
         "demo",
+        "denoise",
         "eval",
         "feats",
         "report",
