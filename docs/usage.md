@@ -40,6 +40,14 @@ the whole loop above in one call and prints the numbers it measured.
 Exit codes: `0` success, `1` the job failed on valid usage (one line on
 stderr), `2` the usage itself was wrong.
 
+Two corpus-wide utilities round the pipeline out. `echoscribe synth
+--noise-kind white --snr 5` renders every utterance with planted noise (the
+manifest records the condition), and `echoscribe denoise --workdir noisy
+--clean-workdir clean` spectrally denoises a corpus -- measuring real SNR
+improvement when given a clean render of the same seed, and refusing to
+claim an SNR when it is not. `echoscribe decode --confidences` attaches
+per-token posterior confidences to greedy fixture decodes.
+
 Note what the default pipeline decodes: **scripted fixture posteriors** built
 from the planted transcripts. It exercises features, decoders, streaming,
 scoring and reporting against known answers; it does not run an acoustic
