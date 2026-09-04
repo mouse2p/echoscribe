@@ -98,3 +98,54 @@ def test_the_demo_can_train_and_decode_through_the_model(tmp_path, capsys) -> No
     assert (tmp_path / "decode-bundle.jsonl").exists()
     assert "trained-bundle UER" in out
     assert "memorization" in out
+
+
+def test_the_demo_namespaces_carry_every_flag_the_stages_read(tmp_path, monkeypatch) -> None:
+    import echoscribe.cli.demo as demo
+
+    captured: dict = {}
+
+    def fake(stage_name):
+        def handler(namespace):
+            captured[stage_name] = namespace
+            return 0
+
+        return handler
+
+    for stage in (
+        "run_synth",
+        "run_feats",
+        "run_decode",
+        "run_stream",
+        "run_eval",
+        "run_bench",
+        "run_report",
+    ):
+        monkeypatch.setattr(demo, stage, fake(stage))
+    # The stages all "succeed"; the run then stops at its summary because the
+    # faked stages wrote no files -- which is fine, the namespaces are the point.
+    main(["demo", "--workdir", str(tmp_path)])
+
+    required = {
+        "run_synth": (
+            "workdir",
+            "utterances",
+            "seed",
+            "min_tokens",
+            "max_tokens",
+            "english_probability",
+            "noise_kind",
+            "snr",
+        ),
+        "run_feats": ("workdir", "num_mel_bins", "deltas", "delta_order", "out"),
+        "run_decode": ("workdir", "method", "beam", "out", "bundle", "confidences"),
+        "run_stream": ("workdir", "frames_per_chunk", "max_symbols", "out"),
+        "run_eval": ("workdir", "level", "metric", "decode_file", "out"),
+        "run_bench": ("workdir", "method", "beam", "warmups", "repeats", "out"),
+        "run_report": ("workdir", "label", "out"),
+    }
+    assert set(captured) == set(required)
+    for stage, names in required.items():
+        namespace = captured[stage]
+        for name in names:
+            assert hasattr(namespace, name), f"{stage} is missing {name}"

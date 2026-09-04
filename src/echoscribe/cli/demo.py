@@ -76,6 +76,8 @@ def run(args: argparse.Namespace) -> int:
                 min_tokens=1,
                 max_tokens=3,
                 english_probability=0.5,
+                noise_kind=None,
+                snr=None,
             ),
         ),
         (
@@ -93,7 +95,12 @@ def run(args: argparse.Namespace) -> int:
             "decode",
             run_decode,
             Namespace(
-                workdir=str(workdir), method="greedy", beam=5, out="decode.jsonl", bundle=None
+                workdir=str(workdir),
+                method="greedy",
+                beam=5,
+                out="decode.jsonl",
+                bundle=None,
+                confidences=False,
             ),
         ),
         (
@@ -173,6 +180,7 @@ def run(args: argparse.Namespace) -> int:
                     beam=5,
                     out="decode-bundle.jsonl",
                     bundle=str(workdir / "model.pt"),
+                    confidences=False,
                 ),
             )
         )
