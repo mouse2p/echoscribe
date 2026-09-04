@@ -53,3 +53,31 @@ def test_the_version_agrees_with_pyproject_and_the_changelog() -> None:
     assert f"## [{echoscribe.__version__}]" in changelog
     latest = changelog.split("## [", 1)[1].split("]", 1)[0]
     assert latest == echoscribe.__version__, "the changelog must lead with the release"
+
+
+def test_importing_the_toolkit_never_pulls_in_torch() -> None:
+    import subprocess
+    import sys
+
+    program = "\n".join(
+        [
+            "import sys",
+            "import echoscribe",
+            "import echoscribe.cli",
+            "import echoscribe.decode",
+            "import echoscribe.eval",
+            "import echoscribe.noise",
+            "import echoscribe.stream",
+            "import echoscribe.synth",
+            "import echoscribe.text",
+            "assert 'torch' not in sys.modules, 'torch leaked into a core import'",
+        ]
+    )
+    result = subprocess.run(
+        [sys.executable, "-c", program],
+        capture_output=True,
+        text=True,
+        timeout=120,
+        check=False,
+    )
+    assert result.returncode == 0, result.stderr
