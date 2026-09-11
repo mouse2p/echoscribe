@@ -237,3 +237,35 @@ def test_confidences_with_the_prefix_method_are_refused(tmp_path, capsys) -> Non
     code = main(["decode", "--workdir", str(tmp_path), "--method", "prefix", "--confidences"])
     assert code == 1
     assert "greedy" in capsys.readouterr().err
+
+
+def test_prefix_rows_carry_an_ordered_n_best(tmp_path) -> None:
+    prepare(tmp_path)
+    main(
+        [
+            "decode",
+            "--workdir",
+            str(tmp_path),
+            "--method",
+            "prefix",
+            "--beam",
+            "4",
+            "--out",
+            "nbest.jsonl",
+        ]
+    )
+    rows = read_jsonl(tmp_path / "nbest.jsonl")
+    assert rows
+    for row in rows:
+        n_best = row["n_best"]
+        assert 1 <= len(n_best) <= 3
+        assert n_best[0][0] == row["hypothesis_ids"]
+        scores = [entry[1] for entry in n_best]
+        assert scores == sorted(scores, reverse=True)
+
+
+def test_greedy_rows_have_no_n_best_column(tmp_path) -> None:
+    prepare(tmp_path)
+    main(["decode", "--workdir", str(tmp_path)])
+    row = read_jsonl(tmp_path / "decode.jsonl")[0]
+    assert "n_best" not in row

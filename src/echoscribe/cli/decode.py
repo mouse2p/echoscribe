@@ -81,11 +81,13 @@ def run(args: argparse.Namespace) -> int:
     exact = 0
     for item in utterances:
         greedy = None
+        beam = None
         if args.method == "greedy":
             greedy = ctc_greedy(item.posteriors)
             symbols = greedy.symbols
         else:
-            symbols = ctc_prefix_search(item.posteriors, beam_size=args.beam).symbols
+            beam = ctc_prefix_search(item.posteriors, beam_size=args.beam)
+            symbols = beam.symbols
         matched = symbols == item.unit_ids
         exact += int(matched)
         row = {
@@ -106,6 +108,11 @@ def run(args: argparse.Namespace) -> int:
                 round(float(confidence.probability), 6) for confidence in confidences
             ]
             row["utterance_confidence"] = round(float(utterance_confidence(confidences)), 6)
+        if beam is not None:
+            row["n_best"] = [
+                [list(hypothesis.tokens), round(float(hypothesis.score), 6)]
+                for hypothesis in beam.n_best(3)
+            ]
         rows.append(row)
     target = write_jsonl(Path(args.workdir) / args.out, rows)
     print(
