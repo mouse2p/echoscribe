@@ -23,6 +23,12 @@ from pathlib import Path
 from echoscribe.cli.common import EXIT_OK, fail, read_jsonl, write_json
 from echoscribe.errors import ConfigError, require
 from echoscribe.eval.codeswitch import score_mixed
+from echoscribe.eval.report import (
+    digest_report,
+    render_report,
+    table_section,
+    write_report,
+)
 from echoscribe.eval.wer import (
     CorpusReport,
     character_sequence,
@@ -30,6 +36,7 @@ from echoscribe.eval.wer import (
     score_corpus,
     word_sequence,
 )
+from echoscribe.meta import run_metadata
 from echoscribe.synth.manifest import read_manifest
 from echoscribe.text.units import utterance_units
 
@@ -55,6 +62,9 @@ def register(subparsers: argparse._SubParsersAction) -> None:
     )
     parser.add_argument("--decode-file", default="decode.jsonl", help="hypotheses to score")
     parser.add_argument("--out", default="scores.json", help="score file to write")
+    parser.add_argument(
+        "--report", default=None, help="also render an SVG score report to this path"
+    )
     parser.set_defaults(handler=run)
 
 
@@ -133,4 +143,21 @@ def run(args: argparse.Namespace) -> int:
     print(f"echoscribe eval: {format_corpus_summary(corpus, label=label)}")
     print(f"  scores: {target}")
     print("  ground truth: planted transcripts, not human labels of real speech")
+    report_name = getattr(args, "report", None)
+    if report_name:
+        report_rows = [
+            (record.utterance_id, f"{report.errors}/{report.reference_length}")
+            for record, report in zip(records, corpus.reports, strict=True)
+        ]
+        report_rows.append(("TOTAL", f"{corpus.errors}/{corpus.reference_length}"))
+        metric = str(payload["metric"])
+        metadata = run_metadata("cli-eval", seed=0, level=args.level, metric=metric)
+        document = render_report(
+            f"echoscribe eval ({metric})",
+            [table_section(report_rows, title=f"scores ({metric})")],
+            metadata,
+            description="rendered by `echoscribe eval --report`",
+        )
+        report_path = write_report(root / report_name, document, overwrite=True)
+        print(f"  report: {report_path} (digest {digest_report(document)})")
     return EXIT_OK

@@ -154,3 +154,19 @@ def test_a_chinese_corpus_scores_characters(tmp_path) -> None:
     assert any(
         "\u4e00" <= character <= "\u9fff" for row in rows for character in row["reference_text"]
     )
+
+
+def test_eval_can_render_its_own_report(tmp_path) -> None:
+    decode_first(tmp_path)
+    code = main(["eval", "--workdir", str(tmp_path), "--report", "scores.svg"])
+    assert code == 0
+    document = (tmp_path / "scores.svg").read_text(encoding="utf-8")
+    assert document.startswith("<?xml")
+    assert ">scores (units)<" in document
+    assert "TOTAL" in document
+
+
+def test_no_report_file_without_the_flag(tmp_path) -> None:
+    decode_first(tmp_path)
+    main(["eval", "--workdir", str(tmp_path)])
+    assert not (tmp_path / "scores.svg").exists()
