@@ -62,3 +62,11 @@ def test_reading_jsonl_skips_blank_lines(tmp_path) -> None:
     target = tmp_path / "rows.jsonl"
     target.write_text('{"a": 1}\n\n{"b": 2}\n', encoding="utf-8")
     assert read_jsonl(target) == [{"a": 1}, {"b": 2}]
+
+
+@pytest.mark.parametrize("command", ["decode", "stream", "eval", "bench", "report", "denoise"])
+def test_consuming_commands_fail_cleanly_on_an_empty_workdir(tmp_path, capsys, command) -> None:
+    assert main([command, "--workdir", str(tmp_path)]) == 1
+    error = capsys.readouterr().err
+    assert error.startswith("echoscribe: error:")
+    assert "Traceback" not in error
