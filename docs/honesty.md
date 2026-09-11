@@ -37,6 +37,10 @@ known exactly:
   pipeline decodes planted fixture posteriors; scoring those decodes zero
   proves the join, alignment and arithmetic work, not that anything was
   recognized.
+* **Trained-bundle decodes memorize.** `echoscribe train` and `echoscribe
+  decode --bundle` run on the same laboratory by construction; a low error
+  rate from that pair measures memorization of planted data. Both the command
+  output and the usage guide say so wherever such a number is printed.
 
 ## Known limitations, stated plainly
 
