@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "echoscribe"
-version = "0.1.1"
+version = "0.1.2"
 description = "Offline workbench for streaming speech-recognition mechanics: transducer and CTC decoding, latency-budgeted chunk streaming, hotword biasing, endpointing, code-switch English-Chinese evaluation, and a synthetic acoustic laboratory with planted transcripts."
 readme = "README.md"
 requires-python = ">=3.11"

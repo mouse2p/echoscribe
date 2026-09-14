@@ -3,6 +3,25 @@
 本项目遵循 [Semantic Versioning](https://semver.org/spec/v2.0.0.html)。
 在 1.0 之前，补丁版本用于机制修正与文档补充，次版本用于新增能力。
 
+## [0.1.2] - 2026-10-14
+
+### Added
+
+- `echoscribe.model.infer`：从 bundle 文件回到 NumPy log-posterior 的推理桥，训练模型
+  与离线解码器只在这一处接缝相遇。
+- `echoscribe decode --bundle`：用训练好的 CTC bundle（连同导出的 vocab.json）解码语料；
+  `echoscribe demo --train` 一次跑通含训练路径的整条链路，并标注记忆化警告。
+- `echoscribe synth --noise-kind/--snr`：按植入条件渲染带噪语料；`echoscribe denoise`：
+  谱减/Wiener 降噪，仅在给出同种子干净参考时才测量并报告 SNR 改进。
+- `echoscribe decode --confidences` 与 prefix 方法的有序 n-best 列；
+  `echoscribe eval --report` 直接渲染 SVG 分数报告；report 命令追加会话长度直方图；
+  stream 摘要打印 chunk 与右上下文构成的延迟预算。
+
+### Fixed
+
+- demo 各阶段的 Namespace 现在携带子命令读取的每一个 flag，并由契约测试钉住，
+  防止新增 flag 再次悄悄破坏 `demo --train` 之外的整链路运行。
+
 ## [0.1.1] - 2026-10-14
 
 ### Added
@@ -31,5 +50,6 @@
 - 项目骨架：`src` 布局的 `echoscribe` 包、Makefile 开发入口、MIT 许可证。
 - 版本一致性测试：`__version__` 与已安装包元数据必须相符。
 
+[0.1.2]: https://github.com/mouse2p/echoscribe/releases/tag/v0.1.2
 [0.1.1]: https://github.com/mouse2p/echoscribe/releases/tag/v0.1.1
 [0.1.0]: https://github.com/mouse2p/echoscribe/releases/tag/v0.1.0
