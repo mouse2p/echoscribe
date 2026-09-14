@@ -144,7 +144,10 @@ def run_with_bundle(args: argparse.Namespace) -> int:
     manifest_path = root / "manifest.jsonl"
     if not manifest_path.exists():
         return fail(f"no manifest at {manifest_path}; run `echoscribe synth` first")
-    vocabulary = Vocabulary.from_dict(read_json(vocab_path))
+    vocab_payload = read_json(vocab_path)
+    if not isinstance(vocab_payload, dict):
+        return fail(f"{vocab_path} does not look like an echoscribe vocabulary file")
+    vocabulary = Vocabulary.from_dict(vocab_payload)
     encoder, head, _ = load_ctc_model(args.bundle)
     records = read_manifest(manifest_path)
     rows: list[dict] = []
