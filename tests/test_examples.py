@@ -60,8 +60,8 @@ def test_the_streaming_session_endpoints_after_the_units(tmp_path) -> None:
     record = session.utterances[0]
     assert record.hypothesis == (3, 1, 4, 1, 5)
     assert record.endpointed
-    # the last planted unit sits at frame 25 + 48; the endpoint must be later
-    assert record.endpoint_frames is not None and record.endpoint_frames > 73
+    # the last planted unit sits at frame 25 + 16; the endpoint must be later
+    assert record.endpoint_frames is not None and record.endpoint_frames > 41
 
 
 @pytest.mark.slow

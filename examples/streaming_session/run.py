@@ -29,7 +29,11 @@ from echoscribe.stream.session import Session, UtteranceRecord, latency_report, 
 UNITS = (3, 1, 4, 1, 5)
 NUM_SYMBOLS = 6
 LEAD_BLANKS = 25
-UNIT_FRAMES = 60
+# Units sit four frames apart: a 20-frame blank-ratio window then always
+# contains enough planted speech to stay under its threshold until the real
+# trailing silence begins.  At the original twelve-frame spacing the window
+# was blank-dominated *between* units and the endpointer fired mid-utterance.
+UNIT_FRAMES = 20
 TAIL_BLANKS = 45
 CHUNK_FRAMES = 16
 FRAME_SHIFT_MS = 10.0
