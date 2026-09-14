@@ -163,7 +163,11 @@ def test_a_longer_hangover_never_fires_earlier() -> None:
     from echoscribe.synth.render import RenderConfig, render_utterance
 
     utterance = next(iter(generate_corpus(CorpusConfig(utterances=1, min_tokens=3))))
-    audio = render_utterance(utterance, RenderConfig())
+    # 600 ms of trailing silence is 60 frames: even the 40-frame hangover in
+    # the loop below needs room to expire after speech ends, and the default
+    # 250 ms tail is shorter than that -- the fixture, not the detector, was
+    # what made the longest hangover unmeasurable.
+    audio = render_utterance(utterance, RenderConfig(trailing_silence_ms=600.0))
     frames = extract_frames(audio.samples.astype(np.float64), FrameConfig())
     energies = np.sqrt(np.mean(frames**2, axis=1))
     fired = []
