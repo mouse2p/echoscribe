@@ -217,17 +217,15 @@ class RunMetadata:
         seed = payload["seed"]
         versions = payload["versions"]
         configs = payload["configs"]
-        require(
-            isinstance(seed, int) and not isinstance(seed, bool),
-            f"run metadata seed must be an integer, got {seed!r}",
-            SchemaError,
-        )
-        require(
-            isinstance(versions, dict) and isinstance(configs, dict),
-            f"run metadata versions and configs must be mappings, got "
-            f"{type(versions).__name__} and {type(configs).__name__}",
-            SchemaError,
-        )
+        # Explicit raises rather than require(): the checker only narrows the
+        # types of seed/versions/configs when it can see the branch itself.
+        if not isinstance(seed, int) or isinstance(seed, bool):
+            raise SchemaError(f"run metadata seed must be an integer, got {seed!r}")
+        if not isinstance(versions, dict) or not isinstance(configs, dict):
+            raise SchemaError(
+                f"run metadata versions and configs must be mappings, got "
+                f"{type(versions).__name__} and {type(configs).__name__}"
+            )
         restored = cls(
             label=str(payload["label"]),
             seed=seed,
