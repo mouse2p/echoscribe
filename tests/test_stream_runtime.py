@@ -283,3 +283,40 @@ def test_an_endpoint_stops_further_partials() -> None:
         events.extend(decoder.push_logits(logits[frame][None, :]))
     endpoint_index = [event.kind for event in events].index("endpoint")
     assert all(event.kind != "partial" for event in events[endpoint_index:])
+
+
+class CountingEndpointer:
+    """Wraps a real endpointer and counts how many frames it is fed."""
+
+    def __init__(self, inner) -> None:
+        self.inner = inner
+        self.pushes = 0
+
+    def push_posteriors(self, row):
+        self.pushes += 1
+        return self.inner.push_posteriors(row)
+
+    def reset(self) -> None:
+        self.inner.reset()
+
+
+def test_the_endpointer_sees_every_frame_exactly_once() -> None:
+    # A never-firing detector (threshold 1.0 with random logits, and a speech
+    # minimum no 48-frame push can reach) turns the wiring into something
+    # countable: three 16-frame pushes must feed exactly 48 frames.  Before
+    # the fix, each push re-fed the whole joint and the count was 96.
+    logits = _logits(frames=48, symbols=4, seed=5)
+    joint = AppendableJoint(4)
+    counter = CountingEndpointer(
+        BlankRatioEndpointer(
+            BlankRatioConfig(window_frames=6, ratio_threshold=1.0, min_speech_frames=99)
+        )
+    )
+    decoder = StreamDecoder(
+        joint,
+        StreamConfig(schedule=ChunkSchedule(frames_per_chunk=16), max_symbols_per_frame=2),
+        counter,
+    )
+    for start in range(0, 48, 16):
+        decoder.push_logits(logits[start : start + 16])
+    assert counter.pushes == 48

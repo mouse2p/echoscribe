@@ -92,21 +92,29 @@ class StreamDecoder:
 
     def push_logits(self, logits: np.ndarray) -> tuple[StreamEvent, ...]:
         """Append encoder output and decode every chunk it completes."""
-        appended = self.joint.append(logits)
+        first_new = self.joint.num_frames
+        self.joint.append(logits)
         events = list(self._drain())
-        events.extend(self._watch(appended))
+        events.extend(self._watch(first_new))
         return tuple(events)
 
-    def _watch(self, appended: int) -> list[StreamEvent]:
-        """Feed newly appended frames to the endpointer, if there is one.
+    def _watch(self, start: int) -> list[StreamEvent]:
+        """Feed the frames from ``start`` onward to the endpointer, if there is one.
 
-        The endpointer sees the *acoustic* posteriors rather than the biased ones a
-        decoder might use, so a hotword list cannot make an utterance end sooner.
+        ``start`` is the index of the first frame the detector has not seen.
+        Deriving it from ``AppendableJoint.append``'s return value instead --
+        which is the new frame *total*, not the number appended -- silently
+        re-feeds every earlier frame on each push, and a detector with a
+        sliding window and a speech counter then counts the same frames two,
+        three, four times and fires inside live speech.
+
+        The endpointer sees the *acoustic* posteriors rather than the biased
+        ones a decoder might use, so a hotword list cannot make an utterance
+        end sooner.
         """
         if self.endpointer is None or self._closed:
             return []
         events = []
-        start = self.joint.num_frames - appended
         for frame in range(start, self.joint.num_frames):
             row = np.exp(self.joint(frame, ()))
             if self.endpointer.push_posteriors(row):
