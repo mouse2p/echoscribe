@@ -45,13 +45,18 @@ def register(subparsers: argparse._SubParsersAction) -> None:
         "--label", default="echoscribe run", help="run label for the metadata stamp"
     )
     parser.add_argument("--out", default="report.svg", help="SVG file to write")
+    parser.add_argument(
+        "--scores",
+        default="scores.json",
+        help="score file inside the work directory to render",
+    )
     parser.set_defaults(handler=run)
 
 
 def run(args: argparse.Namespace) -> int:
     """Assemble, render and write the report; print its digest."""
     root = Path(args.workdir)
-    scores_path = root / "scores.json"
+    scores_path = root / args.scores
     if not scores_path.exists():
         return fail(f"no scores at {scores_path}; run `echoscribe eval` first")
     scores = read_json(scores_path)

@@ -142,7 +142,7 @@ def test_the_demo_namespaces_carry_every_flag_the_stages_read(tmp_path, monkeypa
         "run_stream": ("workdir", "frames_per_chunk", "max_symbols", "out"),
         "run_eval": ("workdir", "level", "metric", "decode_file", "out"),
         "run_bench": ("workdir", "method", "beam", "warmups", "repeats", "out"),
-        "run_report": ("workdir", "label", "out"),
+        "run_report": ("workdir", "label", "out", "scores"),
     }
     assert set(captured) == set(required)
     for stage, names in required.items():

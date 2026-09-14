@@ -139,3 +139,12 @@ def test_no_session_section_without_a_session_file(tmp_path) -> None:
     main(["report", "--workdir", str(tmp_path)])
     document = (tmp_path / "report.svg").read_text(encoding="utf-8")
     assert ">utterance length" not in document
+
+
+def test_the_score_file_is_chooseable(tmp_path) -> None:
+    score_first(tmp_path)
+    assert main(["eval", "--workdir", str(tmp_path), "--out", "alt.json"]) == 0
+    assert (tmp_path / "alt.json").exists()
+    code = main(["report", "--workdir", str(tmp_path), "--scores", "alt.json", "--out", "alt.svg"])
+    assert code == 0
+    assert (tmp_path / "alt.svg").exists()

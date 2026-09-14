@@ -147,7 +147,12 @@ def run(args: argparse.Namespace) -> int:
         (
             "report",
             run_report,
-            Namespace(workdir=str(workdir), label="demo", out="report.svg"),
+            Namespace(
+                workdir=str(workdir),
+                label="demo",
+                out="report.svg",
+                scores="scores-units.json",
+            ),
         ),
     ]
     if args.train:
