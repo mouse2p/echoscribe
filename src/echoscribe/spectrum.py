@@ -58,7 +58,7 @@ def bin_frequencies(fft_size: int, sample_rate: int) -> FloatArray:
     """
     require_positive("sample_rate", sample_rate, ConfigError)
     require_positive("fft_size", fft_size, ConfigError)
-    return np.fft.rfftfreq(fft_size, d=1.0 / sample_rate)
+    return np.asarray(np.fft.rfftfreq(fft_size, d=1.0 / sample_rate), dtype=np.float64)
 
 
 def log_power_spectrum(
