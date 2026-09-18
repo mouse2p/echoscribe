@@ -623,10 +623,12 @@ def write_report(path: Path | str, document: str, overwrite: bool = False) -> Pa
     target = Path(path)
     if target.exists() and not overwrite:
         raise FileExistsError(f"report {target} already exists; pass overwrite=True to replace it")
-    target.write_text(document, encoding="utf-8", newline="\n")
+    with target.open("w", encoding="utf-8", newline="\n") as handle:
+        handle.write(document)
     return target
 
 
 def read_report(path: Path | str) -> str:
     """Read a report back as exactly the bytes that were written."""
-    return Path(path).read_text(encoding="utf-8", newline="\n")
+    with Path(path).open("r", encoding="utf-8", newline="\n") as handle:
+        return handle.read()

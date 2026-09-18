@@ -52,7 +52,8 @@ def write_jsonl(path: Path | str, rows: Sequence[dict]) -> Path:
     """
     target = Path(path)
     payload = "".join(json.dumps(row, sort_keys=True) + "\n" for row in rows)
-    target.write_text(payload, encoding="utf-8", newline="\n")
+    with target.open("w", encoding="utf-8", newline="\n") as handle:
+        handle.write(payload)
     return target
 
 

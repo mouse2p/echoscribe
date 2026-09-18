@@ -214,7 +214,8 @@ def run(args: argparse.Namespace) -> int:
     if not isinstance(bench_payload, dict):
         return fail("the demo's own bench file is unreadable")
     bench = BenchResult.from_dict(bench_payload)
-    document = (workdir / "report.svg").read_text(encoding="utf-8", newline="\n")
+    with (workdir / "report.svg").open("r", encoding="utf-8", newline="\n") as handle:
+        document = handle.read()
     print()
     print("demo summary -- every number below was measured in this run")
     print(
