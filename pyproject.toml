@@ -87,6 +87,7 @@ markers = [
 line-length = 100
 target-version = "py311"
 src = ["examples", "scripts", "src", "tests"]
+extend-exclude = ["docs"]
 
 [tool.ruff.lint]
 select = ["B", "C4", "E", "F", "I", "UP", "W"]
