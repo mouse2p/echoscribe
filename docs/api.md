@@ -115,6 +115,7 @@ names a module that does not exist.
 
 | module | what it holds |
 | --- | --- |
+| `echoscribe.cli.__main__` | the `python -m echoscribe.cli` entry point |
 | `echoscribe.cli.common` | exit codes, JSON/JSONL helpers |
 | `echoscribe.cli.scripted` | planted-transcript fixture posteriors |
 | `echoscribe.cli.synth` | render a seeded corpus into a work directory |

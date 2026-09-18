@@ -70,3 +70,18 @@ def test_consuming_commands_fail_cleanly_on_an_empty_workdir(tmp_path, capsys, c
     error = capsys.readouterr().err
     assert error.startswith("echoscribe: error:")
     assert "Traceback" not in error
+
+
+def test_the_cli_runs_as_a_module() -> None:
+    import subprocess
+    import sys
+
+    result = subprocess.run(
+        [sys.executable, "-m", "echoscribe.cli", "--version"],
+        capture_output=True,
+        text=True,
+        timeout=120,
+        check=False,
+    )
+    assert result.returncode == 0, result.stderr
+    assert "echoscribe" in result.stdout
